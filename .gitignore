@@ -1,0 +1,15 @@
+node_modules/
+data/
+dist/
+*.log
+.DS_Store
+# never commit secrets or databases
+*.pem
+*.key
+*.p12
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+signing/

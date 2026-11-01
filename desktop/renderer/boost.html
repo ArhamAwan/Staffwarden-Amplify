@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; media-src 'self'; font-src 'self'">
+<title>Boost</title>
+<link rel="stylesheet" href="boost.css">
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="glow" aria-hidden="true"></div>
+  <span class="px1" aria-hidden="true"></span><span class="px2" aria-hidden="true"></span><span class="px3" aria-hidden="true"></span><span class="px4" aria-hidden="true"></span><span class="px5" aria-hidden="true"></span>
+  <video class="him" id="him" role="img" muted playsinline preload="auto"></video>
+  <div class="bubble" id="bubble" role="dialog" aria-labelledby="who line">
+    <div class="top"><span class="who" id="who">BOOST</span><span class="now">now</span></div>
+    <p class="line" id="line"></p>
+    <div class="acts" id="acts">
+      <button type="button" class="back" id="back">BOOST BACK</button>
+      <button type="button" class="later" id="later">Later</button>
+      <span class="esc">Esc to close</span>
+    </div>
+    <p class="thanks" id="thanks" hidden></p>
+    <div class="bar" aria-hidden="true"><i id="bar"></i></div>
+    <span class="tail" aria-hidden="true"></span>
+  </div>
+</div>
+<script src="boost.js"></script>
+</body>
+</html>

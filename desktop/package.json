@@ -1,0 +1,89 @@
+{
+  "name": "workhelm-desktop",
+  "productName": "Staffwarden",
+  "version": "0.9.23",
+  "private": true,
+  "description": "Staffwarden desktop app: visible, consent-based time tracking. Built entirely in-house by Amplify Media Technologies.",
+  "author": "Amplify Media Technologies",
+  "main": "main.js",
+  "workhelm": {
+    "server": "https://staffwarden.com",
+    "previousServers": [
+      "https://workhelm.long-tooth-2e6b.workers.dev",
+      "http://185.205.244.24"
+    ]
+  },
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "resedit": "1.7.2"
+  },
+  "build": {
+    "appId": "com.amplifymediatechnologies.workhelm",
+    "productName": "Staffwarden",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**",
+      "src/**",
+      "assets/**"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "extendInfo": {
+        "NSScreenCaptureUsageDescription": "Staffwarden captures screenshots while your timer is running."
+      },
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Staffwarden-${version}-${arch}.${ext}",
+      "icon": "build/icon.png"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "artifactName": "Staffwarden-Setup-${version}.${ext}"
+    },
+    "linux": {
+      "target": "AppImage"
+    },
+    "copyright": "Copyright \u00a9 2026 Amplify Media Technologies",
+    "directories": {
+      "buildResources": "build"
+    },
+    "icon": "build/icon.png",
+    "afterPack": "build/after-pack.js",
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Staffwarden",
+      "runAfterFinish": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
+    },
+    "dmg": {
+      "title": "Workhelm ${version}"
+    },
+    "publish": null
+  }
+}
