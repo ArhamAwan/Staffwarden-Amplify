@@ -124,3 +124,49 @@ Title: Owner & Director`);
   assert.equal(r.address, 'House #695, Block D, Sher Shah Colony, Raiwind Road, Lahore');
   assert.equal(r.notice_days, 30);
 });
+
+test('"employs Name as", "employ the Employee as", a one-week probation and a contractor abroad', async () => {
+  const { parseContract } = await load();
+  let r = parseContract(`EMPLOYMENT AGREEMENT
+2. EMPLOYEE
+Arham Tahir Awan
+House 191, Street 98, I-8/4, Islamabad, Pakistan
+3. POSITION AND EMPLOYMENT STATUS
+The Company hereby employs Arham Tahir Awan as a Full-Time Outsourced Application
+Support Engineer.
+The employment shall commence effective September 7, 2026.
+The Employee shall receive a base salary of:
+PKR 60,000 (Sixty Thousand Pakistani Rupees) per month.`);
+  assert.equal(r.title, 'Outsourced Application Support Engineer');
+  assert.equal(r.joined_on, '2026-09-07');
+  assert.equal(r.base, 60000);
+  r = parseContract(`EMPLOYMENT AGREEMENT
+Name: Ehtesham Zafar
+1. Position
+The Company agrees to employ the Employee as an Upwork Bidder.
+Employment shall commence on 9 October 2026.
+The Employee shall under go an initial one-week probation period.`);
+  assert.equal(r.title, 'Upwork Bidder');
+  assert.equal(r.probation_end, '2026-10-16');
+  r = parseContract(`INDEPENDENT CONTRACTOR - SALES CLOSER AGREEMENT
+This Agreement is made and entered into on 17 September 2026 ("Effective Date"), by and between:
+1. COMPANY
+Amplify Media Technologies LLC
+5900 Balcones Drive, STE 100
+Austin, TX 78731
+2. SALES CLOSER
+Christian Michael Davenport
+6601 S Westshore Blvd, Apt 2416
+Tampa, FL 33616
+United States
+Email: cm@example.com
+Phone: +1 (813) 954-3056
+3. POSITION
+The Company hereby engages Christian Michael Davenport as a High-Ticket
+Sales Closer on a commission basis. No fixed salary is guaranteed.`);
+  assert.equal(r.address, '6601 S Westshore Blvd, Apt 2416, Tampa, FL 33616, United States');
+  assert.equal(r.joined_on, '2026-09-17');
+  assert.equal(r.phone, '+1 (813) 954-3056');
+  assert.equal(r.contract, 'contractor');
+  assert.equal(r.base, null);
+});
