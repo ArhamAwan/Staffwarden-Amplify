@@ -1709,3 +1709,7 @@ input[type="file"]::file-selector-button:hover { background: #F3F1F9; }
 .t td.row-a .btn { opacity: 0; transition: opacity .15s; }
 .t tr:hover td.row-a .btn, .t td.row-a .btn:focus-visible { opacity: 1; }
 @media (hover: none), (max-width: 760px) { .t td.row-a .btn { opacity: 1; } }
+
+/* a count on a tab: documents kept, joining steps left */
+.tab .tab-n { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 6px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1; background: rgba(255,255,255,.12); color: inherit; vertical-align: 1px; }
+.tab[aria-current="page"] .tab-n { background: var(--amber, #f5b83d); color: #1b1433; }

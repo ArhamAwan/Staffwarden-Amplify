@@ -42,13 +42,14 @@ module.exports = (ctx) => {
     const docs = db.prepare('SELECT kind, status FROM hr_docs WHERE user_id = ?').all(u.id);
     const auto = {
       account: () => true, app: () => !!u.consented_at, bank: () => !!rec.iban, cnic: () => docs.some((d) => d.kind === 'cnic'),
-      contract: () => docs.some((d) => d.kind === 'contract' && d.status === 'signed'), deactivate: () => !u.active,
+      contract: () => docs.some((d) => d.kind === 'contract' && d.status !== 'waiting'), deactivate: () => !u.active,
     };
     return STEPS[flow].map(([key, title, sub]) => {
       const r = done.get(key);
       const isAuto = !!auto[key] && (flow === 'join' || key === 'deactivate');
-      const ok = (r && r.done_at) || (isAuto && auto[key]());
-      return { key, title, sub, done: !!ok, auto: isAuto, done_at: r ? r.done_at : null, done_by: r ? nameOf(r.done_by) : null };
+      const autoDone = isAuto && auto[key]();
+      const ok = (r && r.done_at) || autoDone;
+      return { key, title, sub, done: !!ok, auto: isAuto, auto_done: !!autoDone, done_at: r ? r.done_at : null, done_by: r ? nameOf(r.done_by) : null };
     });
   }
 
@@ -89,7 +90,7 @@ module.exports = (ctx) => {
       const p = personOut(u, user);
       const docs = db.prepare('SELECT kind, status FROM hr_docs WHERE user_id = ?').all(u.id);
       p.employed = employedOf(u); p.is_dev = !!u.is_dev; p.tracks_time = !!u.tracks_time;
-      p.flags = { no_pay: !p.pay && u.role !== 'owner' && p.employed, no_bank: !!p.pay && !p.record.iban, unsigned: !docs.some((d) => d.kind === 'contract' && d.status === 'signed'), leaving: p.record.leaving_on };
+      p.flags = { no_pay: !p.pay && u.role !== 'owner' && p.employed, no_bank: !!p.pay && !p.record.iban, unsigned: !docs.some((d) => d.kind === 'contract' && d.status !== 'waiting'), leaving: p.record.leaving_on };
       p.advance_left = db.prepare("SELECT COALESCE(SUM(amount),0) n FROM advances WHERE user_id = ? AND status = 'approved'").get(u.id).n;
       return p;
     });

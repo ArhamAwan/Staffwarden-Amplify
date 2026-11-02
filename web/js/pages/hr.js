@@ -58,7 +58,8 @@ function listView(people, q) {
 // ---------- one person ----------
 function personView(p, tab) {
   const r = p.record, pay = p.pay, me = S.me.id === p.id;
-  const tabs = [['overview', 'Overview'], ['documents', `Documents${p.docs.length ? ' ' + p.docs.length : ''}`], ['joining', 'Joining'], ...(p.leave_steps ? [['leaving', 'Leaving']] : [])];
+  const count = (n) => (n ? raw(` <span class="tab-n num">${n}</span>`) : '');
+  const tabs = [['overview', 'Overview'], ['documents', html`Documents${count(p.docs.length)}`], ['joining', html`Joining${count(p.join_steps.filter((x) => !x.done).length)}`], ...(p.leave_steps ? [['leaving', 'Leaving']] : [])];
   const head = html`<div class="page-h"><div class="hr-who">${av(p, 'lg')}<div><h1>${p.name}</h1><p class="sub">${[p.title, p.team, CONTRACT[r.contract], p.active ? null : 'Deactivated'].filter(Boolean).join(' · ')}</p></div></div>
     <div class="tools"><a class="btn" href="#/hr">${icon('left')} Everyone</a>${!r.leaving_on && p.active ? html`<button class="btn" data-act="hr-leave" data-id="${p.id}" data-name="${p.name}">Leaving</button>` : ''}${p.employed === false ? html`<button class="btn" data-act="hr-employed" data-id="${p.id}" data-name="${p.name}" data-v="1">Make an employee</button>` : html`<button class="btn" data-act="hr-employed" data-id="${p.id}" data-name="${p.name}" data-v="0">Not an employee</button>`}<a class="btn" href="#/hr-import?for=${p.id}${(() => { const c = p.docs.find((d) => d.kind === 'contract' && d.type === 'application/pdf'); return c ? `&doc=${c.id}` : ''; })()}">${icon('file')} Update from contract</a><button class="btn primary" data-act="hr-edit" data-id="${p.id}">Edit record</button></div>
     <nav class="tabs" aria-label="Their record">${tabs.map(([v, n]) => html`<button type="button" class="tab" data-act="q" ${raw(qAttr('tab', v === 'overview' ? '' : v))} aria-current="${tab === v ? 'page' : 'false'}">${n}</button>`)}<span class="tab locked" title="HR never sees screenshots or activity">${icon('lock')} Screenshots and activity</span></nav></div>`;
@@ -97,9 +98,12 @@ function stepsView(p, flow) {
   const list = flow === 'join' ? p.join_steps : p.leave_steps;
   const done = list.filter((s) => s.done).length;
   return html`<section class="panel"><header><h2>${flow === 'join' ? 'Joining' : 'Leaving'}</h2><span class="muted small">${done} of ${list.length} done${flow === 'join' ? ' · some tick themselves from what Staffwarden already knows' : ''}</span></header><div class="body">
-    <ul class="checklist big">${list.map((s) => html`<li class="${s.done ? 'done' : ''}" data-k="s${s.key}"><span class="ck">${s.done ? icon('check') : ''}</span><div><b>${s.title}</b><span>${s.done && s.done_at ? `Done ${relTime(s.done_at)}${s.done_by ? ` by ${s.done_by}` : ''}` : s.done && s.auto ? 'Done' : s.sub}</span></div>
-      ${s.auto ? html`<span class="muted small">${s.done ? 'Automatic' : 'Ticks itself'}</span>` : html`<button class="btn sm" data-act="hr-step" data-id="${p.id}" data-flow="${flow}" data-step="${s.key}" data-done="${s.done ? '' : '1'}">${s.done ? 'Undo' : 'Mark done'}</button>`}</li>`)}</ul></div></section>`;
+    <ul class="checklist big">${list.map((s) => html`<li class="${s.done ? 'done' : ''}" data-k="s${s.key}"><span class="ck">${s.done ? icon('check') : ''}</span><div><b>${s.title}</b><span>${s.auto_done ? autoWhy(s.key) : s.done && s.done_at ? `Done ${relTime(s.done_at)}${s.done_by ? ` by ${s.done_by}` : ''}` : s.auto ? `${s.sub}. Ticks itself, or mark it done` : s.sub}</span></div>
+      ${s.auto_done ? html`<span class="muted small">Automatic</span>` : html`<button class="btn sm" data-act="hr-step" data-id="${p.id}" data-flow="${flow}" data-step="${s.key}" data-done="${s.done ? '' : '1'}">${s.done ? 'Undo' : 'Mark done'}</button>`}</li>`)}</ul></div></section>`;
 }
+
+const AUTO_WHY = { account: 'They can sign in', app: 'Agreed in the desktop app', contract: 'A contract is in their documents', bank: 'Their bank details are saved', cnic: 'A CNIC copy is in their documents', deactivate: 'Their account is deactivated' };
+const autoWhy = (k) => AUTO_WHY[k] || 'Done';
 
 // ---------- what is waiting on HR (HR's home) ----------
 const KIND_IC = { payroll: ['wallet', 'good'], expenses: ['receipt', 'blue'], advance: ['bank', 'leave'], no_pay: ['wallet', 'bad'], no_bank: ['bank', 'bad'], joining: ['users', 'warn'], leaving: ['users', 'warn'], timeoff: ['sun', 'idle'] };
