@@ -1,0 +1,17 @@
+/* The menu bar / tray panel in night glass: see-through over the blurred desktop on a Mac. */
+:root { color-scheme: dark; --bg: transparent; --bg-2: rgba(255,255,255,.04); --ink: #F2EFFF; --muted: #ABA4CE; --line: rgba(255,255,255,.1); --blue: #C9BBFF; --hx: transparent; --hx-muted: #BDB5DE; --hx-soft: rgba(255,255,255,.07); --hx-soft2: rgba(255,255,255,.11); --hx-edge: rgba(255,255,255,.14); }
+.card { background: linear-gradient(160deg, rgba(44,32,92,.62), rgba(20,14,44,.55)); border: 1px solid rgba(255,255,255,.16); border-radius: 14px; box-shadow: inset 0 1px 0 rgba(255,255,255,.14); }
+html.solid .card { background: linear-gradient(160deg, #2A1F5C, #150F30); }
+.ph-t b { font-family: Instrument, -apple-system, system-ui, sans-serif; font-weight: 650; font-size: 32px; }
+.d-now { fill: #1A1238; }
+.tsel { background: rgba(255,255,255,.08); }
+.hb.go { background: #1F8358; border-color: #2E9E6B; box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 8px 20px -10px rgba(46,158,107,.9); }
+.hb.danger { background: rgba(224,96,47,.14); border-color: rgba(224,96,47,.4); color: #FFB59A; }
+.stats { margin: 0 14px 12px; gap: 6px; }
+.stats > div { border-radius: 11px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); padding: 8px 10px; }
+.stats > div + div { border-left: 1px solid rgba(255,255,255,.12); }
+.stats span { color: #A69ECB; order: -1; font-size: 12px; }
+.pf { flex-direction: column; align-items: stretch; gap: 0; padding: 6px; background: transparent; }
+.lnk { text-align: left; color: #F2EFFF; font-weight: 500; font-size: 13.5px; padding: 6px 8px; border-radius: 7px; }
+.lnk:hover { background: rgba(255,255,255,.1); }
+.lnk.quiet { margin: 4px 0 0; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.1); border-radius: 0 0 7px 7px; color: #F2EFFF; font-weight: 500; }

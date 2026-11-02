@@ -1,6 +1,6 @@
 // The end-of-shift check-in: what I did, what's next, anything in my way. The hours come from the
 // timer, so nobody types them. It posts in #check-ins, and managers see everyone's on one page.
-import { html, raw, esc, dur, plural, dayLong, initials, avColor, hhmmText } from '../util.js';
+import { html, raw, esc, dur, plural, dayLong, initials, avColor, hhmmText, dayShort } from '../util.js';
 import { get, post, put, qs } from '../api.js';
 import { S, actions, toast, errMsg } from '../ui.js';
 import { dayNav, companyToday } from '../parts.js';
@@ -41,8 +41,12 @@ export const checkinPage = {
     const preview = html`<section class="panel"><header><h2>What your team sees</h2></header><div class="body">
       <div class="ci-card" id="ci-prev">${cardInner({ user: { ...me, title: S.me.title }, did: ex ? ex.did : '', next: ex ? ex.next : '', blockers: ex ? ex.blockers : '', mood, tracked_secs: d.worked_secs, created_at: ex ? ex.created_at : new Date().toISOString() }, true)}</div>
       <p class="hint">Posted in #check-ins and on your managers’ check-ins page. Never your screenshots or activity.</p></div></section>`;
+    const MOODL = { good: 'Smooth', ok: 'Busy', rough: 'Rough', smooth: 'Smooth', busy: 'Busy' };
+    const recent = html`<section class="panel ci-recent"><header><h2>Your last check-ins</h2></header><div class="body">${(d.recent || []).length
+      ? html`<ul class="ci-rl">${d.recent.map((r) => html`<li data-k="r${r.day}"><b>${dayShort(r.day)}</b><span>${(r.did || '').split('\n')[0] || 'No notes'}</span>${r.mood ? html`<span class="chip">${MOODL[r.mood] || r.mood}</span>` : ''}</li>`)}</ul>`
+      : html`<p class="muted">Your earlier check-ins show here, so you can see what you said you’d do next.</p>`}</div></section>`;
     return html`<div class="page-h"><div><h1>${ex ? 'Your check-in' : 'Wrap up your shift'}</h1><p class="sub">${ex ? 'Posted. You can still change it tonight; the chat keeps the first one.' : 'Two minutes, once a shift. It replaces the WhatsApp status message.'}</p></div></div>
-      <div class="cols ci-cols"><div>${form}</div><div>${hours}${preview}</div></div>`;
+      <div class="cols ci-cols"><div>${form}</div><div>${hours}${preview}${recent}</div></div>`;
   },
   after() { wirePreview(); },
 };

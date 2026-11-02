@@ -126,12 +126,12 @@ function showLogin(msg) {
   teardown();
   app.innerHTML = `<div class="login-split">
     <section class="login-art" aria-hidden="true">
-      <div class="brand login-brand" style="padding:0"><span class="mark">${HELM}</span><div><b class="wordmark">staffwarden</b><span>Amplify Media Technologies</span></div></div>
+      <div class="brand login-brand" style="padding:0"><span class="mark">${HELM}</span><div><b class="wordmark">Staffwarden</b><span>Amplify Media Technologies</span></div></div>
       <div class="login-owl"><div class="login-owl-halo">${owl('live')}</div><p class="login-tag">Keeping watch through the night shift.</p></div>
       <p>${CREDIT}. Time is tracked only while you choose to, and private windows never leave your computer.</p>
     </section>
     <section class="login-side"><div class="login">
-      <div class="brand login-brand login-brand-sm" style="padding:0"><span class="mark">${HELM}</span><div><b class="wordmark">staffwarden</b><span>Amplify Media Technologies</span></div></div>
+      <div class="brand login-brand login-brand-sm" style="padding:0"><span class="mark">${HELM}</span><div><b class="wordmark">Staffwarden</b><span>Amplify Media Technologies</span></div></div>
       <h1>Sign in</h1><p class="muted">Use the email and password you were given.</p>
       <form id="login" class="mt" novalidate>
         <div class="field"><label class="f" for="em">Email</label><input id="em" name="email" type="email" autocomplete="username" required autofocus></div>
@@ -176,12 +176,34 @@ setNewBuildHandler(showUpdateNote);
 setUnauthorizedHandler(() => { setToken(null); S.me = null; showLogin('Your session ended. Please sign in again.'); });
 
 // ---------------- shell
+let navOpen = {};
+try { navOpen = JSON.parse(localStorage.getItem('sw-nav-open') || '{}') || {}; } catch { navOpen = {}; }
+actions['nav-g'] = (el) => {
+  const g = el.dataset.g, box = el.closest('.nav-g'), open = box.classList.contains('shut');
+  navOpen[g] = open;
+  try { localStorage.setItem('sw-nav-open', JSON.stringify(navOpen)); } catch { /* private window */ }
+  if (navEl) morph(navEl, navHtml());
+};
 function navHtml() {
   const { name: raw } = parseHash();
   const name = raw === 'project' ? 'projects' : /^dev-/.test(raw) ? 'dev' : raw;   // one project highlights Projects; every developer page highlights Developer
   const link = ([r, label, ic]) => `<a class="nav" data-ic="${ic}" href="#/${r}" ${(name === 'hr-import' ? 'hr' : name || '') === r ? 'aria-current="page"' : ''} data-k="n${r}">${icon(ic)}<span>${esc(label)}</span>${r === 'timeoff' && isMgr() && pendingBadge ? `<span class="badge" aria-label="${pendingBadge} waiting">${pendingBadge}</span>` : ''}${r === 'tasks' && taskBadge ? `<span class="badge" aria-label="${taskBadge} need attention">${taskBadge}</span>` : ''}${r === 'requests' && reqBadge ? `<span class="badge" aria-label="${reqBadge} waiting">${reqBadge}</span>` : ''}${r === 'chat' && chatBadge ? `<span class="badge${chatMention ? '' : ' soft'}" aria-label="${chatBadge} unread">${chatBadge > 99 ? '99+' : chatBadge}</span>` : ''}${r === 'inbox' && inboxBadge ? `<span class="badge${inboxLate ? '' : ' soft'}" aria-label="${inboxBadge} waiting">${inboxBadge}</span>` : ''}</a>`;
   // grouped like the work: what is happening today, the work itself, time, and running the company
-  const grp = (t, list) => `<div class="nav-g"><div class="nav-h">${t}</div>${list.map(link).join('')}</div>`;
+  // groups fold away so the menu fits on one screen: Today and the group you are in stay open, the rest
+  // show as one row with their count and any badges; you can open or close any of them
+  const GI = { Today: 'dash', Work: 'folder', Time: 'clock', HR: 'wallet', Money: 'wallet', Manage: 'gear', You: 'user', Build: 'code' };
+  const routeOf = (n) => (n[0] === '' ? '' : n[0]);
+  const here = name === 'hr-import' ? 'hr' : name || '';
+  const grp = (t, list) => {
+    if (!list.length) return '';
+    const mine = list.some((n) => routeOf(n) === here);
+    const pref = navOpen[t];
+    const open = t === 'Today' || (pref === undefined ? mine : pref || mine);
+    const items = list.map(link).join('');
+    const bad = (items.match(/class="badge[^"]*"[^>]*>(\d+)/g) || []).reduce((a, m) => a + Number(m.replace(/.*>/, '')), 0);
+    return `<div class="nav-g${open ? '' : ' shut'}" data-g="${t}">${t === 'Today' ? `<div class="nav-h">${t}</div>`
+      : `<button type="button" class="nav-h nav-ht" data-act="nav-g" data-g="${t}" aria-expanded="${open}">${icon(GI[t] || 'folder')}<span class="nav-ht-t">${t}</span>${!open && bad ? `<span class="badge">${bad}</span>` : ''}<span class="nav-ht-n">${open ? '' : list.length + ' pages'}</span><svg class="ic nav-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>`}${items}</div>`;
+  };
   const pick = (nav, keys) => keys.map((k) => nav.find((n) => n[0] === k)).filter(Boolean);
   const payNav = ['pay', 'Pay', 'wallet'];
   if (isMgr()) {
@@ -196,9 +218,11 @@ function navHtml() {
 function buildShell() {
   const u = S.me;
   app.innerHTML = `<a class="skip" href="#view">Skip to content</a><div class="shell">
-    <nav class="rail" aria-label="Main"><div class="brand"><span class="mark">${owl('watch', 'Staffwarden')}</span><div><b class="wordmark">staffwarden</b><span>${esc(S.settings.org_name)}</span></div></div>
+    <nav class="rail" aria-label="Main"><div class="brand"><span class="mark">${owl('watch', 'Staffwarden')}</span><div><b class="wordmark">Staffwarden</b><span>${esc(S.settings.org_name)}</span></div></div>
+      <button type="button" class="rail-search" data-act="jump" aria-label="Search or jump to a page (Ctrl+K)">${icon('search')}<span>Search or jump to</span><kbd>${/Mac|iP/.test(navigator.platform) ? '⌘K' : 'Ctrl K'}</kbd></button>
       <div id="nav" style="display:flex;flex-direction:column;gap:2px"></div>
       <p class="credit rail-credit">${CREDIT}</p>
+      <a class="rail-clock" id="clock" href="#/me" hidden><i></i><span class="rc-t"></span><b class="rc-v num"></b></a>
       <div class="who"><a href="#/profile" class="me-link" id="melink" aria-label="Your profile: settings, sign-ins and the desktop app"><span class="avatar" style="background:${avColor(u.id)}">${esc(initials(u.name))}</span><span class="me-txt"><span class="nm">${esc(u.name)}</span><span class="rl me-cta">Open profile</span></span><svg class="me-chev" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
       <button class="btn icon" data-act="logout" aria-label="Sign out" title="Sign out">${icon('out').toString()}</button></div></nav>
     <main class="main" id="main"><div class="topstrip"><div class="annbar" id="annbar" role="status" hidden></div><span class="livepill" id="pill" role="status"><i></i><span id="pilltxt">Connecting…</span></span>
@@ -206,6 +230,7 @@ function buildShell() {
   view = document.getElementById('view');
   navEl = document.getElementById('nav');
   morph(navEl, navHtml());
+  clockAt = 0; refreshClock();
 }
 // on a phone the menu is a strip that scrolls sideways: the page you're on is always in it
 function navInView(strip, item) {
@@ -342,10 +367,57 @@ async function chatCount() {
   try { const r = await get('/api/team/unread'); if (r.unread !== chatBadge || r.mentions !== chatMention) { chatBadge = r.unread; chatMention = r.mentions; updateNav(); } } catch { /* badge is optional */ }
 }
 S.chatBadge = chatCount;
+
+// "On the clock" in the menu: your own timer, from the desktop app
+let clockData = null, clockAt = 0;
+async function refreshClock() {
+  if (!S.me || S.me.kind === 'client' || Date.now() - clockAt < 5000) return;
+  clockAt = Date.now();
+  try { clockData = await get('/api/me/clock'); clockData.at = Date.now(); } catch { return; }
+  paintClock();
+}
+function paintClock() {
+  const el = document.getElementById('clock');
+  if (!el || !clockData) return;
+  const c = clockData, on = c.tracks && (c.state === 'working' || c.state === 'idle' || c.state === 'break');
+  el.hidden = !on;
+  if (!on) return;
+  const secs = c.worked_secs + (c.state === 'break' ? 0 : Math.round((Date.now() - c.at) / 1000));
+  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
+  const start = c.first_start ? new Date(c.first_start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).replace(':00', '') : '';
+  el.className = 'rail-clock' + (c.state === 'break' ? ' brk' : '');
+  el.querySelector('.rc-t').innerHTML = c.state === 'break' ? '<b>On a break</b>' : `<b>On the clock</b>${start ? ' since ' + esc(start) : ''}`;
+  el.querySelector('.rc-v').textContent = `${h}h ${String(m).padStart(2, '0')}m`;
+}
+setInterval(paintClock, 30000);
+
+// Search or jump to: every page in your menu, filtered as you type
+actions.jump = () => {
+  if (document.querySelector('.jump')) return;
+  const pages = [...document.querySelectorAll('#nav a.nav')].map((a) => ({ href: a.getAttribute('href'), label: a.textContent.trim().replace(/\d+$/, ''), ic: a.dataset.ic }));
+  const box = document.createElement('div');
+  box.className = 'scrim top jump';
+  box.innerHTML = `<div class="jump-p" role="dialog" aria-label="Jump to a page"><label class="jump-f">${icon('search')}<input type="text" placeholder="Jump to a page" aria-label="Jump to a page" autocomplete="off"></label><ul class="jump-l"></ul></div>`;
+  document.body.appendChild(box);
+  const input = box.querySelector('input'), list = box.querySelector('.jump-l');
+  let sel = 0, shown = pages;
+  const paint = () => { list.innerHTML = shown.map((p, i) => `<li><a href="${esc(p.href)}" class="${i === sel ? 'on' : ''}">${icon(p.ic)}<span>${esc(p.label)}</span></a></li>`).join('') || '<li class="jump-none">No page with that name</li>'; };
+  const close = () => box.remove();
+  input.addEventListener('input', () => { const q = input.value.trim().toLowerCase(); shown = pages.filter((p) => p.label.toLowerCase().includes(q)); sel = 0; paint(); });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { sel = Math.min(sel + 1, shown.length - 1); paint(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { sel = Math.max(sel - 1, 0); paint(); e.preventDefault(); }
+    else if (e.key === 'Enter' && shown[sel]) { location.hash = shown[sel].href.slice(1); close(); }
+    else if (e.key === 'Escape') close();
+  });
+  box.addEventListener('click', (e) => { if (e.target === box || e.target.closest('a')) close(); });
+  paint(); input.focus();
+};
+document.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && S.me && S.me.kind !== 'client') { e.preventDefault(); actions.jump(); } });
 async function refreshBadge() {
   if (Date.now() - badgeAt < 10000) return;
   badgeAt = Date.now();
-  chatCount();
+  chatCount(); clockAt = 0; refreshClock();
   try {
     const t = await get('/api/tasks/summary');
     const n = (t.overdue || 0) + (t.to_review || 0);   // my overdue work, plus work waiting for my review
@@ -391,6 +463,7 @@ async function onEvent(ev) {
   if (ev.type === 'users') invalidatePeople();
   if (ev.type === 'users' && ev.user_id === S.me.id) { try { S.me = await get('/api/me'); } catch { /* keep old */ } }
   if (ev.type === 'timeoff' || ev.type === 'tasks' || ev.type === 'requests') badgeAt = 0;
+  if ((ev.type === 'timer' || ev.type === 'pause') && S.me && ev.user_id === S.me.id) { clockAt = 0; refreshClock(); }
   schedule();
 }
 
@@ -424,6 +497,9 @@ function teardown() {
 }
 
 async function boot() {
+  // someone new (from an ad or a link) arriving at the plain address sees what Staffwarden is first;
+  // the desktop app, links into the app and "Sign in" (#signin) go straight to signing in
+  if (!getToken() && !location.hash && location.pathname === '/' && !/Electron|Staffwarden/i.test(navigator.userAgent)) { location.replace('/welcome'); return; }
   if (!getToken()) return showLogin();
   // "See it as the client" opens here in its own tab, and stays a preview in that tab
   const pv = /^#\/client-view\?cu=(\d+)/.exec(location.hash);

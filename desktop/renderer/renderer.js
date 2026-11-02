@@ -1,4 +1,6 @@
 'use strict';
+// night glass: a Mac window is see-through (vibrancy); Windows and Linux get a solid night background
+document.documentElement.classList.add(/Mac/.test(navigator.platform) ? 'mac' : 'solid');
 // Sandboxed UI. Only talks to the main process through window.tracker (see preload.js).
 const root = document.getElementById('root');
 const API = window.tracker;
@@ -77,7 +79,7 @@ function toast(msg) {
 // Warden Owl, the Staffwarden mark (the same drawing as the website's)
 const HELM = '<svg class="helm owl" viewBox="0 0 64 64" aria-hidden="true"><path d="M13 42c0-14 8-22 19-22s19 8 19 22c0 13-8 20-19 20s-19-7-19-20z" fill="#8C78E8"/><path d="M24 50c2.5 2 5 3 8 3s5.5-1 8-3M26 55.5c2 1.3 4 2 6 2s4-.7 6-2" stroke="#C3B3FF" stroke-width="2.2" stroke-linecap="round" fill="none"/><circle cx="24.5" cy="37" r="8.5" fill="#E9E6F5"/><circle cx="39.5" cy="37" r="8.5" fill="#E9E6F5"/><circle cx="24.5" cy="37" r="4.2" fill="#1A1238"/><circle cx="39.5" cy="37" r="4.2" fill="#1A1238"/><circle cx="26" cy="35.5" r="1.3" fill="#fff"/><circle cx="41" cy="35.5" r="1.3" fill="#fff"/><path d="M29.5 43h5L32 47.5z" fill="#F7B544"/><path d="M13 30c0-12 8-20 19-20s19 8 19 20z" fill="#4A37A8"/><rect x="14" y="27" width="36" height="4" rx="1.5" fill="#35267F"/><path d="M13 30.5h38c-2 3-8.5 4-19 4s-17-1-19-4z" fill="#241A5C"/><circle cx="32" cy="18.5" r="4.4" fill="#C3B3FF"/><circle cx="32" cy="17.6" r="1.3" fill="#4A37A8"/><path d="M31.2 18.4h1.6l.5 2.8h-2.6z" fill="#4A37A8"/></svg>';
 const CREDIT = 'Built entirely in-house by Amplify Media Technologies';
-function brand() { const m = el('div', { class: 'mark' }); m.innerHTML = HELM; return el('div', { class: 'brand' }, m, el('h1', { class: 'wordmark' }, 'staffwarden')); }
+function brand() { const m = el('div', { class: 'mark' }); m.innerHTML = HELM; return el('div', { class: 'brand' }, m, el('h1', { class: 'wordmark' }, 'Staffwarden')); }
 const credit = () => el('div', { class: 'credit' }, el('p', {}, CREDIT + '.'),
   el('p', { class: 'verline' }, el('span', { class: 'ver' }, upd && upd.current ? `Version ${upd.current}` : ''), ' · ',
     el('button', { class: 'link small chk', onclick: (e) => checkNow(e.currentTarget) }, 'Check for updates')));

@@ -73,7 +73,8 @@ export default {
       <section class="panel"><header><h2>This tax year</h2><span class="muted small">${periodLabel(y.from)} to ${periodLabel(y.to)}</span></header><div class="body"><dl class="kv tight">
         <dt>Gross pay</dt><dd class="num r">${money(y.gross)}</dd><dt>Income tax</dt><dd class="num r">${money(y.tax)}</dd><dt>Deductions</dt><dd class="num r">${money(y.deductions)}</dd><dt>Net pay</dt><dd class="num r">${money(y.net)}</dd></dl>
         <p class="small muted mt">${plural(y.months, 'month')} approved so far.</p></div></section>
-      <section class="panel flush"><header><h2>Payslips</h2></header><div class="body"><ul class="blist">${me.slips.map((s) => html`<li class="clickable" data-k="p${s.id}" data-act="go" data-href="#/pay?id=${s.id}" tabindex="0" ${s.id === slip.id ? raw('aria-current="true"') : ''}><span class="what">${s.name}</span><span class="len num">${money(s.net, s.currency)}</span><span class="when">${STATUS[s.status][1]}${s.open_questions ? ' · question waiting' : ''}</span></li>`)}</ul></div></section></div>`;
+      <section class="panel flush"><header><h2>Payslips</h2></header><div class="body"><ul class="blist">${me.slips.map((s) => html`<li class="clickable" data-k="p${s.id}" data-act="go" data-href="#/pay?id=${s.id}" tabindex="0" ${s.id === slip.id ? raw('aria-current="true"') : ''}><span class="what">${s.name}</span><span class="len num">${money(s.net, s.currency)}</span><span class="when">${STATUS[s.status][1]}${s.open_questions ? ' · question waiting' : ''}</span></li>`)}</ul></div></section>
+      <div class="pay-tiles"><a class="pay-tile" href="#/pay?tab=expenses">${icon('receipt')}<b>Expenses</b><span>Send a receipt; it’s paid with your salary</span></a><a class="pay-tile" href="#/pay?tab=advance">${icon('wallet')}<b>Advance</b><span>Ask for part of your pay early</span></a></div></div>`;
     return html`${head}<div class="cols">${main}${side}</div>`;
   },
 };

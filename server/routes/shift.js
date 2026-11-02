@@ -67,7 +67,8 @@ module.exports = (ctx) => {
     const u = userRow(user.id), day = calc().todayOf(u);
     const h = calc().hoursOn(u, day);
     const c = db.prepare('SELECT * FROM checkins WHERE user_id = ? AND day = ?').get(user.id, day);
-    return { day, shift: { start: h.shift_start, end: h.shift_end }, ...hoursFor(u, day), suggestions: suggestions(u, day), existing: c ? ciOut(c, u) : null };
+    const recent = db.prepare('SELECT day, did, mood FROM checkins WHERE user_id = ? AND day < ? ORDER BY day DESC LIMIT 4').all(user.id, day);
+    return { day, shift: { start: h.shift_start, end: h.shift_end }, ...hoursFor(u, day), suggestions: suggestions(u, day), existing: c ? ciOut(c, u) : null, recent };
   });
   route('PUT', '/api/checkins/mine', ({ user, body }) => {
     staffOnly(user);

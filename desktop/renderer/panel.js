@@ -1,4 +1,6 @@
 'use strict';
+// night glass: a Mac window is see-through (vibrancy); Windows and Linux get a solid night background
+document.documentElement.classList.add(/Mac/.test(navigator.platform) ? 'mac' : 'solid');
 // The menu bar / tray panel: the shift dial, today at a glance and the timer controls. Uses the same safe
 // bridge as the main window (window.tracker), so it can do nothing the main window cannot.
 const API = window.tracker;
@@ -160,7 +162,7 @@ $('chk').addEventListener('click', async () => {
   b.disabled = false;
   b.textContent = !r || r.answer === 'offline' ? 'Could not check' : r.answer === 'available' ? `${r.latest} available` : r.answer === 'unsupported' ? 'Installed app only' : 'Up to date';
   if (r && r.answer === 'available') { info = await API.panelInfo(); key = ''; render(); }
-  setTimeout(() => { b.textContent = 'Updates'; }, 4000);
+  setTimeout(() => { b.textContent = 'Check for updates'; }, 4000);
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (view !== 'main') { view = 'main'; key = ''; render(); } else window.close(); } });
 API.onStatus((s) => { st = s; render(); });

@@ -503,7 +503,7 @@ function createApp(opts = {}) {
   function serveStatic(req, res, pathname) {
     // a broken address (a bot trying "/%E0%A4%A" and the like) is a plain "not found", not a server error
     let rel;
-    try { rel = decodeURIComponent(pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '')); } catch { res.writeHead(400, { 'Content-Type': 'text/plain', ...SEC_HEADERS }); res.end('Bad address'); return; }
+    try { rel = decodeURIComponent(pathname === '/' ? 'index.html' : pathname === '/welcome' ? 'welcome.html' : pathname.replace(/^\/+/, '')); } catch { res.writeHead(400, { 'Content-Type': 'text/plain', ...SEC_HEADERS }); res.end('Bad address'); return; }
     let file = path.normalize(path.join(cfg.webDir, rel));
     const inside = file.startsWith(path.normalize(cfg.webDir));
     if (!inside || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {

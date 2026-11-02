@@ -62,6 +62,13 @@ module.exports = (ctx) => {
     audit(user, 'logout.all', user.id, `${n} session${n === 1 ? '' : 's'} ended`);
     return { ok: true, ended: n };
   });
+  // the sidebar's "On the clock" pill: your own timer right now, and what you've worked today
+  route('GET', '/api/me/clock', ({ user }) => {
+    if (user.kind === 'client' || !user.tracks_time) return { tracks: false };
+    const lv = ctx.calc.liveStates([user]).get(user.id) || { state: 'offline' };
+    const m = ctx.calc.computeDay(user, ctx.calc.todayOf(user));
+    return { tracks: true, state: lv.state, since: lv.since || null, first_start: m.first_start, worked_secs: m.worked_secs };
+  });
   route('GET', '/api/me/sessions', ({ user, req }) => {
     const mine = tokenHash(bearer(req));
     return db.prepare('SELECT token, created_at, last_used_at FROM sessions WHERE user_id = ? ORDER BY COALESCE(last_used_at, created_at) DESC').all(user.id)

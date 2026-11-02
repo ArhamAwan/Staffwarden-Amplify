@@ -94,7 +94,12 @@ export default {
       <ul>${s.columns.map((c) => html`<li><b>${COLS[c]}</b>${c === 'hours' ? ': time tracked with the desktop app, breaks not included' : c === 'activity' ? ': how much of that time had keyboard or mouse use' : c === 'tasks' ? ': tasks finished in this period' : `: ${d.points.approved} for an approved task, ${d.points.on_time} more if on time, ${d.points.checkin} for a check-in, ${d.points.boost} for boosting back`}</li>`)}</ul>
       <p class="muted small">Never shown: screenshots, what was on screen, or why someone took a break.</p>
       ${d.can_change && d.not_tracked && d.not_tracked.length ? html`<p class="muted small lb-nt">Not on it, because they don’t track time: ${d.not_tracked.join(', ')}. To add someone, tick “Tracks their time” when editing them on the People page.</p>` : ''}</div></section>`;
-    return html`${head}<div class="cols lb-cols">${table}<div class="lb-side">${you}${teams}${what}</div></div>`;
+    const total = d.rows.reduce((a, r) => a + (r.hours_secs || 0), 0), lead = ranked[0];
+    const tiles = html`<div class="lb-tiles"><div class="lb-tile"><span>Team ${d.period === 'week' ? 'this week' : d.period === 'month' ? 'this month' : 'this year'}</span><b class="num">${total ? dur(total) : '–'}</b><small>${plural(d.rows.length, 'person', 'people')}</small></div>
+      <div class="lb-tile warm"><span>Starts again</span><b>${d.period === 'week' ? 'Monday' : d.period === 'month' ? 'The 1st' : 'January'}</b><small>${d.period === 'week' ? 'Every week' : d.period === 'month' ? 'Every month' : 'Every year'}</small></div>
+      <div class="lb-tile pink"><span>On the board</span><b class="num">${ranked.length}</b><small>${unranked.length ? `${unranked.length} haven’t worked yet` : 'Everyone has worked'}</small></div>
+      <div class="lb-tile alt"><span>Out in front</span><b>${lead ? lead.name.split(' ')[0] : '–'}</b><small>${lead ? big(lead, by) + (unit(by) || '') : 'Nobody yet'}</small></div></div>`;
+    return html`${head}<div class="cols lb-cols">${table}<div class="lb-side">${you}${tiles}${teams}${what}</div></div>`;
   },
 };
 

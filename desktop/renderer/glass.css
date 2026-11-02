@@ -1,0 +1,48 @@
+/* Night glass for the desktop app, the same look as the website. Always dark. On a Mac the window
+   itself is see-through (vibrancy), so everything here is translucent glass over the blurred desktop. */
+@font-face { font-family: "Warden Serif"; src: url("fonts/serif-italic.woff2") format("woff2"); font-style: italic; font-weight: 400; font-display: swap; }
+:root {
+  color-scheme: dark;
+  --page: #0E0A22; --card: rgba(255,255,255,.05); --ink: #F2EFFF; --ink-2: #D9D3F2; --muted: #ABA4CE; --line: rgba(255,255,255,.1);
+  --blue: #6B55D6; --blue-dark: #7A64E6; --blue-wash: rgba(124,100,240,.22);
+  --work: #2E9E6B; --work-ink: #7BE3B0; --work-wash: rgba(46,170,120,.16); --brk: #F7B544; --brk-ink: #FFCB66; --brk-wash: rgba(247,170,60,.16);
+  --idle-wash: rgba(255,255,255,.07); --danger: #FF8A73; --danger-wash: rgba(224,70,50,.16);
+  --hx: transparent; --hx-ink: #F2EFFF; --hx-muted: #BDB5DE; --hx-soft: rgba(255,255,255,.07); --hx-soft2: rgba(255,255,255,.11); --hx-edge: rgba(255,255,255,.13);
+  --glass: linear-gradient(155deg, rgba(255,255,255,.09), rgba(255,255,255,.025) 55%, rgba(255,255,255,.04));
+}
+html { background: transparent; }
+body { background: linear-gradient(170deg, rgba(34,24,76,.72), rgba(12,8,30,.82)) !important; color: var(--ink); }
+html.solid body { background: radial-gradient(120% 70% at 0% 0%, rgba(124,92,255,.32), transparent 60%), radial-gradient(90% 60% at 100% 100%, rgba(224,85,155,.2), transparent 60%), #0E0A22 !important; }
+h1, h2 { font-family: Instrument, -apple-system, system-ui, sans-serif; }
+.topbar h1.wordmark, .wordmark { font-family: "Warden Serif", Georgia, serif !important; font-style: italic; font-weight: 400 !important; font-size: 21px !important; text-transform: none; letter-spacing: 0; }
+.topbar .mark, .mark { background: rgba(255,255,255,.08) !important; box-shadow: inset 0 0 0 1px rgba(195,179,255,.25) !important; border-radius: 10px; }
+
+/* the big card with the dial: glass, its glow coloured by what you're doing */
+.hero { background: var(--glass) !important; border: 1px solid rgba(255,255,255,.12) !important; box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 24px 50px -30px rgba(0,0,0,.7) !important; }
+.hero .glow { opacity: .8; }
+.d-now { fill: #1A1238; }
+.center .digits { font-size: 40px; letter-spacing: -.02em; }
+
+/* every other surface */
+.card, .tile, .trow, .taskbtn, .note.soft, .perm, .notice { background: var(--glass) !important; border: 1px solid rgba(255,255,255,.12) !important; border-radius: 14px; }
+.tile b { font-family: Instrument, -apple-system, system-ui, sans-serif; font-weight: 650; font-size: 22px; color: var(--ink); }
+.tile.w b { color: var(--work-ink); } .tile.b b { color: var(--brk-ink); }
+.dialog, .wz, #root > .wz, .sheet { background: linear-gradient(160deg, rgba(44,32,92,.96), rgba(20,14,44,.95)) !important; color: var(--ink); border: 1px solid rgba(195,179,255,.22) !important; }
+.scrim { background: rgba(6,4,16,.45) !important; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+input, select { background: rgba(255,255,255,.07) !important; border-color: rgba(255,255,255,.16) !important; color: var(--ink) !important; }
+input::placeholder { color: #8A83AE; }
+button.ghost, .hb.ghost, button.mini { background: rgba(255,255,255,.07) !important; border-color: rgba(255,255,255,.14) !important; color: var(--ink) !important; }
+button:not(.ghost):not(.link):not(.lnk):not(.hb):not(.mini):not(.taskbtn) { background: var(--blue); border-color: #8C78E8; }
+.hb.go { background: #1F8358 !important; border-color: #2E9E6B !important; box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 10px 22px -12px rgba(46,158,107,.9) !important; }
+.hb.stop, .hb.danger { background: rgba(224,96,47,.14) !important; border-color: rgba(224,96,47,.4) !important; color: #FFB59A !important; }
+.link, button.link { color: #C9BBFF; background: transparent; }
+.link.brass { color: #FFCB66; }
+.muted, .credit { color: var(--muted); }
+.toast { background: linear-gradient(160deg, rgba(44,32,92,.96), rgba(20,14,44,.95)); border: 1px solid rgba(195,179,255,.22); }
+.reasons button { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.14); color: var(--ink); border-radius: 99px; }
+.reasons button[aria-pressed="true"], .reasons button.on { background: #F7B544; color: #1A1238; border-color: #FFCB66; }
+.startup input { accent-color: #8C78E8; }
+/* the Mac window has no title bar: the traffic lights sit over the top, and the top strip drags the window */
+html.mac main#root { padding-top: 40px; }
+html.mac body::before { content: ""; position: fixed; left: 0; right: 0; top: 0; height: 34px; -webkit-app-region: drag; z-index: 50; }
+html.mac button, html.mac a, html.mac input, html.mac select { -webkit-app-region: no-drag; }

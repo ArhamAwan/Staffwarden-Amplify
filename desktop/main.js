@@ -523,7 +523,9 @@ function createPanel() {
   panel = new BrowserWindow({
     width: PANEL_W, height: 460, show: false, frame: false, resizable: false, movable: false, minimizable: false, maximizable: false,
     fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, transparent: process.platform === 'darwin', hasShadow: true,
-    backgroundColor: process.platform === 'darwin' ? '#00000000' : '#FFFFFF', roundedCorners: true,
+    backgroundColor: process.platform === 'darwin' ? '#00000000' : '#150F30', roundedCorners: true,
+    // night glass: on a Mac the panel blurs whatever is behind it, like the system menus
+    ...(process.platform === 'darwin' ? { vibrancy: 'popover', visualEffectState: 'active' } : {}),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   if (process.platform === 'darwin') { try { panel.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch { /* older macOS */ } }
@@ -588,7 +590,9 @@ function panelInfo() {
 function showWin() { if (win) { win.show(); win.focus(); } }
 function createWindow() {
   win = new BrowserWindow({
-    width: 440, height: 860, minWidth: 400, minHeight: 640, show: true, title: 'Staffwarden', backgroundColor: nativeTheme.shouldUseDarkColors ? '#140E2C' : '#F6F5FB',
+    width: 440, height: 860, minWidth: 400, minHeight: 640, show: true, title: 'Staffwarden',
+    // night glass: on a Mac the window is see-through and blurs the desktop behind it; elsewhere a solid night background
+    ...(process.platform === 'darwin' ? { vibrancy: 'under-window', visualEffectState: 'followWindow', backgroundColor: '#00000000', titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 14 } } : { backgroundColor: '#0E0A22' }),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   win.setMenuBarVisibility(false);
