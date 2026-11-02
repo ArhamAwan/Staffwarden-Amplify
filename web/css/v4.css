@@ -1824,7 +1824,9 @@ body > #sysban.portal > b { flex: 0 1 auto; }
 
 /* date navigation: the date opens a calendar */
 .dn-pick { position: relative; display: inline-flex; }
-.datenav .dn-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 190px; padding: 7px 12px; border: 1px solid transparent; border-radius: var(--r-ctl); background: none; color: inherit; cursor: pointer; font: inherit; font-weight: 650; font-family: var(--display); }
-.datenav .dn-btn:hover { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.18); }
+.datenav .dn-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 200px; height: 38px; padding: 0 12px 0 14px; border: 1px solid rgba(255,255,255,.18); border-radius: var(--r-ctl); background: rgba(255,255,255,.07); color: inherit; cursor: pointer; font: inherit; font-weight: 650; font-family: var(--display); transition: background-color .15s, border-color .15s; }
+.datenav .dn-btn::after { content: ""; width: 7px; height: 7px; margin: -3px 0 0 4px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); opacity: .7; }
+.datenav .dn-btn:hover { background: rgba(255,255,255,.13); border-color: rgba(255,255,255,.3); }
+.datenav .dn-btn:focus-visible { outline: 2px solid var(--lilac); outline-offset: 2px; }
 .datenav .dn-btn .ic { width: 16px; height: 16px; opacity: .75; }
 .dn-date { position: absolute; left: 0; right: 0; bottom: 0; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
