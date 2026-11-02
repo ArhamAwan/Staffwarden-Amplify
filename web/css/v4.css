@@ -1811,3 +1811,10 @@ body > #sysban.portal > b { flex: 0 1 auto; }
 .w-more[open] > summary { display: none; }
 .w-more > .waiting > li:first-child { border-top: 1px solid var(--line-2); padding-top: 13px; }
 @media (max-width: 600px) { .wg-list { margin-left: 10px; } .waiting .wg-list li { grid-template-columns: minmax(0, 1fr) auto; } .wg-list li > span.small { display: none; } }
+/* HR home: the two columns end level, with no gap under the shorter one */
+.hr-home { align-items: stretch; }
+.hr-col-l, .hr-col-r { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.hr-col-l > .panel, .hr-col-r > .panel { margin: 0; }
+.hr-col-l > .panel:last-child, .hr-col-r > .panel:last-child { flex: 1; }
+.hr-col-l .mini-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 700px) { .hr-col-l .mini-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

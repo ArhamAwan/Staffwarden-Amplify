@@ -131,12 +131,14 @@ export function hrPanel(o) {
   const SHOWN = 5;
   const line = (r) => (r.group ? group(r) : item(r));
   return html`<div class="hr-home" data-k="hrhome">
-    <section class="panel"><header><h2>Waiting on you</h2><span class="muted small">${o.items.length ? `${plural(o.items.length, 'thing')}, most urgent first` : 'All caught up'}</span></header><div class="body">
+    <div class="hr-col-l"><section class="panel hr-wait"><header><h2>Waiting on you</h2><span class="muted small">${o.items.length ? `${plural(o.items.length, 'thing')}, most urgent first` : 'All caught up'}</span></header><div class="body">
       ${rows.length ? html`<ul class="waiting">${rows.slice(0, SHOWN).map(line)}</ul>${rows.length > SHOWN ? html`<details class="w-more"><summary>Show ${plural(rows.length - SHOWN, 'more')}</summary><ul class="waiting">${rows.slice(SHOWN).map(line)}</ul></details>` : ''}` : empty('Nothing waiting', 'Expense claims, advances, people joining or leaving and payroll show here when they need you.')}</div></section>
-    <div><section class="panel"><header><h2>Coming up</h2></header><div class="body">${o.soon.length ? html`<ul class="soon">${o.soon.map(soon)}</ul>` : empty('Nothing in the next 90 days', '')}</div></section>
       <section class="panel"><header><h2>People</h2><a href="#/hr">Everyone</a></header><div class="body"><div class="mini-stats">
         <div><span>People</span><b class="num">${o.stats.people}</b><small>${o.stats.monthly} with pay</small></div><div><span>On probation</span><b class="num">${o.stats.probation.length}</b><small>${o.stats.probation.slice(0, 2).map((n) => n.split(' ')[0]).join(', ') || 'Nobody'}</small></div>
-        <div><span>Joined this year</span><b class="num">${o.stats.joined_year}</b><small>${o.stats.joined_month} this month</small></div><div><span>Leaving</span><b class="num">${o.stats.leaving.length}</b><small>${o.stats.leaving.slice(0, 2).map((n) => n.split(' ')[0]).join(', ') || 'Nobody'}</small></div></div></div></section></div></div>`;
+        <div><span>Joined this year</span><b class="num">${o.stats.joined_year}</b><small>${o.stats.joined_month} this month</small></div><div><span>Leaving</span><b class="num">${o.stats.leaving.length}</b><small>${o.stats.leaving.slice(0, 2).map((n) => n.split(' ')[0]).join(', ') || 'Nobody'}</small></div></div></div></section>
+    </div>
+    <div class="hr-col-r"><section class="panel"><header><h2>Coming up</h2></header><div class="body">${o.soon.length ? html`<ul class="soon">${o.soon.map(soon)}</ul>` : empty('Nothing in the next 90 days', '')}</div></section></div>
+  </div>`;
 }
 
 // ---------- actions ----------
