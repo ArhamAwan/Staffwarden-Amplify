@@ -231,11 +231,11 @@ test('macOS 27: a pop-up inside the full-screen Notification Center window hides
     { app: 'Notification Center', title: 'Notification Center', x: 0, y: 0, w: 1470, h: 956, layer: 23 },
     { app: 'Visual Studio Code', title: 'app.js', x: 0, y: 33, w: 1470, h: 923 },
   ]);
-  assert.deepEqual([wins[0].x, wins[0].y, wins[0].w, wins[0].h], [1030, 0, 440, 574]);
+  assert.deepEqual([wins[0].x, wins[0].y, wins[0].w, wins[0].h], [1098, 0, 372, 240]);
   const d = decide([wins], buildMatcher());
   assert.equal(d.rects.length, 1);
-  assert.ok(d.rects[0].x <= 1030 && d.rects[0].x + d.rects[0].w >= 1470, 'covers the right edge');
-  assert.ok(d.rects[0].w < 500, 'not the whole screen');
+  assert.ok(d.rects[0].x <= 1098 && d.rects[0].x + d.rects[0].w >= 1470, 'covers the right edge');
+  assert.ok(d.rects[0].w <= 400 && d.rects[0].h <= 270, 'just the pop-up corner');
   assert.ok(d.matched.includes('notifications'));
   // an older macOS pop-up window, already pop-up sized, is kept as it is
   const old = notificationZones([{ app: 'Notification Center', title: '', x: 1100, y: 40, w: 360, h: 90 }]);
@@ -245,8 +245,8 @@ test('macOS 27: a pop-up inside the full-screen Notification Center window hides
 test('Windows 11: notification pop-ups have no window, so the corner above the clock is hidden', () => {
   const { windowsToastZone } = require('../src/privacy');
   // a 1920x1080 screen with the taskbar at the bottom (work area 1920x1020), as on the PC tested
-  assert.deepEqual(windowsToastZone({ x: 0, y: 0, width: 1920, height: 1020 }), { x: 1500, y: 560, w: 420, h: 460 });
+  assert.deepEqual(windowsToastZone({ x: 0, y: 0, width: 1920, height: 1020 }), { x: 1536, y: 760, w: 384, h: 260 });
   // a second screen to the left: still the main screen's corner
-  assert.deepEqual(windowsToastZone({ x: 0, y: 0, width: 1366, height: 728 }), { x: 946, y: 268, w: 420, h: 460 });
+  assert.deepEqual(windowsToastZone({ x: 0, y: 0, width: 1366, height: 728 }), { x: 982, y: 468, w: 384, h: 260 });
   assert.equal(windowsToastZone(null), null);
 });

@@ -262,11 +262,13 @@ JSON.stringify(arr.filter(function (w) { return w.kCGWindowBounds && (w.kCGWindo
 // whole screen, so its bounds don't say where the pop-up is. Pop-ups always stack from the top-right corner,
 // so that corner is what gets hidden (wide enough for a pop-up and its shadow, tall enough for a stack),
 // not the whole screen. A Notification Center window the size of a pop-up (older macOS) is hidden as it is.
-const NOTE_W = 440, NOTE_H_PART = 0.6, NOTE_H_MIN = 320;
+// a macOS pop-up is 344 points wide and 8 from the edge; a collapsed stack of them is about 160 tall
+const NOTE_W = 372, NOTE_H = 240;
 // Windows 11 (build 26100 and later) draws notification pop-ups without any window of their own: nothing in
 // the window list changes when one slides in, so it cannot be found. Pop-ups always appear in the corner
 // above the clock on the main screen, so that corner (room for a stack of two or three) is always hidden.
-const TOAST_W = 420, TOAST_H = 460;
+// a Windows 11 pop-up is 364 wide and 12 from the edge; one or two of them are about 230 tall
+const TOAST_W = 384, TOAST_H = 260;
 function windowsToastZone(workArea) {
   if (!workArea || !(workArea.width > 0) || !(workArea.height > 0)) return null;
   const w = Math.min(TOAST_W, workArea.width), h = Math.min(TOAST_H, workArea.height);
@@ -275,8 +277,7 @@ function windowsToastZone(workArea) {
 function notificationZones(wins) {
   return wins.map((w) => {
     if (!/^(notification ?cent(er|re)|usernotificationcenter)$/i.test(String(w.app || '')) || !(w.w > 900)) return w;
-    const h = Math.min(w.h, Math.max(NOTE_H_MIN, Math.round(w.h * NOTE_H_PART)));
-    return { ...w, x: w.x + w.w - NOTE_W, w: NOTE_W, h, zone: true };
+    return { ...w, x: w.x + w.w - NOTE_W, w: NOTE_W, h: Math.min(w.h, NOTE_H), zone: true };
   });
 }
 
