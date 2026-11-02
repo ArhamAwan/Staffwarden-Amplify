@@ -251,10 +251,25 @@ var opts = $.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElem
 var arr = ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo(opts, $.kCGNullWindowID)));
 // ordinary windows, plus notification pop-ups (drawn above everything by Notification Center)
 var NC = /^(notification ?cent(er|re)|usernotificationcenter)$/i;
-JSON.stringify(arr.filter(function (w) { return w.kCGWindowBounds && (w.kCGWindowLayer === 0 || (NC.test(w.kCGWindowOwnerName || '') && (w.kCGWindowAlpha == null || w.kCGWindowAlpha > 0.02) && w.kCGWindowBounds.Width > 40 && w.kCGWindowBounds.Width <= 900)); }).map(function (w) {
+// (macOS 27 draws every pop-up inside one Notification Center window the size of the screen, on layer 23;
+// the desktop widgets belong to Notification Center too, but sit below everything and show no messages)
+JSON.stringify(arr.filter(function (w) { return w.kCGWindowBounds && (w.kCGWindowLayer === 0 || (NC.test(w.kCGWindowOwnerName || '') && w.kCGWindowLayer > 0 && (w.kCGWindowAlpha == null || w.kCGWindowAlpha > 0.02) && w.kCGWindowBounds.Width > 40)); }).map(function (w) {
   var b = w.kCGWindowBounds;
-  return { app: w.kCGWindowOwnerName || '', title: w.kCGWindowName || '', x: b.X, y: b.Y, w: b.Width, h: b.Height, alpha: w.kCGWindowAlpha == null ? 0 : w.kCGWindowAlpha };
+  return { app: w.kCGWindowOwnerName || '', title: w.kCGWindowName || '', x: b.X, y: b.Y, w: b.Width, h: b.Height, alpha: w.kCGWindowAlpha == null ? 0 : w.kCGWindowAlpha, layer: w.kCGWindowLayer };
 }));`;
+
+// macOS 27 and later: notification pop-ups are drawn inside one Notification Center window that covers the
+// whole screen, so its bounds don't say where the pop-up is. Pop-ups always stack from the top-right corner,
+// so that corner is what gets hidden (wide enough for a pop-up and its shadow, tall enough for a stack),
+// not the whole screen. A Notification Center window the size of a pop-up (older macOS) is hidden as it is.
+const NOTE_W = 440, NOTE_H_PART = 0.6, NOTE_H_MIN = 320;
+function notificationZones(wins) {
+  return wins.map((w) => {
+    if (!/^(notification ?cent(er|re)|usernotificationcenter)$/i.test(String(w.app || '')) || !(w.w > 900)) return w;
+    const h = Math.min(w.h, Math.max(NOTE_H_MIN, Math.round(w.h * NOTE_H_PART)));
+    return { ...w, x: w.x + w.w - NOTE_W, w: NOTE_W, h, zone: true };
+  });
+}
 
 // Windows: visible, not minimised windows with the owning process name, in physical pixels.
 // Chrome does not put "Incognito" in GetWindowText (only a toolbar chip). The accessible window
@@ -337,7 +352,7 @@ foreach ($w in $wins) {
 async function listWindows(platform = process.platform, { selfNames = ['Workhelm'] } = {}) {
   if (platform === 'darwin') {
     const r = await run('osascript', ['-l', 'JavaScript', '-e', MAC_SCRIPT]);
-    return markFront(parseJsonWindows(r.stdout.trim() ? r.stdout : r.stderr), selfNames); // osascript may print a JXA result on either stream
+    return markFront(notificationZones(parseJsonWindows(r.stdout.trim() ? r.stdout : r.stderr)), selfNames); // osascript may print a JXA result on either stream
   }
   if (platform === 'win32') {
     const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', WIN_SCRIPT], 15000);
@@ -355,5 +370,5 @@ async function listWindows(platform = process.platform, { selfNames = ['Workhelm
 
 module.exports = {
   CATEGORIES, ALWAYS, PAD, COVER_FULL, buildMatcher, decide, coverage, normalizeTerms, isBlocked, blockedRects, toImageRects, fillBlack, toDipRect, subtract, visibleParts, solid,
-  markFront, parseJsonWindows, parseWmctrl, activeWindowFrom, currentDesktopFrom, listWindows,
+  markFront, notificationZones, parseJsonWindows, parseWmctrl, activeWindowFrom, currentDesktopFrom, listWindows,
 };

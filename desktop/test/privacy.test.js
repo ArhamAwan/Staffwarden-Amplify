@@ -223,3 +223,21 @@ test('notification pop-ups (WhatsApp messages can show in them) are always hidde
   assert.equal(decide([[{ ...win[0], cloak: true }]], m).rects.length, 0);
   assert.equal(m({ app: 'Google Chrome', title: 'Notification settings' }), null);
 });
+
+test('macOS 27: a pop-up inside the full-screen Notification Center window hides the top-right corner, not the screen', () => {
+  const { notificationZones, buildMatcher, decide } = require('../src/privacy');
+  // what a MacBook on macOS 27.2 reported while a WhatsApp pop-up was showing
+  const wins = notificationZones([
+    { app: 'Notification Center', title: 'Notification Center', x: 0, y: 0, w: 1470, h: 956, layer: 23 },
+    { app: 'Visual Studio Code', title: 'app.js', x: 0, y: 33, w: 1470, h: 923 },
+  ]);
+  assert.deepEqual([wins[0].x, wins[0].y, wins[0].w, wins[0].h], [1030, 0, 440, 574]);
+  const d = decide([wins], buildMatcher());
+  assert.equal(d.rects.length, 1);
+  assert.ok(d.rects[0].x <= 1030 && d.rects[0].x + d.rects[0].w >= 1470, 'covers the right edge');
+  assert.ok(d.rects[0].w < 500, 'not the whole screen');
+  assert.ok(d.matched.includes('notifications'));
+  // an older macOS pop-up window, already pop-up sized, is kept as it is
+  const old = notificationZones([{ app: 'Notification Center', title: '', x: 1100, y: 40, w: 360, h: 90 }]);
+  assert.deepEqual([old[0].x, old[0].w], [1100, 360]);
+});
