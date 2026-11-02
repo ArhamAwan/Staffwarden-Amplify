@@ -3,7 +3,7 @@
 // corrections, sends it for review, and the owner approves it (or HR, if the owner allows). Approving
 // locks it and sends every payslip; marking it paid records the bank transfer. A mistake found later is
 // fixed with a correction on the next month, so the record always shows what was paid.
-const { need, str, optStr, int } = require('../lib/http');
+const { need, str, optStr, int, isoDate } = require('../lib/http');
 
 module.exports = (ctx) => {
   const { db, cfg, route, emit, audit, isHR, needHR, nowIso, T, saveSetting } = ctx;
@@ -15,10 +15,16 @@ module.exports = (ctx) => {
     const u = db.prepare('SELECT id, name, title, active FROM users WHERE id = ?').get(s.user_id) || {};
     const qs = db.prepare('SELECT * FROM pay_questions WHERE payslip_id = ? ORDER BY id').all(s.id).map((q) => ({ ...q, answered_by_name: nameOf(q.answered_by) }));
     return { id: s.id, run_id: s.run_id, user_id: s.user_id, name: u.name, title: u.title || null, currency: s.currency, gross: s.gross, deductions: s.deductions, tax: s.tax, net: s.net,
-      lines: full ? JSON.parse(s.lines) : undefined, employer: JSON.parse(s.employer), facts: JSON.parse(s.facts), questions: qs, open_questions: qs.filter((q) => !q.answer).length, by_hand: !!s.by_hand };
+      lines: full ? JSON.parse(s.lines) : undefined, employer: JSON.parse(s.employer), facts: JSON.parse(s.facts), questions: qs, open_questions: qs.filter((q) => !q.answer).length, by_hand: !!s.by_hand,
+      paid_on: s.paid_on || null, paid_ref: full ? s.paid_ref || null : undefined, paid_by_name: full && s.paid_by ? nameOf(s.paid_by) : undefined };
   };
-  const runOut = (r) => ({ ...r, name: P().periodName(r.period), created_by_name: nameOf(r.created_by), submitted_by_name: nameOf(r.submitted_by), approved_by_name: nameOf(r.approved_by), paid_by_name: nameOf(r.paid_by), pay_day: payDay(r.period) });
-  const payDay = (period) => { const n = P().nextPeriod(period); const d = Math.min(Number(P().rules().pay_day) || 1, 28); return `${n}-${String(d).padStart(2, '0')}`; };
+  const runOut = (r) => ({ ...r, name: P().periodName(r.period), created_by_name: nameOf(r.created_by), submitted_by_name: nameOf(r.submitted_by), approved_by_name: nameOf(r.approved_by), paid_by_name: nameOf(r.paid_by), pay_day: payDay(r.period), pay_by: payBy(r.period),
+    paid_count: db.prepare('SELECT COUNT(*) n FROM payslips WHERE run_id = ? AND paid_on IS NOT NULL').get(r.id).n });
+  // people are paid on their own day in a window after the month: from pay_day to pay_by of the next month
+  const dayOf = (period, d) => `${P().nextPeriod(period)}-${String(Math.min(Math.max(Number(d) || 1, 1), 28)).padStart(2, '0')}`;
+  const payDay = (period) => dayOf(period, P().rules().pay_day || 1);
+  const payBy = (period) => { const R = P().rules(); return dayOf(period, Math.max(Number(R.pay_by) || 10, Number(R.pay_day) || 1)); };
+  ctx.payWindow = (period) => ({ from: payDay(period), by: payBy(period) });
   const totals = (slips) => {
     const t = {};
     for (const s of slips) { const c = (t[s.currency] = t[s.currency] || { gross: 0, deductions: 0, tax: 0, net: 0, people: 0 }); c.gross += s.gross; c.deductions += s.deductions; c.tax += s.tax; c.net += s.net; c.people++; }
@@ -79,13 +85,25 @@ module.exports = (ctx) => {
     emit('payroll');
     return runDetail(r.id, user);
   });
-  route('DELETE', '/api/payroll/runs/:id', ({ user, params }) => {
+  route('DELETE', '/api/payroll/runs/:id', ({ user, params, query }) => {
     needHR(user);
     const r = runOf(params.id);
-    need(r.status === 'draft', 409, 'Only a month still in draft can be removed');
+    // a month in draft goes freely; one already sent, approved or paid only by the owner or a developer,
+    // who types its name (a test month, or one started by mistake). Its payslips go with it, everyone is told.
+    if (r.status !== 'draft') {
+      need(user.role === 'owner' || !!user.is_dev, 403, 'Only the owner can remove a month that was sent for review, approved or paid');
+      need(String((query && query.get('confirm')) || '').trim().toLowerCase() === P().periodName(r.period).toLowerCase(), 400, `Type ${P().periodName(r.period)} to remove it`);
+    }
+    const people = db.prepare('SELECT user_id FROM payslips WHERE run_id = ?').all(r.id).map((x) => x.user_id);
+    db.prepare("UPDATE expenses SET status = 'approved' WHERE run_id = ? AND status = 'paid'").run(r.id);
     db.prepare('UPDATE expenses SET run_id = NULL WHERE run_id = ?').run(r.id);
+    // advances this month counted towards are owed again
+    const advIds = new Set();
+    for (const s of db.prepare('SELECT lines FROM payslips WHERE run_id = ?').all(r.id)) for (const l of JSON.parse(s.lines)) if (/^adv:\d+$/.test(l.key)) advIds.add(Number(l.key.slice(4)));
+    for (const id of advIds) db.prepare("UPDATE advances SET status = 'approved' WHERE id = ? AND status = 'repaid'").run(id);
     db.prepare('DELETE FROM pay_runs WHERE id = ?').run(r.id);
-    audit(user, 'payroll.removed', null, r.period);
+    audit(user, 'payroll.removed', null, `${r.period} (was ${r.status})`);
+    if (r.status !== 'draft' && people.length) ctx.notify.notify(people, { kind: 'changed', title: `${P().periodName(r.period)} payroll was removed`, body: `Your ${P().periodName(r.period)} payslip was removed by ${user.name}. It is worked out again when the month is started again.`, link: '#/pay', actor: user });
     emit('payroll');
     return { ok: true };
   });
@@ -161,17 +179,52 @@ module.exports = (ctx) => {
       if (n >= a.amount) db.prepare("UPDATE advances SET status = 'repaid' WHERE id = ?").run(a.id);
     }
     audit(user, 'payroll.approved', null, r.period);
-    for (const s of db.prepare('SELECT user_id, net, currency FROM payslips WHERE run_id = ?').all(r.id)) ctx.notify.notify(s.user_id, { kind: 'payslip', title: `Your ${P().periodName(r.period)} payslip`, body: `${P().fmtMoney(s.net, s.currency)}, paid on ${T.human(payDay(r.period))}`, link: '#/pay', actor: user });
+    for (const s of db.prepare('SELECT user_id, net, currency FROM payslips WHERE run_id = ?').all(r.id)) ctx.notify.notify(s.user_id, { kind: 'payslip', title: `Your ${P().periodName(r.period)} payslip`, body: `${P().fmtMoney(s.net, s.currency)}, paid between ${T.human(payDay(r.period))} and ${T.human(payBy(r.period))}`, link: '#/pay', actor: user });
     emit('payroll');
     return runDetail(r.id, user);
   });
+  // paid one person at a time, each on their own day; the month is paid once everyone is
+  function markPaid(user, r, slips, on, ref) {
+    const day = on ? isoDate(on, 'on').slice(0, 10) : ctx.calc.companyToday();
+    need(day >= `${r.period}-01`, 400, 'They cannot be paid before the month starts');
+    need(day <= ctx.calc.companyToday(), 400, 'That day has not come yet');
+    for (const s of slips) {
+      db.prepare('UPDATE payslips SET paid_on = ?, paid_ref = ?, paid_by = ? WHERE id = ?').run(day, ref || null, user.id, s.id);
+      ctx.notify.notify(s.user_id, { kind: 'payslip', title: `Your ${P().periodName(r.period)} pay was sent`, body: `${P().fmtMoney(s.net, s.currency)}, paid on ${T.human(day)}${ref ? `, reference ${ref}` : ''}`, link: '#/pay', actor: user });
+    }
+    const left = db.prepare('SELECT COUNT(*) n FROM payslips WHERE run_id = ? AND paid_on IS NULL').get(r.id).n;
+    if (!left) db.prepare("UPDATE pay_runs SET status = 'paid', paid_by = ?, paid_at = ?, paid_ref = ? WHERE id = ?").run(user.id, nowIso(), ref || null, r.id);
+    audit(user, 'payroll.paid', slips.length === 1 ? slips[0].user_id : null, `${r.period}: ${slips.length === 1 ? 'one person' : plural(slips.length, 'person', 'people')} on ${day}${ref ? ' ref ' + ref : ''}`);
+    emit('payroll');
+  }
+  const plural = (n, a, b) => `${n} ${n === 1 ? a : b}`;
+  route('POST', '/api/payroll/slips/:id/paid', ({ user, params, body }) => {
+    needHR(user);
+    const s = db.prepare('SELECT * FROM payslips WHERE id = ?').get(Number(params.id)); need(s, 404, 'Payslip not found');
+    const r = runOf(s.run_id);
+    need(r.status === 'approved', 409, r.status === 'paid' ? 'This month is already paid' : 'Approve the month first');
+    need(!s.paid_on, 409, 'Already marked paid');
+    markPaid(user, r, [s], body.on, optStr(body.ref, 'ref', 120));
+    return runDetail(r.id, user);
+  });
+  route('DELETE', '/api/payroll/slips/:id/paid', ({ user, params }) => {
+    needHR(user);
+    const s = db.prepare('SELECT * FROM payslips WHERE id = ?').get(Number(params.id)); need(s, 404, 'Payslip not found');
+    const r = runOf(s.run_id);
+    need(r.status === 'approved', 409, 'Once everyone is paid the month is locked');
+    db.prepare('UPDATE payslips SET paid_on = NULL, paid_ref = NULL, paid_by = NULL WHERE id = ?').run(s.id);
+    audit(user, 'payroll.unpaid', s.user_id, `${r.period}: marked not paid`);
+    emit('payroll');
+    return runDetail(r.id, user);
+  });
+  // everyone not yet marked, on one day (one bank batch)
   route('POST', '/api/payroll/runs/:id/paid', ({ user, params, body }) => {
     needHR(user);
     const r = runOf(params.id);
     need(r.status === 'approved', 409, r.status === 'paid' ? 'Already marked paid' : 'Approve it first');
-    db.prepare("UPDATE pay_runs SET status = 'paid', paid_by = ?, paid_at = ?, paid_ref = ? WHERE id = ?").run(user.id, nowIso(), optStr(body.ref, 'ref', 120), r.id);
-    audit(user, 'payroll.paid', null, `${r.period}${body.ref ? ' ref ' + body.ref : ''}`);
-    emit('payroll');
+    const slips = db.prepare('SELECT * FROM payslips WHERE run_id = ? AND paid_on IS NULL').all(r.id);
+    if (slips.length) markPaid(user, r, slips, body.on, optStr(body.ref, 'ref', 120));
+    else db.prepare("UPDATE pay_runs SET status = 'paid', paid_by = ?, paid_at = ? WHERE id = ?").run(user.id, nowIso(), r.id);
     return runDetail(r.id, user);
   });
   route('POST', '/api/payroll/runs/:id/reopen', ({ user, params, body }) => {
@@ -261,7 +314,7 @@ module.exports = (ctx) => {
   const taxYearOf = (period) => { const [y, m] = period.split('-').map(Number); return m >= 7 ? y + 1 : y; };   // tax year 2027 = Jul 2026 to Jun 2027
   route('GET', '/api/me/pay', ({ user }) => {
     const slips = db.prepare("SELECT p.*, r.period, r.status FROM payslips p JOIN pay_runs r ON r.id = p.run_id WHERE p.user_id = ? AND r.status != 'draft' ORDER BY r.period DESC LIMIT 24").all(user.id)
-      .map((s) => ({ ...slipOut(s, { full: false }), period: s.period, name: P().periodName(s.period), status: s.status, pay_day: payDay(s.period) }));
+      .map((s) => ({ ...slipOut(s, { full: false }), period: s.period, name: P().periodName(s.period), status: s.status, pay_day: payDay(s.period), pay_by: payBy(s.period) }));
     const ty = slips.length ? taxYearOf(slips[0].period) : taxYearOf(ctx.calc.companyToday().slice(0, 7));
     const year = { tax_year: ty, from: `${ty - 1}-07`, to: `${ty}-06`, gross: 0, tax: 0, deductions: 0, net: 0, months: 0 };
     for (const s of slips) if (taxYearOf(s.period) === ty && (s.status === 'approved' || s.status === 'paid')) { year.gross += s.gross; year.tax += s.tax; year.deductions += s.deductions; year.net += s.net; year.months++; }
@@ -297,6 +350,8 @@ module.exports = (ctx) => {
     if (body.late) { need(['off', 'show', 'deduct'].includes(body.late.mode), 400, 'late.mode must be off, show or deduct'); next.late = { mode: body.late.mode, every: int(body.late.every ?? cur.late.every, 'late.every', 1, 31), days: Number(body.late.days ?? cur.late.days) }; need([0.25, 0.5, 1].includes(next.late.days), 400, 'late.days must be 0.25, 0.5 or 1'); }
     if (body.overtime) { need(['off', 'show', 'deduct'].includes(body.overtime.mode), 400, 'overtime.mode must be off, show or deduct'); const rate = Number(body.overtime.rate ?? cur.overtime.rate); need(rate >= 1 && rate <= 3, 400, 'overtime.rate must be between 1 and 3'); next.overtime = { mode: body.overtime.mode, rate }; }
     if ('pay_day' in body) next.pay_day = int(body.pay_day, 'pay_day', 1, 28);
+    if ('pay_by' in body) next.pay_by = int(body.pay_by, 'pay_by', 1, 28);
+    if (next.pay_by != null && next.pay_day != null) need(next.pay_by >= next.pay_day, 400, 'The last pay day has to be on or after the first');
     if ('leave_payout' in body) next.leave_payout = !!body.leave_payout;
     if (body.tax) {
       const b = body.tax.brackets;

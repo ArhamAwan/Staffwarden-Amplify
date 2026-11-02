@@ -61,7 +61,7 @@ export default {
     const [cls, word] = STATUS[slip.run.status];
     const canAsk = slip.run.status === 'review' || slip.run.status === 'approved';
     const main = html`<section class="panel printable slip" data-k="slip${slip.id}"><div class="body">
-        <div class="slip-h"><div><div class="muted small">${slip.run.status === 'paid' ? 'Paid' : 'Pay day'} ${dayShort(slip.run.pay_day)}${slip.bank ? `, to ${slip.bank.name || 'your bank'} ••• ${slip.bank.last4}` : ''}</div>
+        <div class="slip-h"><div><div class="muted small">${slip.paid_on ? `Paid ${dayShort(slip.paid_on)}` : slip.run.status === 'approved' || slip.run.status === 'paid' ? `Paid by ${dayShort(slip.run.pay_by)}` : `Pay day ${dayShort(slip.run.pay_day)} to ${dayShort(slip.run.pay_by)}`}${slip.bank ? `, to ${slip.bank.name || 'your bank'} ••• ${slip.bank.last4}` : ''}</div>
           <b class="slip-net num">${money(slip.net, slip.currency)}</b><div class="muted">Net pay for ${periodLabel(slip.run.period)} ${tag(cls, word)}</div></div>
           <div class="slip-org"><span class="mark-sm">${esc(S.settings.org_name)}</span><span class="muted small">${S.me.name}</span></div></div>
         ${slip.run.status === 'review' ? html`<div class="banner info" style="margin:14px 0 0"><span>This month is still being checked, so it can change. Ask about anything that looks wrong.</span></div>` : ''}

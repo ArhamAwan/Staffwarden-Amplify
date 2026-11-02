@@ -363,8 +363,8 @@ module.exports = (ctx) => {
     const prevMonth = (() => { const [y, m] = today.slice(0, 7).split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`; })();
     if (run) {
       const open = db.prepare('SELECT COUNT(*) n FROM pay_questions q JOIN payslips p ON p.id = q.payslip_id WHERE p.run_id = ? AND q.answer IS NULL').get(run.id).n;
-      const payDay = `${P().nextPeriod(run.period)}-${String(Math.min(P().rules().pay_day || 1, 28)).padStart(2, '0')}`;
-      items.push({ kind: 'payroll', title: `${P().periodName(run.period)} payroll`, sub: run.status === 'draft' ? 'In draft: check it and send it for approval' : run.status === 'review' ? (open ? `${open === 1 ? '1 question' : open + ' questions'} to answer, then it can be approved` : 'Waiting for approval') : 'Approved: download the bank sheet and mark it paid', due: payDay, link: '#/payroll', urgent: T.daysBetween(today, payDay) <= 3 });
+      const payDay = ctx.payWindow ? ctx.payWindow(run.period).by : `${P().nextPeriod(run.period)}-10`;
+      items.push({ kind: 'payroll', title: `${P().periodName(run.period)} payroll`, sub: run.status === 'draft' ? 'In draft: check it and send it for approval' : run.status === 'review' ? (open ? `${open === 1 ? '1 question' : open + ' questions'} to answer, then it can be approved` : 'Waiting for approval') : `Approved: pay everyone by ${T.human(payDay)} and mark each one paid`, due: payDay, link: '#/payroll', urgent: T.daysBetween(today, payDay) <= 3 });
     } else if (!lastPaid || lastPaid.period < prevMonth || today.slice(8) >= '20') {
       const period = today.slice(8) >= '20' ? today.slice(0, 7) : prevMonth;
       if (!db.prepare('SELECT id FROM pay_runs WHERE period = ?').get(period)) items.push({ kind: 'payroll', title: `Start ${P().periodName(period)} payroll`, sub: 'Staffwarden fills it in from hours, attendance and time off', link: '#/payroll', start: period });
@@ -388,7 +388,7 @@ module.exports = (ctx) => {
     // coming up in the next 90 days
     const soon = [];
     const within = (d) => d && d >= today && T.daysBetween(today, d) <= 90;
-    if (run) soon.push({ day: `${P().nextPeriod(run.period)}-${String(Math.min(P().rules().pay_day || 1, 28)).padStart(2, '0')}`, title: 'Pay day', sub: `${P().periodName(run.period)} payroll` });
+    if (run && ctx.payWindow) soon.push({ day: ctx.payWindow(run.period).by, title: 'Last pay day', sub: `${P().periodName(run.period)} pay is sent by then` });
     for (const u of people) {
       const rec = P().recordOf(u.id) || {};
       if (within(rec.leaving_on)) soon.push({ day: rec.leaving_on, title: `${u.name}’s last day`, sub: 'Their settlement goes on that month’s payroll', user_id: u.id });

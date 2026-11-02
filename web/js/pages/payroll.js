@@ -58,11 +58,11 @@ function runView(ov, d) {
   const r = d.run, s = r.status, pk = d.totals.PKR, usd = d.totals.USD;
   const tools = s === 'draft' ? html`<button class="btn" data-act="pr-refresh" data-id="${r.id}">${icon('refresh')} Work it out again</button><button class="btn primary" data-act="pr-submit" data-id="${r.id}">Send for approval</button>`
     : s === 'review' ? html`<button class="btn" data-act="pr-refresh" data-id="${r.id}">${icon('refresh')} Work it out again</button>${d.can_approve ? html`<button class="btn primary" data-act="pr-approve" data-id="${r.id}">${icon('check')} Approve ${periodLabel(r.period).split(' ')[0]}</button>` : ''}`
-    : html`<button class="btn" data-act="pr-dl" data-id="${r.id}" data-kind="bank" data-period="${r.period}">${icon('download')} Bank sheet</button><button class="btn" data-act="pr-dl" data-id="${r.id}" data-kind="register" data-period="${r.period}">${icon('file')} Register for accountant</button>${s === 'approved' ? html`<button class="btn primary" data-act="pr-paid" data-id="${r.id}">Mark as paid</button>` : html`<button class="btn primary" data-act="pr-start" data-period="${nextPeriod(ov)}">${icon('plus')} Start ${periodLabel(nextPeriod(ov)).split(' ')[0]}</button>`}`;
+    : html`<button class="btn" data-act="pr-dl" data-id="${r.id}" data-kind="bank" data-period="${r.period}">${icon('download')} Bank sheet</button><button class="btn" data-act="pr-dl" data-id="${r.id}" data-kind="register" data-period="${r.period}">${icon('file')} Register for accountant</button>${s === 'approved' ? html`<button class="btn primary" data-act="pr-paid" data-id="${r.id}" data-left="${d.slips.length - r.paid_count}">${r.paid_count ? `Mark the other ${d.slips.length - r.paid_count} paid` : 'Mark everyone paid'}</button>` : html`<button class="btn primary" data-act="pr-start" data-period="${nextPeriod(ov)}">${icon('plus')} Start ${periodLabel(nextPeriod(ov)).split(' ')[0]}</button>`}`;
   const who = s === 'draft' ? `Started by ${r.created_by_name || 'HR'} ${relTime(r.created_at)}. People do not see it until you send it for approval.`
     : s === 'review' ? (d.can_approve ? `Sent by ${r.submitted_by_name || 'HR'} ${relTime(r.submitted_at)}. Everyone can see and ask about their payslip.` : `Sent for approval ${relTime(r.submitted_at)}. Waiting for the owner. Everyone can see and ask about their payslip.`)
-    : s === 'approved' ? `Approved by ${r.approved_by_name} ${relTime(r.approved_at)}. Locked: payslips are out. Pay people, then mark it paid.`
-    : `Paid ${relTime(r.paid_at)}${r.paid_ref ? `, reference ${r.paid_ref}` : ''}. Locked.`;
+    : s === 'approved' ? `Approved by ${r.approved_by_name} ${relTime(r.approved_at)}. ${r.paid_count} of ${d.slips.length} paid. Pay each person by ${dayShort(r.pay_by)} and mark them paid as you go.`
+    : `Everyone paid${r.paid_ref ? `, reference ${r.paid_ref}` : ''}. Locked.`;
   const prevNet = d.previous && d.previous.totals.PKR ? d.previous.totals.PKR.net : null;
   const hero = html`<div class="pr-hero">
       <div class="pr-sum">${pk ? html`<div class="pr-sum-h"><b>${periodLabel(r.period)}, in rupees</b><span>${plural(pk.people, 'person', 'people')}${usd ? `, and ${usd.people} in dollars (${money(usd.net, 'USD')})` : ''}</span></div>${payBar({ ...pk, currency: 'PKR', people: true }, { dark: true })}
@@ -71,21 +71,23 @@ function runView(ov, d) {
       <div class="pr-checks"><b>${s === 'draft' || s === 'review' ? 'Before it is approved' : 'This month'}</b>
         ${d.checks.length ? d.checks.map((c) => html`<a class="pr-check ${c.kind}" href="${c.kind === 'missing' ? '#/hr' : c.people && c.people[0] && c.kind !== 'missing' ? `#/payroll?id=${c.people[0].id}` : '#/payroll'}" data-k="c${c.kind}">${icon({ question: 'msg', bank: 'bank', attendance: 'flag', shown: 'eye', missing: 'users' }[c.kind])}<span>${c.text}</span>${icon('right')}</a>`)
           : html`<p class="pr-ok">${icon('check')} Nothing to look at.</p>`}</div></div>`;
+  const paidCol = s === 'approved' || s === 'paid';
   const rows = d.slips.map((x) => html`<tr class="link" data-k="s${x.id}" data-act="go" data-href="#/payroll?id=${x.id}" tabindex="0">
       <td class="nm"><span class="person">${av(x)}<span><b>${x.name}</b><span>${x.title || ''}</span></span></span></td>
       <td class="r num">${money(x.lines.find((l) => l.kind === 'base').amount, x.currency)}${x.facts.employed_days < x.facts.workdays ? html`<div class="small muted">${x.facts.employed_days} of ${x.facts.workdays} days</div>` : ''}</td>
       <td>${changes(x)}</td><td class="r num">${x.tax ? money(x.tax, x.currency) : html`<span class="muted">None</span>`}</td><td class="r num"><b>${money(x.net, x.currency)}</b></td>
+      ${paidCol ? html`<td class="nowrap">${x.paid_on ? html`<span class="pr-paid">${icon('check')} ${dayShort(x.paid_on)}</span>${s === 'approved' ? html` <button class="linkbtn small" data-act="pr-unpay" data-id="${x.id}" data-name="${x.name}">Undo</button>` : ''}` : html`<button class="btn sm" data-act="pr-pay-one" data-id="${x.id}" data-name="${x.name}" data-net="${money(x.net, x.currency)}" data-from="${r.period}-01">Mark paid</button>`}</td>` : ''}
       <td><div class="chips">${x.open_questions ? tag('break', 'Question') : ''}${!x.facts.bank ? (x.by_hand ? tag('idle', 'Paid by hand') : tag('absent', 'No bank details')) : ''}${x.currency === 'USD' ? tag('idle', 'Dollars, no tax') : ''}${!x.open_questions && x.facts.bank && x.currency !== 'USD' ? tag('working', 'Ready') : ''}</div></td></tr>`);
-  const totalRow = pk ? html`<tr class="tot"><td><b>Total in rupees</b></td><td></td><td></td><td class="r num"><b>${money(pk.tax)}</b></td><td class="r num"><b>${money(pk.net)}</b></td><td></td></tr>` : '';
+  const totalRow = pk ? html`<tr class="tot"><td><b>Total in rupees</b></td><td></td><td></td><td class="r num"><b>${money(pk.tax)}</b></td><td class="r num"><b>${money(pk.net)}</b></td>${paidCol ? html`<td></td>` : ''}<td></td></tr>` : '';
   return html`
-    <div class="page-h pr-head"><div><h1>Payroll</h1><p class="sub">${periodLabel(r.period)} · pay day ${dayShort(r.pay_day)} · worked out from Staffwarden hours, attendance and time off</p></div>
+    <div class="page-h pr-head"><div><h1>Payroll</h1><p class="sub">${periodLabel(r.period)} · paid ${dayShort(r.pay_day)} to ${dayShort(r.pay_by)} · worked out from Staffwarden hours, attendance and time off</p></div>
       <div class="tools">${tools}</div>
       <div class="pr-stepline">${stepper(s)}<span>${who}</span></div>
       ${hero}
       ${ptabs('month')}</div>
     <section class="panel flush"><header><h2>Everyone this month</h2><span class="muted small">Open a person to see every line and where it came from</span></header><div class="body">
-      ${d.slips.length ? html`<div class="tbl-wrap"><table class="t prt"><thead><tr><th>Person</th><th class="r">Base</th><th>This month</th><th class="r">Income tax</th><th class="r">Net pay</th><th>Check</th></tr></thead><tbody>${rows}${totalRow}</tbody></table></div>` : empty('Nobody on this month', 'Set pay for people on People and pay, then work it out again.')}</div></section>
-    ${s === 'draft' ? html`<p class="small muted">${icon('lock')} Only HR and the owner see this page. Every change is in the audit log. <button class="linkbtn danger" data-act="pr-remove" data-id="${r.id}" data-period="${periodLabel(r.period)}">Remove this draft</button></p>` : html`<p class="small muted">${icon('lock')} Only HR and the owner see this page. Every change is in the audit log.</p>`}`;
+      ${d.slips.length ? html`<div class="tbl-wrap"><table class="t prt"><thead><tr><th>Person</th><th class="r">Base</th><th>This month</th><th class="r">Income tax</th><th class="r">Net pay</th>${paidCol ? html`<th>Paid</th>` : ''}<th>Check</th></tr></thead><tbody>${rows}${totalRow}</tbody></table></div>` : empty('Nobody on this month', 'Set pay for people on People and pay, then work it out again.')}</div></section>
+    ${s === 'draft' ? html`<p class="small muted">${icon('lock')} Only HR and the owner see this page. Every change is in the audit log. <button class="linkbtn danger" data-act="pr-remove" data-id="${r.id}" data-period="${periodLabel(r.period)}">Remove this draft</button></p>` : html`<p class="small muted">${icon('lock')} Only HR and the owner see this page. Every change is in the audit log.${S.me.role === 'owner' || S.me.is_dev ? html` <button class="linkbtn danger" data-act="pr-remove-any" data-id="${r.id}" data-period="${periodLabel(r.period)}" data-status="${s}">Remove this month</button>` : ''}</p>`}`;
 }
 
 function firstView(ov) {
@@ -172,7 +174,7 @@ function rulesView(ov) {
         ${rule('Late arrivals', "After the grace period on the person's own shift", opt('late_mode', R.late.mode, [['off', 'Off'], ['show', 'Show only'], ['deduct', 'Take off pay']]), html`<div class="prule-x">Every <input name="late_every" type="number" min="1" max="31" value="${R.late.every}" class="num tiny" aria-label="Late starts"> late starts in a month takes off ${opt('late_days', R.late.days, [['0.25', 'a quarter day'], ['0.5', 'half a day'], ['1', 'a day']])}</div>`)}
         ${rule('Overtime', "Hours past the person's target, from tracked time", opt('ot_mode', R.overtime.mode, [['off', 'Off'], ['show', 'Show only'], ['deduct', 'Pay extra']]), html`<div class="prule-x">Paid at <input name="ot_rate" type="number" min="1" max="3" step="0.25" value="${R.overtime.rate}" class="num tiny" aria-label="Rate">× the hourly rate</div>`)}
         ${rule('Unused leave when someone leaves', 'Leave earned this year and not taken is paid in their last month', sw('leave_payout', R.leave_payout))}
-        ${rule('Pay day', 'Shown on payslips and the bank sheet', html`<span class="prule-x">Day <input name="pay_day" type="number" min="1" max="28" value="${R.pay_day}" class="num tiny" aria-label="Pay day"> of the next month</span>`)}</div></section>
+        ${rule('Pay days', 'Each person is paid on their own day in this window, and marked paid one by one', html`<span class="prule-x">From the <input name="pay_day" type="number" min="1" max="28" value="${R.pay_day}" class="num tiny" aria-label="First pay day"> to the <input name="pay_by" type="number" min="1" max="28" value="${R.pay_by || 10}" class="num tiny" aria-label="Last pay day"> of the next month</span>`)}</div></section>
       <div>
         <section class="panel"><header><h2>Income tax brackets</h2><span class="muted small">${R.tax.label}</span></header><div class="body">
           <div class="tbl-wrap"><table class="t tight"><thead><tr><th>Yearly income from</th><th>Up to</th><th>Fixed tax</th><th>% on the rest</th></tr></thead><tbody>${brackets}</tbody></table></div>
@@ -211,7 +213,7 @@ actions['pr-approve'] = act(async (el) => {
   const q = d.checks.find((c) => c.kind === 'question'), bank = d.checks.find((c) => c.kind === 'bank');
   const item = (state, t, sub) => html`<li class="${state}"><span class="ck">${state === 'done' ? icon('check') : state === 'warn' ? icon('flag') : icon('x')}</span><div><b>${t}</b><span>${sub}</span></div></li>`;
   openModal({
-    title: `Approve ${d.run.name.split(' ')[0]}?`, sub: `${plural(d.slips.length, 'person', 'people')} · pay day ${dayShort(d.run.pay_day)}`, submit: 'Approve and send payslips',
+    title: `Approve ${d.run.name.split(' ')[0]}?`, sub: `${plural(d.slips.length, 'person', 'people')} · paid ${dayShort(d.run.pay_day)} to ${dayShort(d.run.pay_by)}`, submit: 'Approve and send payslips',
     body: html`<div class="ap-sum"><div class="g"><span>To your bank</span><b class="num">${money(toBank)}</b></div>${usd ? html`<div><span>Separately</span><b class="num">${money(usd.net, 'USD')}</b></div>` : ''}<div class="t"><span>Income tax withheld</span><b class="num">${money(pk ? pk.tax : 0)}</b></div></div>
       <ul class="checklist noline">${item('done', 'Hours and attendance are final', `Everything up to the end of ${d.run.name.split(' ')[0]}. Later changes go on the next month.`)}
         ${q ? item('bad', q.text, 'Answer them first. People are told when you do.') : item('done', 'No questions waiting', 'Everyone could check their payslip')}
@@ -220,10 +222,25 @@ actions['pr-approve'] = act(async (el) => {
     onSubmit: async () => { if (q) throw new Error('Answer the questions first'); await post(`/api/payroll/runs/${d.run.id}/approve`); toast(`${d.run.name.split(' ')[0]} approved. Payslips sent.`); S.refresh(); },
   });
 });
+const paidFields = (from) => html`<div class="grid2"><div class="field"><label class="f" for="pon">Paid on</label><input id="pon" name="on" type="date" value="${companyToday()}" min="${from || ''}" max="${companyToday()}" required></div>
+  <div class="field"><label class="f" for="pref">Bank reference (optional)</label><input id="pref" name="ref" maxlength="120" placeholder="From your bank’s confirmation"></div></div>`;
 actions['pr-paid'] = (el) => openModal({
-  title: 'Mark as paid?', submit: 'Mark as paid', sub: 'Once your bank has sent the transfer. The month stays locked.',
-  body: html`<div class="field"><label class="f" for="pref">Bank reference (optional)</label><input id="pref" name="ref" maxlength="120" placeholder="From your bank’s confirmation"></div>`,
-  onSubmit: async (fd) => { await post(`/api/payroll/runs/${el.dataset.id}/paid`, { ref: fd.get('ref') || null }); toast('Marked as paid'); S.refresh(); },
+  title: el.dataset.left && Number(el.dataset.left) < 1 ? 'Mark as paid?' : `Mark ${plural(Number(el.dataset.left) || 0, 'person', 'people')} paid?`, submit: 'Mark paid',
+  sub: 'Everyone not marked yet, paid on the same day (one bank batch). Each person is told. People paid on other days can be marked one by one instead.',
+  body: paidFields(),
+  onSubmit: async (fd) => { await post(`/api/payroll/runs/${el.dataset.id}/paid`, { on: fd.get('on'), ref: fd.get('ref') || null }); toast('Marked paid'); S.refresh(); },
+});
+actions['pr-pay-one'] = (el) => openModal({
+  title: `Mark ${el.dataset.name} paid?`, submit: 'Mark paid', sub: `${el.dataset.net}. They are told it was sent.`,
+  body: paidFields(el.dataset.from),
+  onSubmit: async (fd) => { await post(`/api/payroll/slips/${el.dataset.id}/paid`, { on: fd.get('on'), ref: fd.get('ref') || null }); toast(`${el.dataset.name} marked paid`); S.refresh(); },
+});
+actions['pr-unpay'] = async (el) => { try { await del(`/api/payroll/slips/${el.dataset.id}/paid`); toast(`${el.dataset.name} is not marked paid now`); S.refresh(); } catch (e) { toast(errMsg(e), true); } };
+actions['pr-remove-any'] = (el) => openModal({
+  title: `Remove ${el.dataset.period}?`, submit: 'Remove', danger: true,
+  sub: `It was ${el.dataset.status === 'paid' ? 'marked paid' : el.dataset.status === 'approved' ? 'approved' : 'sent for review'}. Its payslips are removed and everyone on it is told. Use this for a test month or one started by mistake, never for a month people were really paid for.`,
+  body: html`<div class="field"><label class="f" for="rmc">Type <b>${el.dataset.period}</b> to remove it</label><input id="rmc" name="confirm" autocomplete="off" required></div>`,
+  onSubmit: async (fd) => { await del(`/api/payroll/runs/${el.dataset.id}?confirm=${encodeURIComponent(fd.get('confirm') || '')}`); toast(`${el.dataset.period} removed`); S.navigate('#/payroll'); },
 });
 actions['pr-add-item'] = async (form) => {
   const fd = new FormData(form), err = form.querySelector('[data-err]');
@@ -257,7 +274,7 @@ actions['pr-rules'] = async (form) => {
   const body = {
     day_basis: fd.get('day_basis'), unpaid_leave: fd.get('unpaid_leave'), absent: fd.get('absent'),
     late: { mode: fd.get('late_mode'), every: n('late_every'), days: n('late_days') }, overtime: { mode: fd.get('ot_mode'), rate: n('ot_rate') },
-    leave_payout: !!fd.get('leave_payout'), pay_day: n('pay_day'), tax: { label: fd.get('tax_label'), brackets },
+    leave_payout: !!fd.get('leave_payout'), pay_day: n('pay_day'), pay_by: n('pay_by'), tax: { label: fd.get('tax_label'), brackets },
     eobi: { on: !!fd.get('eobi_on'), min_wage: n('eobi_min'), er: n('eobi_er'), ee: n('eobi_ee') },
   };
   if (S.me.role === 'owner') Object.assign(body, { owner_approves: !!fd.get('owner_approves'), hr_own_pay: !!fd.get('hr_own_pay'), managers_first: !!fd.get('managers_first') });
