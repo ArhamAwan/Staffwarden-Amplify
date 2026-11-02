@@ -44,9 +44,32 @@ function pickView() {
 }
 
 // ---------- checking what was read ----------
+// who a contract belongs to among the people already here. HR can always choose by hand; otherwise the
+// same email, CNIC or phone, then the same name, then a shorter or longer form of it ("Dur-e-shawar" is
+// "Dur-e-Shawar Nasir").
+const words = (s) => String(s || '').toLowerCase().replace(/[^a-z\s-]/g, ' ').replace(/-/g, '').split(/\s+/).filter((w) => w && !['mr', 'mrs', 'ms', 'miss', 'dr'].includes(w));
+const digits = (s) => String(s || '').replace(/\D/g, '').replace(/^92/, '0');
+function autoMatch(f) {
+  const people = st.people.filter((p) => p.role !== 'owner' && p.active);
+  const email = (f.v.email || '').trim().toLowerCase(), cnic = digits(f.v.cnic), phone = digits(f.v.phone), w = words(f.v.name);
+  const one = (list) => (list.length === 1 ? list[0] : null);
+  let m = people.find((p) => email && p.email && p.email.toLowerCase() === email)
+    || (cnic.length === 13 && people.find((p) => digits(p.record && p.record.cnic) === cnic))
+    || (phone.length >= 10 && people.find((p) => digits(p.record && p.record.phone) === phone))
+    || one(people.filter((p) => w.length && words(p.name).join(' ') === w.join(' ')));
+  if (m) return { p: m, how: 'exact' };
+  // one name is the start of the other, word by word, and only one person fits
+  if (w.length) {
+    const fits = people.filter((p) => { const pw = words(p.name); const [a, b] = pw.length <= w.length ? [pw, w] : [w, pw]; return a.length && a.join('').length >= 5 && a.every((x, i) => b[i] === x); });
+    m = one(fits);
+    if (m) return { p: m, how: 'name' };
+  }
+  return null;
+}
 const matchOf = (f) => {
-  const email = (f.v.email || '').trim().toLowerCase(), name = (f.v.name || '').trim().toLowerCase();
-  return st.people.find((p) => email && p.email && p.email.toLowerCase() === email) || st.people.find((p) => name && p.name.toLowerCase() === name) || null;
+  if (f.matchId === 'new') return null;
+  if (f.matchId) return st.people.find((p) => p.id === Number(f.matchId)) || null;
+  const a = autoMatch(f); return a ? a.p : null;
 };
 function reviewView() {
   const reading = st.files.filter((f) => f.status === 'reading').length;
@@ -76,8 +99,12 @@ function card(f) {
     <div class="imp-h"><label class="imp-inc" title="${f.include ? 'Leave this one out' : 'Include this one'}"><input type="checkbox" data-imp="${f.id}" data-f="include" ${f.include ? raw('checked') : ''}><span class="sr">Include ${f.file.name}</span></label>
       <span class="avatar" style="background:${avColor(m ? m.id : 900 + f.id)}" aria-hidden="true">${initials(v.name || f.file.name)}</span>
       <div><b>${v.name || f.file.name}</b><span>${f.file.name} · ${f.method === 'ocr' ? 'read by OCR, check it carefully' : 'read from the PDF text'}</span></div>
-      <span class="imp-tags">${m ? tag('idle', `Updates ${m.name}`) : tag('working', 'New person')}${found < NEEDED.length ? tag('break', `${NEEDED.length - found} to fill in`) : ''}</span></div>
+      <span class="imp-tags"><label class="imp-who ${m ? '' : 'new'}"><span class="sr">Who this contract is for</span><select data-imp="${f.id}" data-f="matchId">
+        <option value="new" ${m ? '' : raw('selected')}>New person</option>
+        ${st.people.filter((p) => p.role !== 'owner').map((p) => html`<option value="${p.id}" ${m && m.id === p.id ? raw('selected') : ''}>Update ${p.name}${p.active ? '' : ' (left)'}</option>`)}</select></label>${found < NEEDED.length ? tag('break', `${NEEDED.length - found} to fill in`) : ''}</span></div>
     ${err ? html`<p class="imp-err" role="alert">${icon('x')} ${err}</p>` : ''}
+    ${m && !f.matchId && autoMatch(f) && autoMatch(f).how === 'name' ? html`<p class="imp-kind">${icon('users')} <span>Matched to <b>${m.name}</b> by name. If that is someone else, choose <b>New person</b> at the top.</span></p>` : ''}
+    ${!m ? html`<p class="small muted imp-new-hint">Already here under another name or email? Choose them at the top so their record is updated instead.</p>` : ''}
     ${KIND[f.parsed.kind] ? html`<p class="imp-kind">${icon('file')} <span>This is a <b>${KIND[f.parsed.kind]}</b>. The job and salary are the new ones${v.pay_from ? `, paid from ${dateY(v.pay_from)}` : ''}. Joined is their first day under the original contract.</span></p>` : ''}
     ${m && m.pay ? html`<label class="imp-pay"><input type="checkbox" data-imp="${f.id}" data-f="usePay" ${f.usePay ? raw('checked') : ''}><span><b>Also change their pay to the contract’s salary</b> Their pay is ${money(m.pay.base, m.pay.currency)} a month now. ${KIND[f.parsed.kind] ? 'This agreement changes their pay, so this starts on.' : 'An old contract may show an older salary, so this is off unless you turn it on.'}</span></label>` : ''}
     <div class="imp-grid">
@@ -185,7 +212,7 @@ document.addEventListener('change', (e) => {
 document.addEventListener('input', (e) => { const t = e.target; if (t.dataset && t.dataset.imp && t.type !== 'checkbox') edit(t); });
 function edit(t) {
   const f = st.files.find((x) => x.id === Number(t.dataset.imp)); if (!f || !f.v) return;
-  if (t.dataset.f === 'include') f.include = t.checked; else if (t.dataset.f === 'usePay') f.usePay = t.checked; else f.v[t.dataset.f] = t.value;
+  if (t.dataset.f === 'include') f.include = t.checked; else if (t.dataset.f === 'matchId') f.matchId = t.value; else if (t.dataset.f === 'usePay') f.usePay = t.checked; else f.v[t.dataset.f] = t.value;
   f.saveError = null;
 }
 document.addEventListener('dragover', (e) => { const d = e.target.closest && e.target.closest('[data-drop]'); if (d) { e.preventDefault(); d.classList.add('over'); } });
