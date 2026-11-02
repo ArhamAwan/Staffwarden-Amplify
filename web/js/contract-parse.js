@@ -64,7 +64,7 @@ function labelled(lines, labels, { maxLen = 80 } = {}) {
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     for (const lab of labels) {
-      const rx = new RegExp(`^(?:\\d+[.)]\\s*)?${lab}\\s*(?::|\\s[-–|]\\s|\\s{2,}|\\s+is\\s+)\\s*(.+)$`, 'i');
+      const rx = new RegExp(`^(?:\\d+[.)]\\s*)?${lab}\\s*(?::|\\.(?=[A-Z])|\\s[-–|]\\s|\\s{2,}|\\s+is\\s+)\\s*(.+)$`, 'i');
       const m = l.match(rx);
       if (m && m[1].trim()) return cut(m[1], maxLen);
       if (new RegExp(`^(?:\\d+[.)]\\s*)?${lab}\\s*:?$`, 'i').test(l) && lines[i + 1]) return cut(lines[i + 1], maxLen);
@@ -228,7 +228,7 @@ export function parseContract(raw) {
     if (tl && !BOSSY.test(tl[1])) title = tl[1];
   }
   if (!title) { const t = labelled(mine === lines ? lines : [...mine, ...lines], ['designation', 'position', 'job title', 'post', 'role', 'title']); if (t && !BOSSY.test(t) && t.split(/\s+/).length <= 7 && !/^(?:the|this|his|her|their|a|an)\b|[.;]$/i.test(t)) title = t; }
-  if (!title) { const m = flat.match(/\b(?:appoint\w*|employ\w*|hire\w*|engag\w*|join\w*)\s+(?:you|[Tt]he [Ee]mployee|him|her|[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,4})?\s*as\s+(?:an?\s+|the\s+)?([A-Za-z][A-Za-z&/ -]{2,60}?)(?=\s+(?:with|at|in|on|from|for|effective|starting|reporting|w\.e\.f)\b|[,.;(]|$)/); if (m) title = m[1]; }
+  if (!title) { const m = flat.match(/\b(?:appoint\w*|employ\w*|hire\w*|engag\w*|join\w*)\s+(?:you|[Tt]he [Ee]mployee|him|her|[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,4})?\s*as\s+(?:an?\s+|the\s+)?([A-Za-z][A-Za-z&/ ()-]{2,60}?)(?=\s+(?:with|at|in|on|from|for|effective|starting|reporting|w\.e\.f)\b|[,.;]|$)/); if (m) title = m[1]; }
   if (!title) { const m = flat.match(/\bposition of\s+(?:an?\s+|the\s+)?([A-Z][A-Za-z&/ -]{2,50}?)(?=\s+(?:with|at|in|on|from|for|effective)\b|[,.;(]|$)/); if (m) title = m[1]; }
   if (title) { title = title.replace(/^(?:full|part)[- ]time\s+/i, '').replace(/["'.:]+$/, '').replace(/\s+(?:with|at)\s+.*$/i, '').trim().slice(0, 80); got('title', title === title.toUpperCase() ? titleCase(title) : title); }
 
@@ -241,7 +241,7 @@ export function parseContract(raw) {
   if (out.kind !== 'new') joined = dateAfter('(?:originally |first )?joined(?: [A-Z][A-Za-z ]{2,40}?)?') || dateAfter('original (?:joining|start) date') || dateAfter('(?:originally )?entered into') || dateAfter('original employment agreement(?: dated)?');
   if (!joined) joined = parseDate(labelled(lines, ['date of joining', 'joining date', 'date of commencement', 'commencement date', 'start(?:ing)? date', 'effective date', 'date of appointment', 'appointment date', 'joining']));
   if (!joined) { const m = flat.match(new RegExp(`(?:commenc\\w*|start\\w*|join\\w*|effective|with effect from|w\\.?e\\.?f\\.?)\\s+(?:on|from|date)?\\s*(?:the\\s+)?${DATE_RX.source}`, 'i')); if (m) joined = parseDate(m[1]); }
-  if (!joined) joined = dateAfter('(?:made (?:and entered )?|entered )into') || effective;
+  if (!joined) joined = dateAfter('(?:made (?:and entered )?|entered )into') || dateAfter('made (?:on )?(?:this )?') || effective;
   got('joined_on', joined);
   if (out.kind !== 'new' && effective && effective !== joined) got('pay_from', effective);
 
@@ -256,11 +256,11 @@ export function parseContract(raw) {
 
   // probation and notice
   const pr = flat.match(/probation(?:ary)?(?: period)?(?: of| for| shall be| will be| is)?\s+(\w+)\s*(?:\((\d+)\))?[\s-]*(months?|weeks?)/i);
-  const pr2 = !pr && flat.match(/\b(\w+)\s*(?:\((\d+)\))?[\s-]+(months?|weeks?)['’]?\s+(?:initial\s+)?probation/i);
+  const pr2 = !pr && flat.match(/\b(\w+)\s*(?:\((\d+)\))?[\s-]+(months?|weeks?|days?)['’]?\s+(?:initial\s+)?(?:probation|trial)/i);
   const pp = pr || (pr2 && [pr2[0], pr2[1], pr2[2], pr2[3]]);
   let probWeeks = null;
-  if (pp) { const n = numWord(pp[2] || pp[1]); if (n) { if (/week/i.test(pp[3])) { probWeeks = n; if (n >= 4) out.probation_months = Math.round(n / 4); } else out.probation_months = n; out.found.push('probation'); } }
-  if (out.probation_months && out.joined_on) out.probation_end = addMonthsDay(out.joined_on, out.probation_months);
+  if (pp) { const n = numWord(pp[2] || pp[1]); if (n) { if (/day/i.test(pp[3])) { probWeeks = n / 7; if (n >= 28) out.probation_months = Math.round(n / 30); } else if (/week/i.test(pp[3])) { probWeeks = n; if (n >= 4) out.probation_months = Math.round(n / 4); } else out.probation_months = n; out.found.push('probation'); } }
+  if (out.probation_months && out.joined_on && !(probWeeks && probWeeks % 1)) out.probation_end = addMonthsDay(out.joined_on, out.probation_months);
   else if (probWeeks && out.joined_on) { const [y, m, d] = out.joined_on.split('-').map(Number); out.probation_end = new Date(Date.UTC(y, m - 1, d + probWeeks * 7)).toISOString().slice(0, 10); }
   const nt = flat.match(/(\w+)\s*(?:\((\d+)\))?[\s-]*(days?|months?|weeks?)(?:['’]s?)?\s*(?:prior\s+|advance\s+)?(?:written\s+)?notice/i) || flat.match(/notice(?: period)?(?: of)?[:\s-]+(\w+)\s*(?:\((\d+)\))?[\s-]*(days?|months?|weeks?)/i);
   if (nt) { const n = numWord(nt[2] || nt[1]); if (n) got('notice_days', /month/i.test(nt[3]) ? n * 30 : /week/i.test(nt[3]) ? n * 7 : n); }

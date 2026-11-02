@@ -170,3 +170,33 @@ Sales Closer on a commission basis. No fixed salary is guaranteed.`);
   assert.equal(r.contract, 'contractor');
   assert.equal(r.base, null);
 });
+
+test('"Name.Abdul Hanan", a title with (GHL) in it, "made on this" and a 90-day trial period', async () => {
+  const { parseContract } = await load();
+  let r = parseContract(`This Employment Agreement is made on this 7th September, 2026, between:
+Company: Amplify Media Technologies
+Address: Khanna Pul, Rawalpindi, Pakistan
+Name.Abdul Hanan
+Father name.Muhammad Iqbal
+Address:
+Mumtazabad road near Ahmedbad metro station Sultanbad Multan
+1. Position
+The Company hires the Employee as a Go High Level (GHL) Specialist.
+3. Probation Period
+The Employee will complete a 1-month probation period
+4. Salary
+Monthly Salary: PKR 75,000`);
+  assert.equal(r.name, 'Abdul Hanan');
+  assert.equal(r.title, 'Go High Level (GHL) Specialist');
+  assert.equal(r.joined_on, '2026-09-07');
+  assert.equal(r.probation_end, '2026-10-07');
+  assert.equal(r.address, 'Mumtazabad road near Ahmedbad metro station Sultanbad Multan');
+  assert.equal(r.base, 75000);
+  r = parseContract(`EMPLOYMENT AGREEMENT (TRIAL PERIOD)
+This Employment Agreement is made and entered into on 7th August 2026 by and between:
+Full Name: Ali Subhan
+The employment will begin with a 90-day trial period.
+The Employee will receive a salary of PKR 50,000 per month during the trial period.`);
+  assert.equal(r.probation_end, '2026-11-05');
+  assert.equal(r.base, 50000);
+});
