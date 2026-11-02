@@ -1818,3 +1818,6 @@ body > #sysban.portal > b { flex: 0 1 auto; }
 .hr-col-l > .panel:last-child, .hr-col-r > .panel:last-child { flex: 1; }
 .hr-col-l .mini-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 700px) { .hr-col-l .mini-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.hr-home { margin-bottom: 18px; }
+.hr-col-l > .panel > .body, .hr-col-r > .panel > .body { padding-bottom: 20px; }
+.hr-col-l .mini-stats { gap: 14px 20px; }
