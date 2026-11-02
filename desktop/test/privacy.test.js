@@ -241,3 +241,12 @@ test('macOS 27: a pop-up inside the full-screen Notification Center window hides
   const old = notificationZones([{ app: 'Notification Center', title: '', x: 1100, y: 40, w: 360, h: 90 }]);
   assert.deepEqual([old[0].x, old[0].w], [1100, 360]);
 });
+
+test('Windows 11: notification pop-ups have no window, so the corner above the clock is hidden', () => {
+  const { windowsToastZone } = require('../src/privacy');
+  // a 1920x1080 screen with the taskbar at the bottom (work area 1920x1020), as on the PC tested
+  assert.deepEqual(windowsToastZone({ x: 0, y: 0, width: 1920, height: 1020 }), { x: 1500, y: 560, w: 420, h: 460 });
+  // a second screen to the left: still the main screen's corner
+  assert.deepEqual(windowsToastZone({ x: 0, y: 0, width: 1366, height: 728 }), { x: 946, y: 268, w: 420, h: 460 });
+  assert.equal(windowsToastZone(null), null);
+});

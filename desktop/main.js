@@ -161,6 +161,9 @@ async function captureScreens() {
   const after = await scanWindows();
   const d = privacy.decide([before, after], matcher);
   const rects = d.rects.map(toPoints);
+  const privateWindows = rects.length;   // the pop-up corner alone never hides a whole screen
+  // Windows: notification pop-ups have no window to find, so their corner on the main screen is always hidden
+  if (process.platform === 'win32') { try { const z = privacy.windowsToastZone(screen.getPrimaryDisplay().workArea); if (z) rects.push(z); } catch { /* no screen info */ } }
   const displays = screen.getAllDisplays();
   // On the person's own computer, only the screen they are working on (the one with the mouse) is captured,
   // unless the company chose all screens. If the screens cannot be told apart, all are used.
@@ -177,10 +180,10 @@ async function captureScreens() {
     const display = displays.find((x) => String(x.id) === s.display_id) || (displays.length === 1 ? displays[0] : null);
     // Only the private windows are painted black; the rest of the screen stays visible. If a private
     // window is open but we cannot tell where this screen is, we cannot paint the right spot, so hide it all.
-    const hideAll = rects.length && !display;
+    const hideAll = privateWindows && !display;
     if (hideAll) { fullCount++; const img = blank(); return { buf: img.toJPEG(60), thumb: img.toJPEG(55), privacy: 'full' }; }
     let img = s.thumbnail, priv = null;
-    if (rects.length) {
+    if (rects.length && display) {
       try {
         const { width, height } = img.getSize();
         const px = privacy.toImageRects(rects, display.bounds, width, height);
