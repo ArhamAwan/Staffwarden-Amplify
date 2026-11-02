@@ -1,7 +1,7 @@
 // Import people from their contracts. Everything is read here in the browser: typed PDFs are read
 // directly, scans and photos go through OCR. HR checks every field before anyone is created.
 import { html, raw, icon, plural, initials, avColor, money, dateY } from '../util.js';
-import { get, post, fileBase64 } from '../api.js';
+import { get, post, fileBase64, fileBytes } from '../api.js';
 import { S, actions, tag, toast, errMsg, confirmBox } from '../ui.js';
 import { parseContract, joinItems } from '../contract-parse.js';
 import { CONTRACT } from './hr.js';
@@ -16,9 +16,26 @@ const KIND = { promotion: 'promotion agreement', increment: 'salary increment ag
 
 export default {
   title: 'Import from contracts',
-  async load() { st.people = await get('/api/hr/people?all=1'); return {}; },
+  async load(q) {
+    st.people = await get('/api/hr/people?all=1');
+    // "Update from contract" on someone's record: everything read here updates that person
+    const forId = Number(q && q.get('for')) || null;
+    if (forId !== st.forId) { st.forId = forId; if (st.phase !== 'saving') { st.files = []; st.results = []; st.phase = 'pick'; } }
+    // a contract already kept in their documents is read straight away
+    const doc = q && q.get('doc');
+    if (doc && st.doc !== `${forId}:${doc}`) {
+      st.doc = `${forId}:${doc}`;
+      setTimeout(async () => {
+        try { const buf = await fileBytes(`/api/hr/docs/${doc}`); addFiles([new File([buf], 'Employment contract.pdf', { type: 'application/pdf' })], { fromDoc: true }); } catch (e) { toast(errMsg(e), true); }
+      }, 0);
+    }
+    return {};
+  },
   render() {
-    const head = html`<div class="page-h"><div><h1>Import from contracts</h1><p class="sub">Add people from their employment contracts. Staffwarden reads each one, you check what it found, then it creates their account and HR record.</p></div>
+    const who = st.forId ? st.people.find((p) => p.id === st.forId) : null;
+    const head = who ? html`<div class="page-h"><div><h1>Update from contract</h1><p class="sub">Staffwarden reads ${who.name}’s contract and fills in their record. You check every field before anything is saved.</p></div>
+      <div class="tools"><a class="btn" href="#/hr?id=${who.id}">${icon('left')} ${who.name}</a></div></div>`
+      : html`<div class="page-h"><div><h1>Import from contracts</h1><p class="sub">Add people from their employment contracts. Staffwarden reads each one, you check what it found, then it creates their account and HR record.</p></div>
       <div class="tools"><a class="btn" href="#/hr">${icon('left')} People and pay</a></div></div>`;
     if (st.phase === 'done') return html`${head}${doneView()}`;
     if (!st.files.length) return html`${head}${pickView()}`;
@@ -26,14 +43,22 @@ export default {
   },
 };
 
+// coming back to this page after finishing starts afresh (live refreshes reload the page data too, so this
+// is done on navigation only)
+window.addEventListener('hashchange', () => {
+  if (!/^#\/hr-import/.test(location.hash)) return;
+  if (st.phase === 'done') { st.files = []; st.results = []; st.phase = 'pick'; }
+  if (!st.files.length) st.doc = null;
+});
+
 // ---------- choosing files ----------
 function pickView() {
   return html`<section class="panel imp-pick" data-k="pick"><div class="body">
     <label class="imp-drop" data-drop>
       <span class="imp-ic">${icon('file')}</span>
-      <b>Choose contracts</b>
-      <span>PDFs, or photos and scans of paper contracts. One person per file. Choose as many as you like.</span>
-      <input type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp" data-imp-files>
+      <b>${st.forId ? 'Choose their contract' : 'Choose contracts'}</b>
+      <span>${st.forId ? 'A PDF, or a photo or scan of the paper contract. A promotion or salary increment letter works too.' : 'PDFs, or photos and scans of paper contracts. One person per file. Choose as many as you like.'}</span>
+      <input type="file" ${st.forId ? '' : 'multiple'} accept="application/pdf,image/png,image/jpeg,image/webp" data-imp-files>
       <span class="btn primary" aria-hidden="true">${icon('plus')} Choose files</span>
     </label>
     <ul class="imp-how">
@@ -127,7 +152,7 @@ function doneView() {
     <ul class="imp-done">${st.results.map((r) => html`<li data-k="r${r.id}"><span class="avatar" style="background:${avColor(r.id)}" aria-hidden="true">${initials(r.name)}</span><div><b>${r.name}</b><span>${r.email}${r.doc ? ' · contract kept in their documents' : ''}${r.docError ? ` · contract not kept: ${r.docError}` : ''}</span></div>
       ${r.password ? html`<code class="imp-pw">${r.password}</code><button class="btn sm" data-act="imp-copy" data-pw="${r.password}" data-email="${r.email}">Copy</button>` : tag('idle', 'Record updated')}<a class="btn sm" href="#/hr?id=${r.id}">Open</a></li>`)}</ul>
     ${made.length > 1 ? html`<p><button class="btn" data-act="imp-copy-all">Copy all as a list</button></p>` : ''}
-    <div class="form-end"><button class="btn" data-act="imp-reset">Import more</button><a class="btn primary" href="#/hr">Done</a></div></div></section>`;
+    <div class="form-end"><button class="btn" data-act="imp-reset">Import more</button><a class="btn primary" href="${st.forId ? `#/hr?id=${st.forId}` : '#/hr'}">Done</a></div></div></section>`;
 }
 
 // ---------- reading ----------
@@ -196,8 +221,8 @@ async function read(f) {
   } catch (e) { Object.assign(f, { status: 'error', error: errMsg(e) }); }
   S.refresh();
 }
-async function addFiles(list) {
-  const fresh = Array.from(list || []).map((file) => ({ id: ++seq, file, status: 'reading', progress: 0 }));
+async function addFiles(list, opts = {}) {
+  const fresh = Array.from(list || []).map((file) => ({ id: ++seq, file, status: 'reading', progress: 0, matchId: st.forId ? String(st.forId) : undefined, fromDoc: !!opts.fromDoc }));
   if (!fresh.length) return;
   st.files.push(...fresh); st.phase = 'review';
   S.refresh();
@@ -238,7 +263,8 @@ actions['imp-save'] = async () => {
     const pay = base > 0 && (!m || !m.pay || f.usePay) ? { base, currency: v.currency, tax_mode: v.currency === 'PKR' && v.contract !== 'contractor' ? 'pk' : 'none', effective_from: val('pay_from') || val('joined_on') || undefined, note: 'From their contract' } : undefined;
     try {
       const r = await post('/api/hr/import', { existing_id: m ? m.id : undefined, name: val('name'), email: val('email'), title: val('title'), record, pay });
-      if (DOC_TYPES.includes(f.file.type) && f.file.size <= 5 * 1024 * 1024) {
+      if (f.fromDoc) r.doc = true;   // already in their documents
+      else if (DOC_TYPES.includes(f.file.type) && f.file.size <= 5 * 1024 * 1024) {
         try { await post(`/api/hr/people/${r.id}/docs`, { name: 'Employment contract', kind: 'contract', status: 'signed', type: f.file.type, data_base64: await fileBase64(f.file) }); r.doc = true; } catch (e) { r.docError = errMsg(e); }
       } else r.docError = 'the file is over 5 MB';
       done.push(r); f.saved = true;
@@ -253,7 +279,7 @@ actions['imp-save'] = async () => {
   if (left && done.length) toast(`${plural(done.length, 'person', 'people')} saved. Their passwords are shown when you finish.`);
   S.refresh();
 };
-actions['imp-reset'] = () => { st.files = []; st.results = []; st.phase = 'pick'; S.refresh(); };
+actions['imp-reset'] = () => { st.files = []; st.results = []; st.phase = 'pick'; st.doc = null; S.refresh(); };
 actions['imp-drop'] = (el) => { st.files = st.files.filter((f) => f.id !== Number(el.dataset.id)); if (!st.files.length) st.phase = 'pick'; S.refresh(); };
 async function copy(text) { try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast('Copy it by hand: your browser blocked copying', true); } }
 actions['imp-copy'] = (el) => copy(`${el.dataset.email}\n${el.dataset.pw}`);
