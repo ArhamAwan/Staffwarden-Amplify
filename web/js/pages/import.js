@@ -3,7 +3,7 @@
 import { html, raw, icon, plural, initials, avColor, money, dateY } from '../util.js';
 import { get, post, fileBase64 } from '../api.js';
 import { S, actions, tag, toast, errMsg, confirmBox } from '../ui.js';
-import { parseContract } from '../contract-parse.js';
+import { parseContract, joinItems } from '../contract-parse.js';
 import { CONTRACT } from './hr.js';
 
 // one entry per file: status reading | done | error
@@ -133,22 +133,15 @@ async function ocrImage(f, img, base, span, stageText) {
 async function pdfText(f) {
   const L = await pdfLib();
   const doc = await L.getDocument({ data: new Uint8Array(await f.file.arrayBuffer()), isEvalSupported: false }).promise;
-  const pages = Math.min(doc.numPages, 12);
+  // the text of every page (long contracts put notice and bank details near the end); OCR, which is slow,
+  // only reads the first 12 pages of a scan
+  const all = Math.min(doc.numPages, 60), pages = Math.min(doc.numPages, 12);
   let text = '';
-  for (let i = 1; i <= pages; i++) {
+  for (let i = 1; i <= all; i++) {
     const page = await doc.getPage(i);
     const c = await page.getTextContent();
-    let lastY = null;
-    for (const it of c.items) {
-      const y = it.transform ? it.transform[5] : null;
-      if (lastY != null && y != null && Math.abs(y - lastY) > 2) text += '\n';
-      else if (text && !/\s$/.test(text) && it.str && !/^\s/.test(it.str)) text += ' ';
-      text += it.str || '';
-      if (it.hasEOL) text += '\n';
-      lastY = y;
-    }
-    text += '\n\n';
-    progress(f, (i / pages) * 0.3, 'Reading the text');
+    text += joinItems(c.items) + '\n\n';
+    progress(f, (i / all) * 0.3, 'Reading the text');
   }
   if (text.replace(/\s/g, '').length >= 200) return { text, method: 'text' };
   // a scan saved as a PDF: draw each page and read it with OCR

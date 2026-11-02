@@ -7,10 +7,34 @@ const WORDNUM = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, 
 const pad = (n) => String(n).padStart(2, '0');
 const COMPANYISH = /\b(amplify|media|technologies|pvt|private|limited|ltd|llc|inc|company|employer|the\s+company)\b/i;
 
+// The text of one PDF page from pdf.js's pieces. Some PDFs (Google Docs, Canva and many "Save as PDF"
+// exports) give every letter as its own piece, with the spaces as pieces of their own: joining the pieces
+// with spaces turned "Name: Musab" into "N a m e : M u s a b". Pieces are joined by where they sit on the
+// page instead: a space only where there is a real gap, a new line where the line changes.
+export function joinItems(items) {
+  let text = '', last = null;
+  for (const it of items || []) {
+    const str = it.str || '';
+    const t = it.transform || [1, 0, 0, 1, 0, 0];
+    const size = Math.hypot(t[0], t[1]) || it.height || 10;
+    const x = t[4], y = t[5], w = it.width || 0;
+    if (str) {
+      if (last) {
+        if (Math.abs(y - last.y) > size * 0.5) { if (!text.endsWith('\n')) text += '\n'; }
+        else if (!/\s$/.test(text) && !/^\s/.test(str) && x - last.end > size * 0.18) text += ' ';
+      }
+      text += str;
+      last = { y, end: x + w };
+    }
+    if (it.hasEOL && !text.endsWith('\n')) text += '\n';
+  }
+  return text;
+}
+
 // one clean line per line, OCR noise tidied
 export function clean(text) {
   return String(text || '').replace(/\r/g, '').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/[–—]/g, '-').replace(/ /g, ' ')
-    .split('\n').map((l) => l.replace(/[ \t]+/g, ' ').trim()).filter(Boolean).join('\n');
+    .replace(/\*+/g, '').split('\n').map((l) => l.replace(/[ \t]+/g, ' ').trim()).filter(Boolean).join('\n');
 }
 
 // a date in any common form; day-first for numbers (Pakistan writes 01/03/2025 for 1 March)
@@ -40,7 +64,7 @@ function labelled(lines, labels, { maxLen = 80 } = {}) {
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     for (const lab of labels) {
-      const rx = new RegExp(`^(?:\\d+[.)]\\s*)?${lab}\\s*(?:[:\\-–|]|\\s{2,}|\\s+is\\s+)\\s*(.+)$`, 'i');
+      const rx = new RegExp(`^(?:\\d+[.)]\\s*)?${lab}\\s*(?::|\\s[-–|]\\s|\\s{2,}|\\s+is\\s+)\\s*(.+)$`, 'i');
       const m = l.match(rx);
       if (m && m[1].trim()) return cut(m[1], maxLen);
       if (new RegExp(`^(?:\\d+[.)]\\s*)?${lab}\\s*:?$`, 'i').test(l) && lines[i + 1]) return cut(lines[i + 1], maxLen);
@@ -59,7 +83,7 @@ function labelled(lines, labels, { maxLen = 80 } = {}) {
 // a value stops where the next "Label:" on the same line starts
 const NEXT_LABEL = /\s+(?:account\s+title|title\s+of\s+account|account\s+(?:no|number|name)\.?|iban|bank(?:\s+name)?|cnic(?:\s+no\.?)?|e-?mail|phone|mobile|cell|contact|address|designation|position|date\s+of\s+\w+|salary|employee\s+name|name)\s*:.*$/i;
 const cut = (v, maxLen) => v.replace(NEXT_LABEL, '').trim().slice(0, maxLen) || null;
-const titleCase = (s) => s.toLowerCase().replace(/\b([a-z])/g, (c) => c.toUpperCase()).replace(/\bBin\b/g, 'bin').replace(/\bUl\b/g, 'ul');
+const titleCase = (s) => s.toLowerCase().replace(/\b([a-z])/g, (c) => c.toUpperCase()).replace(/\bBin\b/g, 'bin').replace(/\bUl\b/g, 'ul').replace(/\(([A-Za-z]{2,6})\)/g, (m, a) => `(${a.toUpperCase()})`);
 function tidyName(s) {
   if (!s) return null;
   s = s.replace(/^(mr|mrs|ms|miss|dr|mst)\.?\s+/i, '').replace(/\s*[,(].*$/, '').replace(/\s+(s\/o|d\/o|w\/o|son of|daughter of|wife of|holding|bearing|residing|cnic|having)\b.*$/i, '').replace(/["'.]+$/, '').trim();
@@ -86,8 +110,12 @@ export function parseContract(raw) {
   const out = { name: null, email: null, phone: null, cnic: null, title: null, joined_on: null, base: null, currency: 'PKR', probation_end: null, probation_months: null, notice_days: null, contract: 'full_time', bank_name: null, iban: null, account_title: null, address: null, found: [] };
   const got = (k, v) => { if (v != null && v !== '' && out[k] == null) { out[k] = v; out.found.push(k); } };
 
+  // the employee's own part of the contract, when it has one ("2. EMPLOYEE" then Name, Address...):
+  // their name and address come from there, not the employer's
+  const at = lines.findIndex((l) => /^(?:\d+[.)]\s*)?(?:the\s+)?employee(?:\s+(?:details|information|particulars))?\s*:?$/i.test(l));
+  const mine = at >= 0 ? lines.slice(at + 1, at + 25) : lines;
   // who
-  got('name', tidyName(labelled(lines, ['employee(?:\'s)? name', 'name of (?:the )?employee', 'full name', 'employee', 'name'])));
+  got('name', tidyName(labelled(mine, ['employee(?:\'s)? name', 'name of (?:the )?employee', 'full name', 'employee', 'name'])));
   if (!out.name) {
     const m = flat.match(/\bbetween\b.{0,160}?\band\s+(?:Mr\.?|Ms\.?|Mrs\.?|Miss)?\s*([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,4})/);
     if (m) got('name', tidyName(m[1]));
@@ -101,10 +129,14 @@ export function parseContract(raw) {
   got('phone', ph ? ph[0].replace(/\s+/g, ' ') : null);
   const cn = flat.match(/\b(\d{5})[\s-]?(\d{7})[\s-]?(\d)\b/);
   got('cnic', cn ? `${cn[1]}-${cn[2]}-${cn[3]}` : null);
-  got('address', labelled(lines, ['(?:residential |home |permanent )?address'], { maxLen: 200 }));
+  got('address', labelled(mine, ['(?:residential |home |permanent )?address'], { maxLen: 200 }));
 
   // the job
-  let title = labelled(lines, ['designation', 'position', 'job title', 'post', 'role', 'title']);
+  // "The Employee is appointed as:" with the job on the next line
+  let title = null;
+  const ap = lines.findIndex((l) => /\b(?:appointed|employed|hired|engaged)\s+(?:to the position of|as)\s*:?\s*$/i.test(l));
+  if (ap >= 0 && lines[ap + 1] && lines[ap + 1].length <= 60) title = lines[ap + 1];
+  if (!title) title = labelled(lines, ['designation', 'position', 'job title', 'post', 'role', 'title']);
   if (!title) { const m = flat.match(/\b(?:appoint\w*|employ\w*|hire\w*|engag\w*|join\w*)\s+(?:you|the employee|him|her)?\s*as\s+(?:an?\s+|the\s+)?([A-Za-z][A-Za-z&/ -]{2,50}?)(?=\s+(?:with|at|in|on|from|for|effective|starting|reporting|w\.e\.f)\b|[,.;(]|$)/i); if (m) title = m[1]; }
   if (!title) { const m = flat.match(/\bposition of\s+(?:an?\s+|the\s+)?([A-Z][A-Za-z&/ -]{2,50}?)(?=\s+(?:with|at|in|on|from|for|effective)\b|[,.;(]|$)/); if (m) title = m[1]; }
   if (title) { title = title.replace(/["'.]+$/, '').replace(/\s+(?:with|at)\s+.*$/i, '').trim().slice(0, 80); got('title', title === title.toUpperCase() ? titleCase(title) : title); }
