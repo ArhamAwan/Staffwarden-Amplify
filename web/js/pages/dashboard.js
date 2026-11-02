@@ -125,7 +125,7 @@ export const teamPage = {
       ${isToday && d.idle ? nudgeBoard(d.idle) : ''}
       ${kpis(cells)}
       <section class="panel flush roster"><header><h2>Everyone</h2><div class="legend"><span><i class="sw s-working"></i>Working</span><span><i class="sw s-break"></i>Break</span><span><i class="sw s-idle"></i>Idle</span></div></header>
-        <div class="body">${d.members.length ? html`<div class="tbl-wrap"><table class="t">${anyFull ? html`<thead><tr><th>Person</th><th style="min-width:230px">${isToday ? 'Today' : 'That day'}${ribbonAxis(win, { maxLabels: 5, ds })}</th><th>Started</th><th class="r">Worked</th><th class="r">Breaks</th><th class="r">Activity</th><th>This week</th><th>Last screenshot</th></tr></thead>` : ''}
+        <div class="body">${d.members.length ? html`<div class="tbl-wrap"><table class="t">${anyFull ? html`<thead><tr><th>Person</th><th class="th-rib" style="min-width:230px"><span class="sr">${isToday ? 'Today' : 'That day'}, by hour</span>${ribbonAxis(win, { maxLabels: 5, ds })}</th><th>Started</th><th class="r">Worked</th><th class="r">Breaks</th><th class="r">Activity</th><th>This week</th><th class="r">Last screenshot</th></tr></thead>` : ''}
           ${groups.filter(([, , , list]) => list.length).map(([g, label, full, list]) => html`<tbody class="lane" id="lane-${g}" data-k="l${g}">
             <tr class="lane-h"><th colspan="8"><i class="sw s-${DOT[g]}"></i>${label}<span class="lane-c num">${list.length}</span></th></tr>
             ${full ? list.map((m) => {
@@ -139,7 +139,7 @@ export const teamPage = {
                 <td class="r num">${m.break_count ? html`${m.break_count} · ${dur(m.break_secs)}` : html`<span class="faint">None</span>`}${m.idle_secs ? html`<br><span class="small muted">${dur(m.idle_secs)} idle</span>` : ''}</td>
                 <td class="r">${m.activity_pct == null ? html`<span class="faint">–</span>` : html`<span class="pct">${meter(m.activity_pct, toneFor(m.activity_pct, 35, 50))}<span class="num">${m.activity_pct}%</span></span>`}</td>
                 <td style="min-width:150px"><span class="num small">${dur(m.week_secs)} <span class="muted">of ${hoursText(m.week_target_secs)}</span></span>${meter(wk)}</td>
-                <td class="muted small num">${m.last_shot_at ? relTime(m.last_shot_at) : html`<span class="faint">None</span>`}</td></tr>`;
+                <td class="r muted small num">${m.last_shot_at ? relTime(m.last_shot_at) : html`<span class="faint">None</span>`}</td></tr>`;
             }) : html`<tr class="lane-chips"><td colspan="8"><div class="chips">${list.map((m) => html`<a class="pchip" data-k="p${m.user_id}" href="#/timeline?user=${m.user_id}&day=${d.day}">${avatarOf(m)}<span>${m.name}</span>${m.title ? html`<small>${m.title}</small>` : ''}</a>`)}</div></td></tr>`}
           </tbody>`)}</table></div>
 ` : empty('Nobody to show yet', html`Add people on the <a href="#/people">People</a> page.`)}</div></section>
