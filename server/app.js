@@ -501,7 +501,9 @@ function createApp(opts = {}) {
 
   // Static files are revalidated on every load (ETag), so a browser can never keep running an old copy of the app.
   function serveStatic(req, res, pathname) {
-    let rel = decodeURIComponent(pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, ''));
+    // a broken address (a bot trying "/%E0%A4%A" and the like) is a plain "not found", not a server error
+    let rel;
+    try { rel = decodeURIComponent(pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '')); } catch { res.writeHead(400, { 'Content-Type': 'text/plain', ...SEC_HEADERS }); res.end('Bad address'); return; }
     let file = path.normalize(path.join(cfg.webDir, rel));
     const inside = file.startsWith(path.normalize(cfg.webDir));
     if (!inside || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
@@ -555,7 +557,7 @@ function createApp(opts = {}) {
     return { version: f.version, file: f.file, url: base + '/downloads/' + encodeURIComponent(f.file), size: f.size, sha256: sha256Of(path.join(dlDir, f.file)), notes };
   }
   function serveDownload(req, res, pathname) {
-    const name = path.basename(decodeURIComponent(pathname.slice('/downloads/'.length)));
+    let name; try { name = path.basename(decodeURIComponent(pathname.slice('/downloads/'.length))); } catch { name = ''; }
     const file = path.join(dlDir, name);
     if (!name || name.startsWith('.') || !KIND(name) || !fs.existsSync(file)) { res.writeHead(404, { 'Content-Type': 'text/plain', ...SEC_HEADERS }); res.end('Not found'); return; }
     const st = fs.statSync(file);
@@ -576,7 +578,7 @@ function createApp(opts = {}) {
       const r = routes.find((x) => x.method === req.method && x.re.test(url.pathname));
       need(r, 404, 'Route not found');
       const m = url.pathname.match(r.re);
-      const params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]));
+      let params; try { params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])])); } catch { throw new HttpError(400, 'That address is not valid'); }
       const isLogin = url.pathname === '/api/auth/login' || url.pathname === '/api/downloads' || url.pathname === '/api/app/latest';
       const user = isLogin ? null : authUser(req);
       if (user && user.kind === 'client') need(r.client, 403, 'Not available in the client portal');
