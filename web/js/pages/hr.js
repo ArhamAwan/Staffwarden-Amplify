@@ -114,9 +114,25 @@ export function hrPanel(o) {
     return html`<li data-k="w${i.kind}${i.user_id || ''}${i.title.length}"><span class="w-ic ${tone}">${icon(ic)}</span><div><b>${i.title}</b>${days != null ? html` ${tag(i.urgent || days <= 3 ? 'absent' : 'break', days <= 0 ? 'Today' : `In ${plural(days, 'day')}`)}` : i.since ? html` ${tag('idle', `Since ${dayMD(i.since.slice(0, 10))}`)}` : ''}<span>${i.sub}</span></div>
       ${i.start ? html`<button class="btn sm primary" data-act="pr-start" data-period="${i.start}">Start</button>` : html`<a class="btn sm ${i.kind === 'payroll' ? 'primary' : ''}" href="${i.link}">Open</a>`}</li>`; };
   const soon = (s) => { const [, m, d] = s.day.split('-'); return html`<li><span class="cal-d"><small>${['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][Number(m) - 1]}</small><b>${Number(d)}</b></span><div><b>${s.title}</b><span>${s.sub}</span></div></li>`; };
+  // the same kind of thing for several people is one row ("6 people have no bank details"), opened to see who
+  const GROUP = { no_bank: ['have no bank details', 'Needed for the bank sheet', '#/hr'], no_pay: ['have no pay set', 'They are left off payroll until it is', '#/hr'], joining: ['are still joining', 'Steps left on their joining list', '#/hr'] };
+  const rows = [], groups = new Map();
+  for (const i of o.items) {
+    const g = GROUP[i.kind];
+    if (!g || o.items.filter((x) => x.kind === i.kind).length < 2) { rows.push(i); continue; }
+    if (!groups.has(i.kind)) { const grp = { kind: i.kind, group: true, items: [] }; groups.set(i.kind, grp); rows.push(grp); }
+    groups.get(i.kind).items.push(i);
+  }
+  const first = (n) => String(n || '').split(' ')[0];
+  const nameOfItem = (i) => i.title.replace(/ (has no|is still|leaves on).*$/, '');
+  const group = (g) => { const [ic, tone] = KIND_IC[g.kind]; const [what, sub] = GROUP[g.kind]; const names = g.items.map(nameOfItem);
+    return html`<li class="wgroup" data-k="wg${g.kind}"><details><summary><span class="w-ic ${tone}">${icon(ic)}</span><div><b>${g.items.length} people ${what}</b><span>${names.slice(0, 3).map(first).join(', ')}${names.length > 3 ? ` and ${names.length - 3} more` : ''} · ${sub.toLowerCase()}</span></div><span class="btn sm wg-btn"><span class="wg-show">See who</span><span class="wg-hide">Hide</span></span></summary>
+      <ul class="wg-list">${g.items.map((i) => html`<li><span>${nameOfItem(i)}</span><span class="muted small">${i.kind === 'joining' ? i.sub : ''}</span><a class="btn sm" href="${i.link}">Open</a></li>`)}</ul></details></li>`; };
+  const SHOWN = 5;
+  const line = (r) => (r.group ? group(r) : item(r));
   return html`<div class="hr-home" data-k="hrhome">
     <section class="panel"><header><h2>Waiting on you</h2><span class="muted small">${o.items.length ? `${plural(o.items.length, 'thing')}, most urgent first` : 'All caught up'}</span></header><div class="body">
-      ${o.items.length ? html`<ul class="waiting">${o.items.map(item)}</ul>` : empty('Nothing waiting', 'Expense claims, advances, people joining or leaving and payroll show here when they need you.')}</div></section>
+      ${rows.length ? html`<ul class="waiting">${rows.slice(0, SHOWN).map(line)}</ul>${rows.length > SHOWN ? html`<details class="w-more"><summary>Show ${plural(rows.length - SHOWN, 'more')}</summary><ul class="waiting">${rows.slice(SHOWN).map(line)}</ul></details>` : ''}` : empty('Nothing waiting', 'Expense claims, advances, people joining or leaving and payroll show here when they need you.')}</div></section>
     <div><section class="panel"><header><h2>Coming up</h2></header><div class="body">${o.soon.length ? html`<ul class="soon">${o.soon.map(soon)}</ul>` : empty('Nothing in the next 90 days', '')}</div></section>
       <section class="panel"><header><h2>People</h2><a href="#/hr">Everyone</a></header><div class="body"><div class="mini-stats">
         <div><span>People</span><b class="num">${o.stats.people}</b><small>${o.stats.monthly} with pay</small></div><div><span>On probation</span><b class="num">${o.stats.probation.length}</b><small>${o.stats.probation.slice(0, 2).map((n) => n.split(' ')[0]).join(', ') || 'Nobody'}</small></div>
