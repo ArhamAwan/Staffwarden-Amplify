@@ -401,3 +401,16 @@ test('queue: a newer activity total that arrives while the older one is uploadin
   assert.deepEqual(sent, [10, 30]);
   assert.equal(q.size, 0);
 });
+
+test('pickShotTimes: two per 10 minutes are spread out, never seconds apart, also across slots', () => {
+  const TEN = 10 * 60 * 1000;
+  let minGap = Infinity, maxGap = 0, prev = null;
+  for (let seed = 1; seed <= 400; seed++) {
+    const s0 = seed * TEN;
+    const times = pickShotTimes(s0, mulberry32(seed), { slotMs: TEN, min: 2, max: 2 });
+    assert.equal(times.length, 2);
+    for (const t of times) { assert.ok(t > s0 && t < s0 + TEN); if (prev != null) { minGap = Math.min(minGap, t - prev); maxGap = Math.max(maxGap, t - prev); } prev = t; }
+  }
+  assert.ok(minGap >= 2 * 60 * 1000, `at least 2 minutes apart (was ${minGap / 1000}s)`);
+  assert.ok(maxGap <= 8 * 60 * 1000, `at most 8 minutes apart (was ${maxGap / 1000}s)`);
+});
