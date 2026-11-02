@@ -26,7 +26,9 @@ export default {
 // ---------- everyone ----------
 function listView(people, q) {
   const find = (q.get('find') || '').toLowerCase();
-  const list = people.filter((p) => p.role !== 'owner' && (!find || p.name.toLowerCase().includes(find)));
+  const all = people.filter((p) => p.role !== 'owner' && (!find || p.name.toLowerCase().includes(find)));
+  // developer and test accounts are not employees: listed on their own, off payroll
+  const list = all.filter((p) => p.employed !== false), others = all.filter((p) => p.employed === false);
   const owner = people.find((p) => p.role === 'owner');
   const noPay = list.filter((p) => p.flags.no_pay).length, noBank = list.filter((p) => p.flags.no_bank).length;
   const rows = list.map((p) => {
@@ -38,14 +40,18 @@ function listView(people, q) {
       <td>${pay ? html`<b class="num">${money(pay.base, pay.currency)}</b>${pay.allowances.length ? html`<div class="small muted">+ ${pay.allowances.map((a) => `${money(a.amount, pay.currency)} ${a.label.toLowerCase()}`).join(', ')}</div>` : ''}` : tag('absent', 'No pay set')}</td>
       <td>${pay ? (pay.tax_mode === 'pk' && pay.currency === 'PKR' ? 'Pakistan' : 'None') : '–'}</td>
       <td class="num">${r.iban_masked ? html`${r.bank_name || 'Bank'} ${r.iban_masked}` : pay ? tag('absent', 'Missing') : '–'}</td>
-      <td>${p.advance_left ? html`<span class="small">Advance ${money(p.advance_left, pay ? pay.currency : 'PKR')}</span>` : html`<span class="muted">None</span>`}</td></tr>`;
+      <td>${p.advance_left ? html`<span class="small">Advance ${money(p.advance_left, pay ? pay.currency : 'PKR')}</span>` : html`<span class="muted">None</span>`}</td>
+      <td class="row-a"><button class="btn sm ghost" data-act="hr-employed" data-id="${p.id}" data-name="${p.name}" data-v="0" title="Move ${p.name} to Not employees">Not an employee</button></td></tr>`;
   });
+  const otherRows = others.map((p) => html`<li data-k="o${p.id}"><a class="person" href="#/hr?id=${p.id}">${av(p)}<span><b>${p.name}</b><span>${[p.title, p.is_dev ? 'Developer access' : null, p.tracks_time === false ? 'Time not tracked' : null].filter(Boolean).join(' · ')}</span></span></a>
+    <button class="btn sm" data-act="hr-employed" data-id="${p.id}" data-name="${p.name}" data-v="1">Move to employees</button></li>`);
   return html`
     <div class="page-h"><div><h1>People and pay</h1><p class="sub">HR records, pay and bank details. Only HR and the owner can open this.</p></div>
       <div class="tools"><a class="btn" href="#/hr-import">${icon('file')} Import from contracts</a><label class="psearch"><span class="sr">Find a person</span>${icon('search')}<input type="search" placeholder="Find by name" value="${q.get('find') || ''}" data-q="find" autocomplete="off"></label></div>
       ${ptabs('people')}</div>
     ${noPay || noBank ? html`<div class="banner"><span>${noPay ? `${plural(noPay, 'person has', 'people have')} no pay set, so they are left off payroll. ` : ''}${noBank ? `${plural(noBank, 'person has', 'people have')} no bank details.` : ''}</span></div>` : ''}
-    <section class="panel flush"><div class="body">${list.length ? html`<div class="tbl-wrap"><table class="t stack"><thead><tr><th>Person</th><th>Contract</th><th>Joined</th><th>Pay</th><th>Tax</th><th>Bank</th><th>Advances</th></tr></thead><tbody>${rows}</tbody></table></div>` : empty('Nobody here', 'Add people on the People page first.')}</div></section>
+    <section class="panel flush"><div class="body">${list.length ? html`<div class="tbl-wrap"><table class="t stack"><thead><tr><th>Person</th><th>Contract</th><th>Joined</th><th>Pay</th><th>Tax</th><th>Bank</th><th>Advances</th><th class="row-a"><span class="sr">Move</span></th></tr></thead><tbody>${rows}</tbody></table></div>` : empty('Nobody here', 'Add people on the People page first.')}</div></section>
+    ${others.length ? html`<section class="panel hr-others" data-k="others"><header><div><h2>Not employees <span class="muted num hr-ocount">${others.length}</span></h2><p class="small muted">Developer and test accounts. They are kept off payroll and out of HR’s reminders, so they need no pay, bank or contract.</p></div></header><div class="body"><ul class="hr-olist">${otherRows}</ul></div></section>` : ''}
     <p class="small muted">${icon('lock')} Pay, bank details and documents are only for HR, the owner${owner ? ` (${owner.name})` : ''} and the person. Opening someone’s record is kept in the audit log.</p>`;
 }
 
@@ -54,14 +60,14 @@ function personView(p, tab) {
   const r = p.record, pay = p.pay, me = S.me.id === p.id;
   const tabs = [['overview', 'Overview'], ['documents', `Documents${p.docs.length ? ' ' + p.docs.length : ''}`], ['joining', 'Joining'], ...(p.leave_steps ? [['leaving', 'Leaving']] : [])];
   const head = html`<div class="page-h"><div class="hr-who">${av(p, 'lg')}<div><h1>${p.name}</h1><p class="sub">${[p.title, p.team, CONTRACT[r.contract], p.active ? null : 'Deactivated'].filter(Boolean).join(' · ')}</p></div></div>
-    <div class="tools"><a class="btn" href="#/hr">${icon('left')} Everyone</a>${!r.leaving_on && p.active ? html`<button class="btn" data-act="hr-leave" data-id="${p.id}" data-name="${p.name}">Leaving</button>` : ''}<button class="btn primary" data-act="hr-edit" data-id="${p.id}">Edit record</button></div>
+    <div class="tools"><a class="btn" href="#/hr">${icon('left')} Everyone</a>${!r.leaving_on && p.active ? html`<button class="btn" data-act="hr-leave" data-id="${p.id}" data-name="${p.name}">Leaving</button>` : ''}${p.employed === false ? html`<button class="btn" data-act="hr-employed" data-id="${p.id}" data-name="${p.name}" data-v="1">Make an employee</button>` : html`<button class="btn" data-act="hr-employed" data-id="${p.id}" data-name="${p.name}" data-v="0">Not an employee</button>`}<button class="btn primary" data-act="hr-edit" data-id="${p.id}">Edit record</button></div>
     <nav class="tabs" aria-label="Their record">${tabs.map(([v, n]) => html`<button type="button" class="tab" data-act="q" ${raw(qAttr('tab', v === 'overview' ? '' : v))} aria-current="${tab === v ? 'page' : 'false'}">${n}</button>`)}<span class="tab locked" title="HR never sees screenshots or activity">${icon('lock')} Screenshots and activity</span></nav></div>`;
   let body;
   if (tab === 'documents') body = docsView(p);
   else if (tab === 'joining') body = stepsView(p, 'join');
   else if (tab === 'leaving' && p.leave_steps) body = stepsView(p, 'leave');
   else body = overview(p);
-  return html`${head}${r.leaving_on ? html`<div class="banner"><span><b>${p.name.split(' ')[0]} leaves on ${dayShort(r.leaving_on)}.</b> ${r.leaving_reason ? r.leaving_reason + '. ' : ''}Their last month on payroll is cut at that day.</span><a class="btn sm" href="#/hr?id=${p.id}&tab=leaving">Leaving steps</a></div>` : ''}${body}
+  return html`${head}${p.employed === false ? html`<div class="banner"><span><b>Not an employee.</b> ${p.name.split(' ')[0]} is a developer or test account, so they are kept off payroll and out of HR’s reminders.</span></div>` : ''}${r.leaving_on ? html`<div class="banner"><span><b>${p.name.split(' ')[0]} leaves on ${dayShort(r.leaving_on)}.</b> ${r.leaving_reason ? r.leaving_reason + '. ' : ''}Their last month on payroll is cut at that day.</span><a class="btn sm" href="#/hr?id=${p.id}&tab=leaving">Leaving steps</a></div>` : ''}${body}
     <p class="small muted">${icon('eye')} ${p.name.split(' ')[0]} can see this record too, except HR’s notes. Every time HR opens it is kept in the audit log.</p>`;
 }
 function overview(p) {
@@ -170,6 +176,10 @@ actions['hr-leave'] = (el) => openModal({
     <div class="field"><label class="f" for="lr">Reason</label><select id="lr" name="leaving_reason"><option>Resigned</option><option>Contract ended</option><option>Let go</option><option>Other</option></select></div></div>`,
   onSubmit: async (fd) => { await put(`/api/hr/people/${el.dataset.id}/record`, { leaving_on: fd.get('leaving_on'), leaving_reason: fd.get('leaving_reason') }); toast('Saved'); S.navigate(`#/hr?id=${el.dataset.id}&tab=leaving`); },
 });
+actions['hr-employed'] = async (el) => {
+  const on = el.dataset.v === '1';
+  try { await put(`/api/hr/people/${el.dataset.id}/record`, { employed: on }); toast(on ? `${el.dataset.name} is back with the employees` : `${el.dataset.name} moved to Not employees`); S.refresh(); } catch (e) { toast(errMsg(e), true); }
+};
 actions['hr-step'] = async (el) => { try { await put(`/api/hr/people/${el.dataset.id}/steps`, { flow: el.dataset.flow, step: el.dataset.step, done: !!el.dataset.done }); S.refresh(); } catch (e) { toast(errMsg(e), true); } };
 actions['hr-doc-add'] = (el) => openModal({
   title: 'Upload a document', submit: 'Upload',

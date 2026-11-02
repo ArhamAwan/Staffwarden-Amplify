@@ -32,7 +32,7 @@ module.exports = (ctx) => {
       const slips = db.prepare('SELECT currency, gross, deductions, tax, net FROM payslips WHERE run_id = ?').all(r.id);
       return { ...runOut(r), totals: totals(slips), people: slips.length };
     });
-    const missing = db.prepare("SELECT id, name FROM users WHERE active = 1 AND role != 'owner' AND id NOT IN (SELECT user_id FROM pay_setup) ORDER BY name").all();
+    const missing = db.prepare("SELECT id, name FROM users WHERE active = 1 AND role != 'owner' AND COALESCE((SELECT employed FROM hr_records WHERE user_id = users.id), CASE WHEN users.is_dev = 1 AND users.tracks_time = 0 THEN 0 ELSE 1 END) = 1 AND id NOT IN (SELECT user_id FROM pay_setup) ORDER BY name").all();
     const withPay = db.prepare('SELECT COUNT(*) n FROM pay_setup p JOIN users u ON u.id = p.user_id WHERE u.active = 1').get().n;
     const noBank = db.prepare("SELECT u.id, u.name FROM users u JOIN pay_setup p ON p.user_id = u.id LEFT JOIN hr_records h ON h.user_id = u.id WHERE u.active = 1 AND (h.iban IS NULL OR h.iban = '') ORDER BY u.name").all();
     return { runs, missing_pay: missing, with_pay: withPay, no_bank: noBank, rules: P().rules(), can_approve: canApprove(user), today: ctx.calc.companyToday() };
@@ -65,7 +65,7 @@ module.exports = (ctx) => {
     if (att.length) checks.push({ kind: 'attendance', text: `${att.length === 1 ? '1 person has' : att.length + ' people have'} attendance deductions`, people: att.map((s) => ({ id: s.id, name: s.name })) });
     const shown = slips.filter((s) => s.lines.some((l) => !l.counted));
     if (shown.length) checks.push({ kind: 'shown', text: `${shown.length === 1 ? '1 person has' : shown.length + ' people have'} lines to decide by hand`, people: shown.map((s) => ({ id: s.id, name: s.name })) });
-    const missing = db.prepare("SELECT id, name FROM users WHERE active = 1 AND role != 'owner' AND id NOT IN (SELECT user_id FROM pay_setup) ORDER BY name").all();
+    const missing = db.prepare("SELECT id, name FROM users WHERE active = 1 AND role != 'owner' AND COALESCE((SELECT employed FROM hr_records WHERE user_id = users.id), CASE WHEN users.is_dev = 1 AND users.tracks_time = 0 THEN 0 ELSE 1 END) = 1 AND id NOT IN (SELECT user_id FROM pay_setup) ORDER BY name").all();
     if (missing.length && !P().LOCKED(r.status)) checks.push({ kind: 'missing', text: `${missing.map((m) => m.name).join(', ')} ${missing.length === 1 ? 'has' : 'have'} no pay set, so ${missing.length === 1 ? 'is' : 'are'} not on this month`, people: missing });
     const prev = db.prepare("SELECT * FROM pay_runs WHERE period < ? AND status IN ('approved','paid') ORDER BY period DESC LIMIT 1").get(r.period);
     return { run: runOut(r), slips, totals: totals(slips), checks, previous: prev ? { period: prev.period, name: P().periodName(prev.period), totals: totals(db.prepare('SELECT * FROM payslips WHERE run_id = ?').all(prev.id)) } : null, can_approve: canApprove(user), rules: JSON.parse(r.rules || '{}') };

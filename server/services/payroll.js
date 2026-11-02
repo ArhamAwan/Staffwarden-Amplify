@@ -165,7 +165,7 @@ function createPayroll(ctx) {
 
   // works out every slip of a run again (not once it is approved)
   function compute(run) {
-    const people = db.prepare('SELECT * FROM users WHERE active = 1 OR id IN (SELECT user_id FROM hr_records WHERE leaving_on >= ?)').all(`${run.period}-01`);
+    const people = db.prepare('SELECT * FROM users WHERE (active = 1 OR id IN (SELECT user_id FROM hr_records WHERE leaving_on >= ?)) AND COALESCE((SELECT employed FROM hr_records WHERE user_id = users.id), CASE WHEN users.is_dev = 1 AND users.tracks_time = 0 THEN 0 ELSE 1 END) = 1').all(`${run.period}-01`);
     const now = ctx.nowIso();
     const keep = new Set();
     for (const u of people) {

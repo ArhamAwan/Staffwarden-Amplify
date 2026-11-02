@@ -76,6 +76,7 @@ module.exports = (ctx) => {
       out.slips = db.prepare("SELECT p.id, p.net, p.currency, r.period, r.status FROM payslips p JOIN pay_runs r ON r.id = p.run_id WHERE p.user_id = ? AND r.status != 'draft' ORDER BY r.period DESC LIMIT 6").all(u.id).map((s) => ({ ...s, name: P().periodName(s.period) }));
       out.advances = db.prepare('SELECT * FROM advances WHERE user_id = ? ORDER BY id DESC LIMIT 5').all(u.id);
       out.can_edit_pay = !me && (viewer.role === 'owner' || viewer.id !== u.id || P().rules().hr_own_pay);
+      out.employed = employedOf(u);
     }
     return out;
   }
@@ -87,7 +88,8 @@ module.exports = (ctx) => {
     return db.prepare(`SELECT * FROM users ${all ? '' : 'WHERE active = 1'} ORDER BY name`).all().map((u) => {
       const p = personOut(u, user);
       const docs = db.prepare('SELECT kind, status FROM hr_docs WHERE user_id = ?').all(u.id);
-      p.flags = { no_pay: !p.pay && u.role !== 'owner', no_bank: !!p.pay && !p.record.iban, unsigned: !docs.some((d) => d.kind === 'contract' && d.status === 'signed'), leaving: p.record.leaving_on };
+      p.employed = employedOf(u); p.is_dev = !!u.is_dev; p.tracks_time = !!u.tracks_time;
+      p.flags = { no_pay: !p.pay && u.role !== 'owner' && p.employed, no_bank: !!p.pay && !p.record.iban, unsigned: !docs.some((d) => d.kind === 'contract' && d.status === 'signed'), leaving: p.record.leaving_on };
       p.advance_left = db.prepare("SELECT COALESCE(SUM(amount),0) n FROM advances WHERE user_id = ? AND status = 'approved'").get(u.id).n;
       return p;
     });
@@ -100,6 +102,9 @@ module.exports = (ctx) => {
   });
   route('GET', '/api/me/hr', ({ user }) => personOut(user, { ...user, hr: 0, role: 'employee' }, { full: true }));
 
+  // a developer or test account is not an employee: HR says so, or a developer account whose time is not
+  // tracked is one (managers' time may not be tracked either, and they are paid)
+  const employedOf = (u) => { const r = P().recordOf(u.id); return r && r.employed != null ? !!r.employed : !(u.is_dev && !u.tracks_time); };
   route('PUT', '/api/hr/people/:id/record', ({ user, params, body }) => { needHR(user); return saveRecord(user, userOf(params.id), body); });
   function saveRecord(user, u, body) {
     const cur = P().recordOf(u.id) || {};
@@ -110,17 +115,18 @@ module.exports = (ctx) => {
     day('joined_on'); day('probation_end'); day('leaving_on');
     if ('notice_days' in body) next.notice_days = body.notice_days === null || body.notice_days === '' ? null : int(body.notice_days, 'notice_days', 0, 365);
     for (const [k, m] of [['bank_name', 80], ['account_title', 100], ['emergency_name', 100], ['emergency_phone', 40], ['phone', 40], ['address', 300], ['leaving_reason', 200], ['notes', 2000]]) text(k, m);
+    if ('employed' in body) next.employed = body.employed === null ? null : body.employed ? 1 : 0;
     if ('cnic' in body) { const v = body.cnic ? String(body.cnic).replace(/\D/g, '') : null; need(v === null || v.length === 13, 400, 'A CNIC has 13 digits, like 61101-1234567-1'); next.cnic = v ? `${v.slice(0, 5)}-${v.slice(5, 12)}-${v.slice(12)}` : null; }
     if ('iban' in body) {
       const v = body.iban ? String(body.iban).replace(/\s+/g, '').toUpperCase() : null;
       need(v === null || /^[A-Z]{2}\d{2}[A-Z0-9]{8,30}$/.test(v), 400, 'That IBAN does not look right. It starts with two letters, like PK36MEZN…');
       next.iban = v ? v.replace(/(.{4})/g, '$1 ').trim() : null;
     }
-    db.prepare(`INSERT INTO hr_records (user_id, contract, joined_on, probation_end, notice_days, bank_name, account_title, iban, emergency_name, emergency_phone, phone, cnic, address, leaving_on, leaving_reason, notes, updated_at)
-      VALUES (@user_id, @contract, @joined_on, @probation_end, @notice_days, @bank_name, @account_title, @iban, @emergency_name, @emergency_phone, @phone, @cnic, @address, @leaving_on, @leaving_reason, @notes, @updated_at)
+    db.prepare(`INSERT INTO hr_records (user_id, contract, joined_on, probation_end, notice_days, bank_name, account_title, iban, emergency_name, emergency_phone, phone, cnic, address, leaving_on, leaving_reason, notes, employed, updated_at)
+      VALUES (@user_id, @contract, @joined_on, @probation_end, @notice_days, @bank_name, @account_title, @iban, @emergency_name, @emergency_phone, @phone, @cnic, @address, @leaving_on, @leaving_reason, @notes, @employed, @updated_at)
       ON CONFLICT(user_id) DO UPDATE SET contract = excluded.contract, joined_on = excluded.joined_on, probation_end = excluded.probation_end, notice_days = excluded.notice_days, bank_name = excluded.bank_name,
-        account_title = excluded.account_title, iban = excluded.iban, emergency_name = excluded.emergency_name, emergency_phone = excluded.emergency_phone, phone = excluded.phone, cnic = excluded.cnic, address = excluded.address, leaving_on = excluded.leaving_on, leaving_reason = excluded.leaving_reason, notes = excluded.notes, updated_at = excluded.updated_at`)
-      .run({ user_id: u.id, contract: next.contract || 'full_time', joined_on: next.joined_on || null, probation_end: next.probation_end || null, notice_days: next.notice_days ?? null, bank_name: next.bank_name || null, account_title: next.account_title || null, iban: next.iban || null, emergency_name: next.emergency_name || null, emergency_phone: next.emergency_phone || null, phone: next.phone || null, cnic: next.cnic || null, address: next.address || null, leaving_on: next.leaving_on || null, leaving_reason: next.leaving_reason || null, notes: next.notes || null, updated_at: nowIso() });
+        account_title = excluded.account_title, iban = excluded.iban, emergency_name = excluded.emergency_name, emergency_phone = excluded.emergency_phone, phone = excluded.phone, cnic = excluded.cnic, address = excluded.address, leaving_on = excluded.leaving_on, leaving_reason = excluded.leaving_reason, notes = excluded.notes, employed = excluded.employed, updated_at = excluded.updated_at`)
+      .run({ user_id: u.id, contract: next.contract || 'full_time', joined_on: next.joined_on || null, probation_end: next.probation_end || null, notice_days: next.notice_days ?? null, bank_name: next.bank_name || null, account_title: next.account_title || null, iban: next.iban || null, emergency_name: next.emergency_name || null, emergency_phone: next.emergency_phone || null, phone: next.phone || null, cnic: next.cnic || null, address: next.address || null, leaving_on: next.leaving_on || null, leaving_reason: next.leaving_reason || null, notes: next.notes || null, employed: next.employed ?? null, updated_at: nowIso() });
     const changed = Object.keys(body).filter((k) => k !== 'notes');
     audit(user, 'hr.record', u.id, changed.join(', '));
     if ('leaving_on' in body && body.leaving_on && body.leaving_on !== cur.leaving_on) ctx.changes.log(u.id, user, { area: 'hr', title: 'Your last working day was recorded', lines: [`Last working day: ${T.human(next.leaving_on)}`], link: '#/pay' });
@@ -365,7 +371,7 @@ module.exports = (ctx) => {
     const exp = db.prepare("SELECT COUNT(*) n, COALESCE(SUM(amount),0) s, MIN(created_at) first FROM expenses WHERE status IN ('pending','manager_ok') AND user_id != ?").get(user.id);
     if (exp.n) items.push({ kind: 'expenses', title: `${exp.n === 1 ? '1 expense claim' : exp.n + ' expense claims'}`, sub: `${P().fmtMoney(exp.s, 'PKR')} waiting`, since: exp.first, link: '#/expenses' });
     for (const a of db.prepare("SELECT * FROM advances WHERE status = 'pending' AND user_id != ? ORDER BY id").all(user.id)) items.push({ kind: 'advance', title: `${nameOf(a.user_id)} asked for an advance`, sub: `${P().fmtMoney(a.amount, 'PKR')}, paid back over ${a.months} months`, since: a.created_at, link: '#/expenses?tab=advances', user_id: a.user_id });
-    const people = db.prepare("SELECT * FROM users WHERE active = 1 AND role != 'owner' ORDER BY name").all();
+    const people = db.prepare("SELECT * FROM users WHERE active = 1 AND role != 'owner' AND COALESCE((SELECT employed FROM hr_records WHERE user_id = users.id), CASE WHEN users.is_dev = 1 AND users.tracks_time = 0 THEN 0 ELSE 1 END) = 1 ORDER BY name").all();
     for (const u of people) {
       const rec = P().recordOf(u.id) || {};
       if (!P().setupOf(u.id)) items.push({ kind: 'no_pay', title: `${u.name} has no pay set`, sub: 'They are left off payroll until it is', link: `#/hr/person?id=${u.id}`, user_id: u.id });

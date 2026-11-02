@@ -236,3 +236,28 @@ test('people imported from contracts get an account, record and pay; a bad field
   assert.equal(p2.record.notice_days, 15);
   assert.equal(p2.record.iban, 'PK36 MEZN 0000 0011 2233 4821');
 });
+
+test('developer and test accounts are not employees: off payroll and HR reminders, and HR can move them back', async () => {
+  const { ok, tokens } = env;
+  const dev = await env.person('devacct', 'Arham Dev');
+  const tester = await env.person('tester', 'HR Testing');
+  await ok('PATCH', `/api/users/${dev.id}`, { token: tokens.owner, body: { is_dev: true, tracks_time: false } });
+  let list = await ok('GET', '/api/hr/people', { token: tokens.fatima });
+  assert.equal(list.find((p) => p.id === dev.id).employed, false, 'an untracked developer account is not an employee');
+  assert.equal(list.find((p) => p.id === dev.id).flags.no_pay, false, 'and needs no pay');
+  assert.equal(list.find((p) => p.id === tester.id).employed, true, 'everyone else is, until HR says otherwise');
+  await ok('PUT', `/api/hr/people/${tester.id}/record`, { token: tokens.fatima, body: { employed: false } });
+  const pr = await ok('GET', '/api/payroll', { token: tokens.fatima });
+  assert.ok(!pr.missing_pay.some((m) => m.id === dev.id || m.id === tester.id), 'payroll does not ask for their pay');
+  const o = await ok('GET', '/api/hr/overview', { token: tokens.fatima });
+  assert.ok(!o.items.some((i) => i.user_id === dev.id || i.user_id === tester.id), 'no HR reminders about them');
+  // given pay by mistake, they are still left off the month
+  await ok('PUT', `/api/hr/people/${tester.id}/pay`, { token: tokens.fatima, body: { base: 50000, currency: 'PKR', tax_mode: 'pk' } });
+  const run = pr.runs[0];
+  const d = await ok('POST', `/api/payroll/runs/${run.id}/refresh`, { token: tokens.fatima });
+  assert.ok(!slipOf(d, tester.id), 'not on payroll');
+  // moved back
+  await ok('PUT', `/api/hr/people/${tester.id}/record`, { token: tokens.fatima, body: { employed: true } });
+  list = await ok('GET', '/api/hr/people', { token: tokens.fatima });
+  assert.equal(list.find((p) => p.id === tester.id).employed, true);
+});

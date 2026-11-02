@@ -1692,3 +1692,20 @@ input[type="file"]::file-selector-button:hover { background: #F3F1F9; }
 @media (max-width: 900px) { .hr-cols { display: flex; flex-direction: column; align-items: stretch; } .hr-col { display: contents; } .hr-cols > .hr-col > * { order: 2; width: 100%; } .hr-cols > .hr-col:first-child > :first-child { order: 1; } .hr-cols > .hr-col > .hr-hist { order: 5; } }
 
 @keyframes viewIn { from { opacity: .4; } to { opacity: 1; } }
+
+/* People and pay: developer and test accounts, listed apart from the employees */
+.hr-others header { align-items: flex-start; }
+.hr-others header p { margin: 4px 0 0; max-width: 62ch; }
+.hr-ocount { font-size: .8em; font-weight: 500; margin-left: 4px; }
+.hr-olist { list-style: none; margin: 0; padding: 0; }
+.hr-olist li { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 12px 0; border-top: 1px solid var(--line, #eee); }
+.hr-olist li:first-child { border-top: 0; padding-top: 2px; }
+.hr-olist .person { display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; min-width: 0; }
+.hr-olist .person > span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.hr-olist .person b { font-weight: 600; }
+.hr-olist .person span span { font-size: 13px; color: var(--muted, #777); }
+.hr-olist .person:hover b { text-decoration: underline; }
+.t td.row-a, .t th.row-a { width: 1%; white-space: nowrap; text-align: right; }
+.t td.row-a .btn { opacity: 0; transition: opacity .15s; }
+.t tr:hover td.row-a .btn, .t td.row-a .btn:focus-visible { opacity: 1; }
+@media (hover: none), (max-width: 760px) { .t td.row-a .btn { opacity: 1; } }

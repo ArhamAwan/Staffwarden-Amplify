@@ -3,7 +3,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 // Schema v2. Fresh installs and v1 databases go through the same path: the v1 tables are created
 // if missing, then migrate() adds everything v2 needs without touching existing rows.
-const SCHEMA_VERSION = 23;
+const SCHEMA_VERSION = 24;
 
 function hasColumn(db, table, col) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
@@ -83,6 +83,7 @@ function openDb(file = ':memory:') {
 function migrate(db) {
   const version = db.prepare('PRAGMA user_version').get().user_version;
   if (version >= SCHEMA_VERSION) return;
+  if (version === 23) return migrateV24(db);
   if (version === 22) return migrateV23(db);
   if (version === 21) return migrateV22(db);
   if (version === 20) return migrateV21(db);
@@ -966,6 +967,21 @@ function migrateV23(db) {
   db.exec('BEGIN');
   try {
     addColumn(db, 'boosts', 'test', 'INTEGER NOT NULL DEFAULT 0');
+    db.exec('PRAGMA user_version = 23');
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  migrateV24(db);
+}
+
+// v24: accounts that are not employees (developer and test accounts). HR marks them, or a developer account
+// whose time is not tracked counts as one until HR says otherwise. They are kept off payroll and HR's reminders.
+function migrateV24(db) {
+  db.exec('BEGIN');
+  try {
+    addColumn(db, 'hr_records', 'employed', 'INTEGER');
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {
