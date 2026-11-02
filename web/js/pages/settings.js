@@ -1,4 +1,4 @@
-import { html, raw, plural, tod, dayShort, addDays, minOfDayIn, dur, hhmmText, hm, zoneOffset } from '../util.js';
+import { html, raw, icon, plural, tod, dayShort, addDays, minOfDayIn, dur, hhmmText, hm, zoneOffset } from '../util.js';
 
 const breakLen = (a, b) => (((hm(b) - hm(a)) % 1440) + 1440) % 1440;
 import { get, post, put } from '../api.js';
@@ -7,6 +7,63 @@ import { zoneOptions } from '../parts.js';
 
 const DAYS = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [0, 'Sun']];
 const bytes = (n) => (n > 1e9 ? (n / 1e9).toFixed(2) + ' GB' : n > 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1e3)) + ' KB');
+
+// The settings page: a list of sections on the left (each with what it is set to now), the sections on
+// the right as plain rows (what it is, then the control), a picture of the shift that follows the times
+// as they are typed, and a save bar that only appears once something has changed.
+const SECTIONS = [['company', 'Company'], ['hours', 'Working hours'], ['shots', 'Screenshots'], ['privacy', 'Private windows'], ['tasks', 'Tasks'], ['open', 'Transparency'], ['live', 'Live status'], ['storage', 'Storage'], ['chat', 'Chat']];
+const ALWAYS = ['Messaging apps (WhatsApp, Telegram, Signal…)', 'Password managers', 'Private and incognito windows', 'Banking and payments', 'Social media', 'Notification pop-ups'];
+const SHOTS = [[0, 'Off'], [1, '1'], [2, '2'], [3, '3']];
+const short = (t) => (t ? hhmmText(t).replace(':00', '') : '');
+const dayRun = (wd) => {
+  const on = DAYS.filter(([v]) => wd.has(v)).map(([, n]) => n);
+  if (on.length === 7) return 'Every day';
+  const names = DAYS.map(([, n]) => n), idx = on.map((n) => names.indexOf(n));
+  const run = idx.length > 2 && idx.every((x, i) => !i || x === idx[i - 1] + 1);
+  return run ? `${on[0]}–${on[on.length - 1]}` : on.join(', ') || 'No days';
+};
+
+function summaries(s) {
+  const wd = new Set(String(s.work_days).split(',').map(Number));
+  const extra = (s.blackout_apps || []).filter((a) => a.toLowerCase() !== 'whatsapp').length;
+  return {
+    company: s.org_name,
+    hours: `${short(s.shift_start)} – ${short(s.shift_end)} · ${dayRun(wd)}`,
+    shots: s.shots_per_10 ? `${s.shots_per_10} per 10 min · kept ${s.retention_days} days` : 'Off',
+    privacy: extra ? `Always on, plus ${plural(extra, 'more')}` : 'Always on',
+    tasks: s.task_review_required !== false ? 'Reviewed before done' : 'Done when ticked',
+    open: { everyone: 'Everyone sees status', team: 'Own team sees status', off: 'Only managers' }[s.team_visibility || 'everyone'],
+    live: `No signal after ${s.no_signal_min} min`,
+  };
+}
+
+// the shift as a 24-hour strip, starting 3 hours before the shift: the shift, the break inside it, and
+// where "late" begins. Drawn again as the times are typed.
+function shiftStrip(f) {
+  const ss = hm(f.shift_start), se = hm(f.shift_end);
+  if (ss == null || se == null) return '';
+  const origin = (Math.floor(ss / 60) - 3 + 24) % 24 * 60;
+  const pos = (m) => ((((m - origin) % 1440) + 1440) % 1440) / 1440 * 100;
+  const len = (a, b) => ((((b - a) % 1440) + 1440) % 1440 || 1440) / 1440 * 100;
+  const bs = hm(f.break_start), be = hm(f.break_end), grace = Number(f.grace_min) || 0;
+  const ticks = [0, 6, 12, 18].map((h) => { const m = (origin + h * 60) % 1440; return html`<span class="ss-tick" style="left:${(h / 24) * 100}%">${short(`${String(Math.floor(m / 60)).padStart(2, '0')}:00`)}</span>`; });
+  const work = (se - ss + 1440) % 1440 - (bs != null && be != null ? breakLen(f.break_start, f.break_end) : 0);
+  return html`<div class="ss" aria-hidden="true">
+      <div class="ss-bar"><i class="ss-shift" style="left:${pos(ss)}%;width:${len(ss, se)}%"></i>${pos(ss) + len(ss, se) > 100 ? html`<i class="ss-shift" style="left:0;width:${pos(ss) + len(ss, se) - 100}%"></i>` : ''}
+        ${bs != null && be != null ? html`<i class="ss-break" style="left:${pos(bs)}%;width:${len(bs, be)}%"></i>` : ''}
+        ${grace ? html`<i class="ss-grace" style="left:${pos(ss)}%;width:${(grace / 1440) * 100}%"></i>` : ''}
+        <b class="ss-pin" style="left:${pos(ss)}%">${short(f.shift_start)}</b><b class="ss-pin end" style="left:${(pos(ss) + len(ss, se)) % 100 || 100}%">${short(f.shift_end)}</b></div>
+      <div class="ss-axis">${ticks}</div></div>
+    <p class="ss-sum"><b>${dur(Math.max(0, work) * 60)}</b> of work${bs != null && be != null ? html`, with a <b>${dur(breakLen(f.break_start, f.break_end) * 60)}</b> break from ${short(f.break_start)} to ${short(f.break_end)}` : ', no fixed break'}${grace ? html`. Starting up to <b>${grace} min</b> late still counts as on time` : ''}.${(se < ss) ? html` The shift crosses midnight, so work until ${short(f.shift_end)} counts for the day it began.` : ''}</p>`;
+}
+// where screenshots can fall inside 10 minutes (each in the middle of its own part)
+function shotRuler(n) {
+  if (!n) return html`<div class="shr off"><span>No screenshots. Time, activity and attendance are still tracked.</span></div>`;
+  const part = 10 / n;
+  return html`<div class="shr" aria-hidden="true"><div class="shr-bar">${Array.from({ length: n }, (_, i) => html`<i style="left:${((i * part + part * 0.2) / 10) * 100}%;width:${((part * 0.6) / 10) * 100}%"></i>`)}</div>
+    <div class="shr-axis"><span>0 min</span><span>5</span><span>10</span></div></div>
+    <p class="hint">Each shaded part gets one screenshot at a random moment, so they can’t be predicted but are never seconds apart.</p>`;
+}
 
 export const settingsPage = {
   title: 'Settings',
@@ -17,64 +74,132 @@ export const settingsPage = {
   },
   render({ s, storage, gifs }) {
     const wd = new Set(String(s.work_days).split(',').map(Number));
-    const num = (id, name, label, v, min, max, hint, step = 1) => html`<div class="field"><label class="f" for="${id}">${label}</label><input id="${id}" name="${name}" type="number" min="${min}" max="${max}" step="${step}" value="${v}" required>${hint ? html`<p class="hint">${hint}</p>` : ''}</div>`;
+    const sum = summaries(s);
+    const row = (label, hint, control, { id, wide, tog } = {}) => html`<div class="srow ${wide ? 'wide' : ''} ${tog ? 'tog' : ''}"><div class="srow-t">${id ? html`<label for="${id}">${label}</label>` : html`<span class="srow-l">${label}</span>`}${hint ? html`<p>${hint}</p>` : ''}</div><div class="srow-c">${control}</div></div>`;
+    const sw = (name, on, id) => html`<label class="switch"><input type="checkbox" id="${id}" name="${name}" ${on ? raw('checked') : ''}><span></span></label>`;
+    const num = (id, name, v, min, max, unit, step = 1) => html`<span class="unit-in"><input id="${id}" name="${name}" type="number" inputmode="decimal" min="${min}" max="${max}" step="${step}" value="${v}" required><em>${unit}</em></span>`;
+    const radios = (name, cur, list, label) => html`<div class="seg-r" role="radiogroup" aria-label="${label}">${list.map(([v, t]) => html`<label><input type="radio" name="${name}" value="${v}" ${String(cur) === String(v) ? raw('checked') : ''}><span>${t}</span></label>`)}</div>`;
+    const sec = (key, title, lead, body) => html`<section class="panel sset" id="set-${key}" data-k="set-${key}"><header><div><h2>${title}</h2>${lead ? html`<p>${lead}</p>` : ''}</div></header><div class="body">${body}</div></section>`;
+    const extra = (s.blackout_apps || []).filter((a) => a.toLowerCase() !== 'whatsapp');
     return html`
-      <div class="page-h"><div><h1>Settings</h1><p class="sub">Company-wide rules. Each person can override their own schedule on the People page.</p></div></div>
-      <form data-submit="save-settings" novalidate>
-        <section class="panel"><header><h2>Company</h2></header><div class="body"><div class="field" style="max-width:380px"><label class="f" for="s-org">Company name</label><input id="s-org" name="org_name" value="${s.org_name}" maxlength="80" required></div></div></section>
-        <section class="panel"><header><h2>Working hours</h2><span class="muted small">Used for attendance, lateness and targets</span></header><div class="body">
-          <div class="grid3"><div class="field"><label class="f" for="s-ss">Shift starts</label><input id="s-ss" type="time" name="shift_start" value="${s.shift_start}" required></div>
-            <div class="field"><label class="f" for="s-se">Shift ends</label><input id="s-se" type="time" name="shift_end" value="${s.shift_end}" required></div>
-            ${num('s-gr', 'grace_min', 'Grace period (minutes)', s.grace_min, 0, 120, 'Starting this much after the shift start is still on time')}</div>
-          <div class="grid3"><div class="field"><label class="f" for="s-bs">Break starts</label><input id="s-bs" type="time" name="break_start" value="${s.break_start || ''}"></div>
-            <div class="field"><label class="f" for="s-be">Break ends</label><input id="s-be" type="time" name="break_end" value="${s.break_end || ''}"></div>
-            <div class="field"></div></div>
-          <p class="hint" style="margin:-4px 0 12px">${s.break_start && s.break_end ? html`Break of ${dur(breakLen(s.break_start, s.break_end) * 60)}. The desktop app reminds people when it starts and when it is over.` : 'The break is optional. Leave both blank for no fixed break.'}</p>
-          ${s.day_start_min ? html`<p class="hint" style="margin:-4px 0 12px">This shift runs past midnight, so each work day is counted from the shift start: work until ${hhmmText(s.shift_end)} counts for the day the shift began.</p>` : ''}
-          <div class="grid3"><div class="field"><label class="f" for="s-tz">Company time zone</label><select id="s-tz" name="tz">${zoneOptions(s.tz_name || null, { fixed: s.tz_name ? null : s.tz_offset_min })}</select><p class="hint">The default for everyone. Pick each remote person's own zone on the People page.</p></div>
-            ${num('s-wt', 'weekly_h', 'Weekly target (hours)', s.weekly_target_min / 60, 0, 100, '', 0.5)}
-            ${num('s-lv', 'leave_days_per_year', 'Time off per year (days)', s.leave_days_per_year, 0, 365, '')}</div>
-          <div class="field"><span class="f fl">Working days</span><div class="chips">${DAYS.map(([v, n]) => html`<label class="chip" style="display:inline-flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" name="wd" value="${v}" ${wd.has(v) ? raw('checked') : ''}> ${n}</label>`)}</div></div></div></section>
-        <section class="panel"><header><h2>Screenshots and activity</h2><span class="muted small">Employees see this same policy in the desktop app</span></header><div class="body">
-          <div class="grid3"><div class="field"><label class="f" for="s-sh">Screenshots per 10 minutes</label><select id="s-sh" name="shots_per_10">${[[0, 'Off (time is still tracked)'], [1, '1 per 10 minutes'], [2, '2 per 10 minutes'], [3, '3 per 10 minutes']].map(([v, t]) => html`<option value="${v}" ${s.shots_per_10 === v ? raw('selected') : ''}>${t}</option>`)}</select><p class="hint">Company default, at random moments. Teams and people can have their own on the People page.</p></div>
-            ${num('s-il', 'idle_limit_min', 'Mark as idle after (minutes)', s.idle_limit_min, 1, 120, 'With no keyboard or mouse, the timer keeps running; that time is shown as idle and no screenshots are taken')}
-            ${num('s-rd', 'retention_days', 'Keep screenshots for (days)', s.retention_days, 1, 3650, 'Older ones are deleted automatically')}</div>
-          <div class="grid2"><div class="field"><label class="f" for="s-scr">Screens to capture</label><select id="s-scr" name="capture_screens"><option value="active" ${s.capture_screens !== 'all' ? raw('selected') : ''}>Only the screen being worked on (recommended)</option><option value="all" ${s.capture_screens === 'all' ? raw('selected') : ''}>Every connected screen</option></select>
-            <p class="hint">Staff use their own computers: "only the screen being worked on" leaves out their other monitors.</p></div></div>
-          <div class="check"><input id="s-blur" type="checkbox" name="blur_shots" ${s.blur_shots ? raw('checked') : ''}><label for="s-blur">Blur screenshots</label></div>
-          <p class="hint" style="margin:-4px 0 10px 28px">Blurred on the employee's computer before sending: you can see that work is happening (which kind of app, the layout), but not what is on screen.</p>
-          <div class="check"><input id="s-del" type="checkbox" name="employees_can_delete_shots" ${s.employees_can_delete_shots ? raw('checked') : ''}><label for="s-del">Employees can delete their own screenshots</label></div>
-          <p class="hint" style="margin:-4px 0 0 28px">Employees can always see their own screenshots and who opened each one.</p></div></section>
-        <section class="panel"><header><h2>Private windows</h2><span class="muted small">Hidden on the employee's computer before a screenshot is saved</span></header><div class="body">
-          <p class="muted" style="margin-bottom:10px">Matching windows are painted solid black before the screenshot leaves the computer, so the private content never reaches you or the server.</p>
-          <div class="field"><span class="f fl">Always hidden</span><div class="chips">${['WhatsApp, Telegram, Signal and other messaging apps', 'Password managers', 'Private and incognito browser windows', 'Banking and payments (banks, JazzCash, Easypaisa, PayPal, Payoneer)', 'Social media (Facebook, Instagram, TikTok, X, Reddit)'].map((t) => html`<span class="chip">${t}</span>`)}</div></div>
-          <div class="field"><label class="f" for="s-bo">Other apps or sites to hide</label>
-            <input id="s-bo" name="blackout_apps" value="${(s.blackout_apps || []).filter((a) => a.toLowerCase() !== 'whatsapp').join(', ')}" maxlength="300" placeholder="Names separated by commas. For example: Gmail, Zoom">
-            <p class="hint">Matches the app name or the window title, so a site open in any browser is covered too.</p></div>
-          <p class="hint" style="margin-top:6px">Only the private window is painted black; the rest of the screenshot stays visible. Message pop-ups are not windows; ask staff to turn off message previews.</p></div></section>
-        <section class="panel"><header><h2>Tasks</h2></header><div class="body">
-          <div class="check"><input id="s-rv" type="checkbox" name="task_review_required" ${s.task_review_required !== false ? raw('checked') : ''}><label for="s-rv">Assigned tasks go to a manager or the project lead for review before they count as done</label></div>
-          <p class="hint" style="margin:-4px 0 0 28px">Task accuracy on the Performance page is the share approved without being sent back.</p></div></section>
-        <section class="panel"><header><h2>Transparency</h2><span class="muted small">Changes here are shown to everyone they affect</span></header><div class="body">
-          <div class="grid2"><div class="field"><label class="f" for="s-tv">Employees can see their colleagues' status</label><select id="s-tv" name="team_visibility">${[['everyone', 'Everyone in the company'], ['team', 'Only people in their own team'], ['off', 'Nobody (only managers see it)']].map(([v, t]) => html`<option value="${v}" ${(s.team_visibility || 'everyone') === v ? raw('selected') : ''}>${t}</option>`)}</select>
-            <p class="hint">Working, on a break, idle or not started, and hours today. Never screenshots, activity or break reasons. Widening it asks everyone to agree again.</p></div></div>
-          <div class="check"><input id="s-rl" type="checkbox" name="require_latest_app" ${s.require_latest_app !== false ? raw('checked') : ''}><label for="s-rl">Only the newest desktop app can start the timer</label></div>
-          <p class="hint" style="margin:-4px 0 0 28px">When a newer installer is on the server, older apps show "Update to start your timer". A timer that is already running keeps going.</p></div></section>
-        <section class="panel"><header><h2>Live status</h2></header><div class="body"><div class="grid3">
-          ${num('s-ns', 'no_signal_min', 'Show "no signal" after (minutes)', s.no_signal_min, 1, 60, 'A running timer that has gone quiet')}
-          ${num('s-st', 'stale_min', 'Close a silent session after (minutes)', s.stale_min, 5, 240, 'It is closed at the last time we heard from the app')}</div></div></section>
-        <div class="set-save"><button type="submit" class="btn primary">Save settings</button><span class="muted small">Saves everything above</span><span class="err" data-err></span></div>
-      </form>
-      <section class="panel"><header><h2>Stored screenshots</h2></header><div class="body" style="display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;justify-content:space-between">
-        <p>${plural(storage.screenshots, 'screenshot')} using <b>${bytes(storage.bytes)}</b>. Anything older than ${s.retention_days} days is removed automatically.</p>
-        <button class="btn danger" data-act="purge">Delete expired screenshots now</button></div></section>
-      ${gifs ? html`<section class="panel"><header><h2>Chat</h2><span class="muted small">GIFs in every chat, for everyone</span></header><div class="body">
-        <form class="gif-set" data-submit="gif-key" novalidate>
-          <div class="field"><label class="f" for="s-gif">GIF search key</label><input id="s-gif" name="key" autocomplete="off" spellcheck="false" placeholder="${gifs.has_key ? `${gifs.provider === 'tenor' ? 'Tenor' : 'GIPHY'} key ending ${gifs.hint}` : 'Paste a GIPHY or Tenor API key'}">
-            <p class="hint">${gifs.has_key ? html`GIF search is on, from <b>${gifs.provider === 'tenor' ? 'Tenor' : 'GIPHY'}</b>. Paste a new key to change it.` : 'Free from developers.giphy.com, or a Tenor key from Google Cloud. GIFs come through Staffwarden, so nobody’s browser talks to GIPHY or Tenor directly.'}</p></div>
-          <div class="gif-set-b"><button type="submit" class="btn primary">Save key</button>${gifs.has_key ? html`<button type="button" class="btn" data-act="gif-off">Turn GIFs off</button>` : ''}<span class="err" data-err></span></div>
-        </form></div></section>` : ''}`;
+      <div class="page-h"><div><h1>Settings</h1><p class="sub">Rules for the whole company. Teams and people can have their own schedule and screenshots on the People page.</p></div></div>
+      <div class="set-wrap">
+        <nav class="set-nav" aria-label="Settings sections">${SECTIONS.filter(([k]) => k !== 'chat' || gifs).map(([k, t]) => html`<button type="button" data-act="set-jump" data-to="${k}" data-k="nav-${k}"><b>${t}</b>${sum[k] ? html`<span data-sum="${k}">${sum[k]}</span>` : ''}</button>`)}</nav>
+        <div class="set-main">
+        <form data-submit="save-settings" data-setform novalidate>
+          ${sec('company', 'Company', '', row('Company name', 'Shown in the app, on payslips and in emails.', html`<input id="s-org" name="org_name" value="${s.org_name}" maxlength="80" required>`, { id: 's-org' }))}
+
+          ${sec('hours', 'Working hours', 'Attendance, lateness and weekly targets are worked out from these.', html`
+            <div data-strip>${shiftStrip(s)}</div>
+            <div class="set-times">
+              <div class="field"><label class="f" for="s-ss">Shift starts</label><input id="s-ss" type="time" name="shift_start" value="${s.shift_start}" required></div>
+              <div class="field"><label class="f" for="s-se">Shift ends</label><input id="s-se" type="time" name="shift_end" value="${s.shift_end}" required></div>
+              <div class="field"><label class="f" for="s-bs">Break starts</label><input id="s-bs" type="time" name="break_start" value="${s.break_start || ''}"></div>
+              <div class="field"><label class="f" for="s-be">Break ends</label><input id="s-be" type="time" name="break_end" value="${s.break_end || ''}"></div>
+            </div>
+            <p class="hint set-brk">The desktop app reminds people when the break starts and ends. <button type="button" class="linkbtn" data-act="set-nobreak">No fixed break</button></p>
+            ${row('Working days', '', html`<div class="days" role="group" aria-label="Working days">${DAYS.map(([v, n]) => html`<label><input type="checkbox" name="wd" value="${v}" ${wd.has(v) ? raw('checked') : ''}><span>${n}</span></label>`)}</div>`, { wide: true })}
+            ${row('Grace period', 'Starting this late still counts as on time.', num('s-gr', 'grace_min', s.grace_min, 0, 120, 'min'), { id: 's-gr' })}
+            ${row('Weekly target', 'Hours each person aims for in a week.', num('s-wt', 'weekly_h', s.weekly_target_min / 60, 0, 100, 'hours', 0.5), { id: 's-wt' })}
+            ${row('Time off per year', 'Paid days off each person gets.', num('s-lv', 'leave_days_per_year', s.leave_days_per_year, 0, 365, 'days'), { id: 's-lv' })}
+            ${row('Time zone', 'The default for everyone. Set each remote person’s own zone on the People page.', html`<select id="s-tz" name="tz">${zoneOptions(s.tz_name || null, { fixed: s.tz_name ? null : s.tz_offset_min })}</select>`, { id: 's-tz' })}`)}
+
+          ${sec('shots', 'Screenshots and activity', 'Everyone sees this same policy in the desktop app.', html`
+            ${row('Screenshots per 10 minutes', 'The company default. Teams and people can have their own.', radios('shots_per_10', s.shots_per_10, SHOTS, 'Screenshots per 10 minutes'), { wide: true })}
+            <div data-ruler>${shotRuler(s.shots_per_10)}</div>
+            ${row('Screens to capture', 'People work on their own computers, so other monitors are left out by default.', radios('capture_screens', s.capture_screens === 'all' ? 'all' : 'active', [['active', 'The one in use'], ['all', 'All screens']], 'Screens to capture'))}
+            ${row('Idle after', 'With no keyboard or mouse for this long, the time shows as idle and no screenshots are taken.', num('s-il', 'idle_limit_min', s.idle_limit_min, 1, 120, 'min'), { id: 's-il' })}
+            ${row('Keep screenshots for', 'Older ones are deleted on their own.', num('s-rd', 'retention_days', s.retention_days, 1, 3650, 'days'), { id: 's-rd' })}
+            ${row('Blur screenshots', 'Blurred on the employee’s computer before sending: you see that work is happening, not what is on screen.', sw('blur_shots', s.blur_shots, 's-blur'), { id: 's-blur', tog: true })}
+            ${row('People can delete their own screenshots', 'They can always see their screenshots and who opened each one.', sw('employees_can_delete_shots', s.employees_can_delete_shots, 's-del'), { id: 's-del', tog: true })}`)}
+
+          ${sec('privacy', 'Private windows', 'Painted black on the employee’s computer before a screenshot leaves it, so nobody ever sees them.', html`
+            <div class="srow wide"><div class="srow-t"><span class="srow-l">Always hidden</span><p>These can’t be turned off.</p></div><div class="srow-c"><ul class="always">${ALWAYS.map((t) => html`<li>${icon('lock')}${t}</li>`)}</ul></div></div>
+            <div class="srow wide"><div class="srow-t"><label for="s-bo-add">Also hide</label><p>Matches the app name or window title, so a site open in any browser is covered too.</p></div>
+              <div class="srow-c"><input type="hidden" name="blackout_apps" value="${extra.join(', ')}" data-initial="${extra.join(', ')}" data-tags-value>
+                <div class="tags" data-tags>${extra.map((t) => html`<span class="tag-x">${t}<button type="button" data-act="set-tag-rm" data-tag="${t}" aria-label="Stop hiding ${t}">${icon('x')}</button></span>`)}
+                  <input id="s-bo-add" data-tag-add placeholder="${extra.length ? 'Add another' : 'Add an app or site, like Gmail'}" maxlength="40" autocomplete="off"></div>
+                <p class="hint">Press Enter to add.</p></div></div>`)}
+
+          ${sec('tasks', 'Tasks', '', row('Review before done', 'Assigned tasks go to a manager or the project lead before they count as done. Task accuracy on Performance is the share approved first time.', sw('task_review_required', s.task_review_required !== false, 's-rv'), { id: 's-rv', tog: true }))}
+
+          ${sec('open', 'Transparency', 'Changes here are shown to everyone they affect.', html`
+            ${row('Who sees colleagues’ status', 'Working, on a break, idle or not started, and hours today. Never screenshots or activity. Widening it asks everyone to agree again.', html`<select id="s-tv" name="team_visibility">${[['everyone', 'Everyone in the company'], ['team', 'Only their own team'], ['off', 'Nobody, only managers']].map(([v, t]) => html`<option value="${v}" ${(s.team_visibility || 'everyone') === v ? raw('selected') : ''}>${t}</option>`)}</select>`, { id: 's-tv' })}
+            ${row('Only the newest desktop app starts the timer', 'Older apps show “Update to start your timer”. A timer already running keeps going.', sw('require_latest_app', s.require_latest_app !== false, 's-rl'), { id: 's-rl', tog: true })}`)}
+
+          ${sec('live', 'Live status', '', html`
+            ${row('“No signal” after', 'A running timer that has gone quiet.', num('s-ns', 'no_signal_min', s.no_signal_min, 1, 60, 'min'), { id: 's-ns' })}
+            ${row('Close a silent session after', 'It ends at the last time the app was heard from.', num('s-st', 'stale_min', s.stale_min, 5, 240, 'min'), { id: 's-st' })}`)}
+
+          <div class="set-bar" data-setbar hidden><span><b data-setcount>Unsaved changes</b><span class="err" data-err></span></span><span class="set-bar-a"><button type="button" class="btn" data-act="set-discard">Discard</button><button type="submit" class="btn primary">Save changes</button></span></div>
+        </form>
+
+        ${sec('storage', 'Storage', '', row(`${plural(storage.screenshots, 'screenshot')} stored`, html`Using <b>${bytes(storage.bytes)}</b>. Anything older than ${s.retention_days} days is removed on its own.`, html`<button class="btn danger" data-act="purge">Delete expired now</button>`))}
+        ${gifs ? sec('chat', 'Chat', 'GIFs in every chat, for everyone.', html`
+          <form class="gif-set" data-submit="gif-key" novalidate>
+            ${row('GIF search', gifs.has_key ? html`On, from <b>${gifs.provider === 'tenor' ? 'Tenor' : 'GIPHY'}</b>. Paste a new key to change it.` : 'Free from developers.giphy.com, or a Tenor key from Google Cloud. GIFs come through Staffwarden, so nobody’s browser talks to them directly.',
+              html`<div class="gif-in"><input id="s-gif" name="key" autocomplete="off" spellcheck="false" aria-label="GIF search key" placeholder="${gifs.has_key ? `Key ending ${gifs.hint}` : 'Paste a GIPHY or Tenor key'}"><button type="submit" class="btn">Save key</button>${gifs.has_key ? html`<button type="button" class="btn" data-act="gif-off">Turn off</button>` : ''}</div><span class="err" data-err></span>`, { wide: true })}
+          </form>`) : ''}
+        </div>
+      </div>`;
   },
+  after(view) { setupForm(view); },
+};
+
+// ---- the live parts: the shift picture, the screenshot ruler, the tags, and the save bar ----
+const formOf = () => document.querySelector('[data-setform]');
+const snapshot = (f) => JSON.stringify([...new FormData(f).entries()]);
+let initial = null;
+function setupForm() {
+  const f = formOf(); if (!f) return;
+  if (!f.dataset.ready) {
+    f.dataset.ready = '1';
+    f.addEventListener('input', () => refreshForm(f));
+    f.addEventListener('change', () => refreshForm(f));
+  }
+  // what the page was loaded with (fields being edited keep their value through live refreshes)
+  if (!f.querySelector('[data-dirty]')) initial = snapshot(f);
+  refreshForm(f);
+}
+function values(f) { const fd = new FormData(f); return Object.fromEntries(['shift_start', 'shift_end', 'break_start', 'break_end', 'grace_min'].map((k) => [k, fd.get(k)])); }
+function refreshForm(f) {
+  const strip = f.querySelector('[data-strip]'); if (strip) strip.innerHTML = shiftStrip(values(f)).toString();
+  const ruler = f.querySelector('[data-ruler]'); if (ruler) ruler.innerHTML = shotRuler(Number(new FormData(f).get('shots_per_10')) || 0).toString();
+  const changed = initial != null && snapshot(f) !== initial;
+  const bar = f.querySelector('[data-setbar]');
+  if (bar) { bar.hidden = !changed; document.body.classList.toggle('set-dirty', changed); }
+}
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { const f = formOf(); if (f && !f.querySelector('[data-setbar]').hidden) { e.preventDefault(); f.requestSubmit(); } }
+  if (e.key === 'Enter' && e.target.matches && e.target.matches('[data-tag-add]')) { e.preventDefault(); addTag(e.target); }
+});
+document.addEventListener('focusout', (e) => { if (e.target.matches && e.target.matches('[data-tag-add]') && e.target.value.trim()) addTag(e.target); });
+function tagValues(f) { return String(f.querySelector('[data-tags-value]').value || '').split(',').map((x) => x.trim()).filter(Boolean); }
+function setTags(f, list) {
+  const hidden = f.querySelector('[data-tags-value]'); hidden.value = list.join(', ');
+  const box = f.querySelector('[data-tags]'), input = box.querySelector('[data-tag-add]');
+  box.querySelectorAll('.tag-x').forEach((x) => x.remove());
+  for (const t of list) input.insertAdjacentHTML('beforebegin', html`<span class="tag-x">${t}<button type="button" data-act="set-tag-rm" data-tag="${t}" aria-label="Stop hiding ${t}">${icon('x')}</button></span>`.toString());
+  input.placeholder = list.length ? 'Add another' : 'Add an app or site, like Gmail';
+  hidden.dataset.dirty = '1';
+  refreshForm(f);
+}
+function addTag(input) {
+  const f = formOf(), v = input.value.replace(/,/g, ' ').trim(); if (!v) return;
+  const list = tagValues(f);
+  if (!list.some((x) => x.toLowerCase() === v.toLowerCase())) list.push(v);
+  input.value = '';
+  setTags(f, list);
+}
+actions['set-tag-rm'] = (el) => { const f = formOf(); setTags(f, tagValues(f).filter((x) => x !== el.dataset.tag)); };
+actions['set-jump'] = (el) => { const t = document.getElementById(`set-${el.dataset.to}`); if (t) t.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); };
+actions['set-nobreak'] = () => { const f = formOf(); for (const n of ['break_start', 'break_end']) { const i = f.querySelector(`[name=${n}]`); i.value = ''; i.dataset.dirty = '1'; } refreshForm(f); };
+actions['set-discard'] = () => {
+  const f = formOf(); f.reset();
+  f.querySelectorAll('[data-dirty]').forEach((el) => delete el.dataset.dirty);
+  const hidden = f.querySelector('[data-tags-value]'); setTags(f, String(hidden.dataset.initial || '').split(',').map((x) => x.trim()).filter(Boolean)); delete hidden.dataset.dirty;
+  f.querySelector('[data-err]').textContent = '';
+  refreshForm(f);
 };
 
 actions['gif-key'] = async (form) => {
@@ -90,7 +215,7 @@ actions['save-settings'] = async (form) => {
   const wd = fd.getAll('wd').map(Number).sort();
   if (!wd.length) { err.textContent = 'Pick at least one working day'; return; }
   const n = (k) => Number(fd.get(k));
-  if (!fd.get('break_start') !== !fd.get('break_end')) { err.textContent = 'Give the break both a start and an end, or leave both blank.'; return; }
+  if (!fd.get('break_start') !== !fd.get('break_end')) { err.textContent = 'Give the break a start and an end, or neither.'; return; }
   const body = {
     org_name: fd.get('org_name'), shift_start: fd.get('shift_start'), shift_end: fd.get('shift_end'), break_start: fd.get('break_start') || null, break_end: fd.get('break_end') || null, grace_min: n('grace_min'),
     ...(() => { const v = String(fd.get('tz') || ''); if (v.startsWith('z:')) return { tz_name: v.slice(2), tz_offset_min: zoneOffset(v.slice(2)) }; return {}; })(), weekly_target_min: Math.round(n('weekly_h') * 60), leave_days_per_year: n('leave_days_per_year'),
@@ -102,7 +227,8 @@ actions['save-settings'] = async (form) => {
   try {
     await put('/api/settings', body);
     form.querySelectorAll('[data-dirty]').forEach((el) => delete el.dataset.dirty);
-    toast('Settings saved. Desktop apps pick up changes the next time they start a session.');
+    initial = null;
+    toast('Settings saved. Desktop apps pick them up when they next start a session.');
     S.refresh();
   } catch (e) { err.textContent = errMsg(e); } finally { btn.disabled = false; }
 };
