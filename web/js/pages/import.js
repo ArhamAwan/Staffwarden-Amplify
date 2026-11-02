@@ -9,9 +9,10 @@ import { CONTRACT } from './hr.js';
 // one entry per file: status reading | done | error
 const st = { files: [], phase: 'pick', results: [], people: [] };
 let seq = 0;
-const FIELDS = ['name', 'email', 'title', 'joined_on', 'base', 'currency', 'contract', 'probation_end', 'notice_days', 'phone', 'cnic', 'bank_name', 'account_title', 'iban', 'address'];
+const FIELDS = ['name', 'email', 'title', 'joined_on', 'base', 'currency', 'contract', 'probation_end', 'notice_days', 'phone', 'cnic', 'bank_name', 'account_title', 'iban', 'address', 'pay_from'];
 const NEEDED = ['name', 'email', 'title', 'joined_on', 'base'];
-const LABEL = { name: 'Full name', email: 'Email (their sign-in)', title: 'Job title', joined_on: 'Joined', base: 'Base salary, a month', currency: 'Currency', contract: 'Contract', probation_end: 'Probation ends', notice_days: 'Notice (days)', phone: 'Phone', cnic: 'CNIC', bank_name: 'Bank', account_title: 'Account title', iban: 'IBAN', address: 'Address' };
+const LABEL = { name: 'Full name', email: 'Email (their sign-in)', title: 'Job title', joined_on: 'Joined', base: 'Base salary, a month', currency: 'Currency', contract: 'Contract', probation_end: 'Probation ends', notice_days: 'Notice (days)', phone: 'Phone', cnic: 'CNIC', bank_name: 'Bank', account_title: 'Account title', iban: 'IBAN', address: 'Address', pay_from: 'New pay from' };
+const KIND = { promotion: 'promotion agreement', increment: 'salary increment agreement', amendment: 'amended or extended contract' };
 
 export default {
   title: 'Import from contracts',
@@ -77,13 +78,14 @@ function card(f) {
       <div><b>${v.name || f.file.name}</b><span>${f.file.name} · ${f.method === 'ocr' ? 'read by OCR, check it carefully' : 'read from the PDF text'}</span></div>
       <span class="imp-tags">${m ? tag('idle', `Updates ${m.name}`) : tag('working', 'New person')}${found < NEEDED.length ? tag('break', `${NEEDED.length - found} to fill in`) : ''}</span></div>
     ${err ? html`<p class="imp-err" role="alert">${icon('x')} ${err}</p>` : ''}
-    ${m && m.pay ? html`<label class="imp-pay"><input type="checkbox" data-imp="${f.id}" data-f="usePay" ${f.usePay ? raw('checked') : ''}><span><b>Also change their pay to the contract’s salary</b> Their pay is ${money(m.pay.base, m.pay.currency)} a month now. An old contract may show an older salary, so this is off unless you turn it on.</span></label>` : ''}
+    ${KIND[f.parsed.kind] ? html`<p class="imp-kind">${icon('file')} <span>This is a <b>${KIND[f.parsed.kind]}</b>. The job and salary are the new ones${v.pay_from ? `, paid from ${dateY(v.pay_from)}` : ''}. Joined is their first day under the original contract.</span></p>` : ''}
+    ${m && m.pay ? html`<label class="imp-pay"><input type="checkbox" data-imp="${f.id}" data-f="usePay" ${f.usePay ? raw('checked') : ''}><span><b>Also change their pay to the contract’s salary</b> Their pay is ${money(m.pay.base, m.pay.currency)} a month now. ${KIND[f.parsed.kind] ? 'This agreement changes their pay, so this starts on.' : 'An old contract may show an older salary, so this is off unless you turn it on.'}</span></label>` : ''}
     <div class="imp-grid">
       ${inp('name', 'maxlength="100" autocomplete="off"')}${inp('email', 'type="email" maxlength="200" autocomplete="off"')}${inp('title', 'maxlength="100"')}
       ${inp('joined_on', 'type="date"')}${inp('base', 'type="number" min="0" step="1" inputmode="numeric" class="num"')}${sel('currency', [['PKR', 'Rupees (Rs)'], ['USD', 'Dollars ($)']])}
       ${sel('contract', Object.entries(CONTRACT))}${inp('probation_end', 'type="date"')}${inp('notice_days', 'type="number" min="0" max="365"')}
       ${inp('phone', 'maxlength="40"')}${inp('cnic', 'maxlength="15" placeholder="61101-1234567-1"')}${inp('bank_name', 'maxlength="80"')}
-      ${inp('account_title', 'maxlength="100"')}${inp('iban', 'maxlength="40" autocomplete="off"')}${inp('address', 'maxlength="300"')}
+      ${inp('account_title', 'maxlength="100"')}${inp('iban', 'maxlength="40" autocomplete="off"')}${inp('address', 'maxlength="300"')}${KIND[f.parsed.kind] ? inp('pay_from', 'type="date"') : ''}
     </div>
     <details class="imp-text"><summary>Show the text Staffwarden read</summary><pre>${f.text.slice(0, 8000)}</pre></details>
     ${m && v.email && m.email.toLowerCase() !== v.email.trim().toLowerCase() ? html`<p class="small muted">${m.name} signs in as ${m.email}. Their sign-in email is not changed.</p>` : ''}
@@ -163,7 +165,7 @@ async function read(f) {
     const r = isPdf ? await pdfText(f) : { text: await ocrImage(f, f.file, 0.05, 0.95, 'Reading it by OCR'), method: 'ocr' };
     if (r.text.replace(/\s/g, '').length < 30) throw new Error('No text could be read. Try a sharper scan or photo.');
     const p = parseContract(r.text);
-    Object.assign(f, { status: 'done', text: r.text, method: r.method, parsed: p, include: true, v: Object.fromEntries(FIELDS.map((k) => [k, p[k] ?? (k === 'currency' ? 'PKR' : k === 'contract' ? 'full_time' : '')])) });
+    Object.assign(f, { status: 'done', text: r.text, method: r.method, parsed: p, include: true, usePay: p.kind !== 'new', v: Object.fromEntries(FIELDS.map((k) => [k, p[k] ?? (k === 'currency' ? 'PKR' : k === 'contract' ? 'full_time' : '')])) });
   } catch (e) { Object.assign(f, { status: 'error', error: errMsg(e) }); }
   S.refresh();
 }
@@ -206,7 +208,7 @@ actions['imp-save'] = async () => {
     for (const k of ['contract', 'joined_on', 'probation_end', 'phone', 'cnic', 'address', 'bank_name', 'account_title', 'iban']) if (val(k) !== undefined) record[k] = val(k);
     if (val('notice_days') !== undefined) record.notice_days = Number(val('notice_days'));
     const base = Number(val('base'));
-    const pay = base > 0 && (!m || !m.pay || f.usePay) ? { base, currency: v.currency, tax_mode: v.currency === 'PKR' && v.contract !== 'contractor' ? 'pk' : 'none', effective_from: val('joined_on') || undefined, note: 'From their contract' } : undefined;
+    const pay = base > 0 && (!m || !m.pay || f.usePay) ? { base, currency: v.currency, tax_mode: v.currency === 'PKR' && v.contract !== 'contractor' ? 'pk' : 'none', effective_from: val('pay_from') || val('joined_on') || undefined, note: 'From their contract' } : undefined;
     try {
       const r = await post('/api/hr/import', { existing_id: m ? m.id : undefined, name: val('name'), email: val('email'), title: val('title'), record, pay });
       if (DOC_TYPES.includes(f.file.type) && f.file.size <= 5 * 1024 * 1024) {

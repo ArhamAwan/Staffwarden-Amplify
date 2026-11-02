@@ -45,3 +45,82 @@ Title: CEO`);
   assert.equal(r.base, 115000);
   assert.equal(r.email, 'musab@example.com');
 });
+
+test('a promotion agreement: the new job and salary, not the year, the owner or the old job', async () => {
+  const { parseContract } = await load();
+  const r = parseContract(`PROMOTION & AMENDED
+EMPLOYMENT AGREEMENT
+Effective Date: 1st August 2026
+This Agreement amends the Employment Agreement originally entered into on 13th October 2025, by and between:
+EMPLOYER
+Amplify Media
+A sole proprietorship owned by Basit Gilani
+Office Address: House # 948, KRL Road, Rawalpindi, Pakistan
+Muhammad Waseem Abbas
+Address: Hassu Balail, District Jhang, Tehsil Ahmad Pur
+Sial, Punjab, Pakistan
+Email: waseem@example.com
+Hereinafter referred to as the “Employee.ˮ
+1. PROMOTION AND POSITION
+Effective 1st August 2026, the Employer hereby promotes
+the Employee from the position of Media Buyer to:
+CHIEF OPERATING OFFICER (COO)
+7. COMPENSATION
+Effective 1st August 2026, the Employeeʼs salary shall be:
+PKR 150,000 (One Hundred Fifty Thousand Rupees) per
+month
+18. NOTICE PERIOD
+Either party shall give thirty (30) daysʼ written notice.
+SIGNATURES
+Name: Basit Gilani
+Title: Owner & Director
+EMPLOYEE
+Name: Muhammad Waseem Abbas
+Title: Chief Operating Officer`);
+  assert.equal(r.name, 'Muhammad Waseem Abbas');
+  assert.equal(r.title, 'Chief Operating Officer (COO)');
+  assert.equal(r.base, 150000);
+  assert.equal(r.joined_on, '2025-10-13');
+  assert.equal(r.pay_from, '2026-08-01');
+  assert.equal(r.kind, 'promotion');
+  assert.equal(r.notice_days, 30);
+  assert.equal(r.address, 'Hassu Balail, District Jhang, Tehsil Ahmad Pur Sial, Punjab, Pakistan');
+});
+
+test('a salary increment: the new salary, not the old one or the raise; joined on the original date', async () => {
+  const { parseContract } = await load();
+  const r = parseContract(`EMPLOYMENT CONTRACT EXTENSION &
+SALARY INCREMENT AGREEMENT
+1. EMPLOYER
+Amplify Media
+A sole proprietorship owned by Basit Gilani
+Effective Date of Increment: 01-August-2026
+2. EMPLOYEE
+Dur-e-Shawar Nasir
+D/O Nasir Ahmed
+CNIC No.: 35202-2560524-4
+House #695, Block D, Sher Shah Colony, Raiwind Road, Lahore
+Email: diya@example.com
+3. ORIGINAL EMPLOYMENT
+The Employee originally joined Amplify Media on 01-January-2026.
+The Employee’s existing position is:
+Creative Manager & Graphic Designer
+4. SALARY INCREMENT
+The Employee’s previous monthly salary was:
+PKR 35,000 per month
+Effective 01-August-2026, the Employee’s new basic monthly salary shall be:
+PKR 50,000 (Pakistani Rupees Fifty Thousand Only) per month.
+This represents an increase of:
+PKR 15,000 per month
+Either party may terminate in accordance with the 30-day written notice requirement.
+EMPLOYEE
+Name: Basit Gilani
+Title: Owner & Director`);
+  assert.equal(r.name, 'Dur-e-Shawar Nasir');
+  assert.equal(r.title, 'Creative Manager & Graphic Designer');
+  assert.equal(r.base, 50000);
+  assert.equal(r.joined_on, '2026-01-01');
+  assert.equal(r.pay_from, '2026-08-01');
+  assert.equal(r.address, 'House #695, Block D, Sher Shah Colony, Raiwind Road, Lahore');
+  assert.equal(r.notice_days, 30);
+});
