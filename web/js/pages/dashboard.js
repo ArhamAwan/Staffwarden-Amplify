@@ -125,21 +125,22 @@ export const teamPage = {
       ${isToday && d.idle ? nudgeBoard(d.idle) : ''}
       ${kpis(cells)}
       <section class="panel flush roster"><header><h2>Everyone</h2><div class="legend"><span><i class="sw s-working"></i>Working</span><span><i class="sw s-break"></i>Break</span><span><i class="sw s-idle"></i>Idle</span></div></header>
-        <div class="body">${d.members.length ? html`<div class="tbl-wrap"><table class="t">${anyFull ? html`<thead><tr><th>Person</th><th style="min-width:230px">${isToday ? 'Today' : 'That day'}${ribbonAxis(win, { maxLabels: 5, ds })}</th><th class="r">Worked</th><th class="r">Breaks</th><th class="r">Activity</th><th>This week</th><th>Last screenshot</th></tr></thead>` : ''}
+        <div class="body">${d.members.length ? html`<div class="tbl-wrap"><table class="t">${anyFull ? html`<thead><tr><th>Person</th><th style="min-width:230px">${isToday ? 'Today' : 'That day'}${ribbonAxis(win, { maxLabels: 5, ds })}</th><th>Started</th><th class="r">Worked</th><th class="r">Breaks</th><th class="r">Activity</th><th>This week</th><th>Last screenshot</th></tr></thead>` : ''}
           ${groups.filter(([, , , list]) => list.length).map(([g, label, full, list]) => html`<tbody class="lane" id="lane-${g}" data-k="l${g}">
-            <tr class="lane-h"><th colspan="7"><i class="sw s-${DOT[g]}"></i>${label}<span class="lane-c num">${list.length}</span></th></tr>
+            <tr class="lane-h"><th colspan="8"><i class="sw s-${DOT[g]}"></i>${label}<span class="lane-c num">${list.length}</span></th></tr>
             ${full ? list.map((m) => {
               const wk = m.week_target_secs ? Math.round((100 * m.week_secs) / m.week_target_secs) : 0;
               const nm = m.attendance && isToday ? rel(minOfDayIn(m.tz_offset_min), ds) : null;
               return html`<tr class="link" data-k="m${m.user_id}" data-act="go" data-href="#/timeline?user=${m.user_id}&day=${d.day}" tabindex="0">
                 <td class="nm"><span class="who-cell">${avatarOf(m, 'st-' + DOT[g])}<span class="pc"><b>${m.name}${zoneBadge(m)}</b><span class="small muted">${nowLine(m, g, isToday)}</span></span></span></td>
                 <td>${ribbon(onAxis(m), win, { nowMin: nm, ds })}</td>
+                <td class="nowrap">${m.first_start ? html`<b class="num">${tod(m.first_start, m.tz_offset_min)}</b><br><span class="small ${m.late_by_min ? 'late-t' : 'muted'}">${m.late_by_min ? `${dur(m.late_by_min * 60)} late` : 'On time'}</span>` : html`<span class="faint">–</span>`}</td>
                 <td class="r num"><b>${dur(m.worked_secs)}</b></td>
                 <td class="r num">${m.break_count ? html`${m.break_count} · ${dur(m.break_secs)}` : html`<span class="faint">None</span>`}${m.idle_secs ? html`<br><span class="small muted">${dur(m.idle_secs)} idle</span>` : ''}</td>
                 <td class="r">${m.activity_pct == null ? html`<span class="faint">–</span>` : html`<span class="pct">${meter(m.activity_pct, toneFor(m.activity_pct, 35, 50))}<span class="num">${m.activity_pct}%</span></span>`}</td>
                 <td style="min-width:150px"><span class="num small">${dur(m.week_secs)} <span class="muted">of ${hoursText(m.week_target_secs)}</span></span>${meter(wk)}</td>
                 <td class="muted small num">${m.last_shot_at ? relTime(m.last_shot_at) : html`<span class="faint">None</span>`}</td></tr>`;
-            }) : html`<tr class="lane-chips"><td colspan="7"><div class="chips">${list.map((m) => html`<a class="pchip" data-k="p${m.user_id}" href="#/timeline?user=${m.user_id}&day=${d.day}">${avatarOf(m)}<span>${m.name}</span>${m.title ? html`<small>${m.title}</small>` : ''}</a>`)}</div></td></tr>`}
+            }) : html`<tr class="lane-chips"><td colspan="8"><div class="chips">${list.map((m) => html`<a class="pchip" data-k="p${m.user_id}" href="#/timeline?user=${m.user_id}&day=${d.day}">${avatarOf(m)}<span>${m.name}</span>${m.title ? html`<small>${m.title}</small>` : ''}</a>`)}</div></td></tr>`}
           </tbody>`)}</table></div>
 ` : empty('Nobody to show yet', html`Add people on the <a href="#/people">People</a> page.`)}</div></section>
       <div class="cols">

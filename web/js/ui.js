@@ -184,13 +184,18 @@ export function bars(items, { max, fmt = dur } = {}) {
 export function meter(pct, tone = '') { return html`<span class="meter ${tone}"><i style="width:${Math.max(0, Math.min(100, pct || 0))}%"></i></span>`; }
 export const toneFor = (v, bad, warn) => (v == null ? '' : v < bad ? 'bad' : v < warn ? 'warn' : 'good');
 
-export function dateNav({ label, prevQ, nextQ, nextDisabled, todayQ, todayShown }) {
+export function dateNav({ label, prevQ, nextQ, nextDisabled, todayQ, todayShown, pick }) {
+  // the date in the middle opens a calendar to jump to any day (pick = { q, value, max })
   return html`<span class="datenav">
     <button class="btn icon" data-act="q" ${raw(prevQ)} aria-label="Previous">${icon('left')}</button>
-    <span class="lbl num">${label}</span>
+    ${pick ? html`<span class="dn-pick"><button type="button" class="lbl num dn-btn" data-act="dn-pick" aria-label="${label}. Choose a date">${icon('cal')}<span>${label}</span></button><input type="date" class="dn-date" data-q="${pick.q}" value="${pick.value}" ${pick.max ? raw(`max="${pick.max}"`) : ''} tabindex="-1" aria-hidden="true"></span>` : html`<span class="lbl num">${label}</span>`}
     <button class="btn icon" data-act="q" ${raw(nextQ)} aria-label="Next" ${nextDisabled ? raw('disabled') : ''}>${icon('right')}</button>
     ${todayShown ? html`<button class="btn sm" data-act="q" ${raw(todayQ)}>Today</button>` : ''}</span>`;
 }
+actions['dn-pick'] = (el) => {
+  const input = el.parentElement.querySelector('.dn-date');
+  try { input.showPicker(); } catch { input.focus(); input.click(); }
+};
 export const qAttr = (k, v) => `data-q="${esc(k)}" data-v="${esc(v ?? '')}"`;
 
 // ---------- screenshots

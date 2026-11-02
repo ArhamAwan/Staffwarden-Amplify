@@ -49,6 +49,7 @@ export function dayNav(day, today, label) {
     label: label || dayLong(day),
     prevQ: qAttr('day', addDays(day, -1)), nextQ: qAttr('day', addDays(day, 1)),
     nextDisabled: day >= today, todayQ: qAttr('day', ''), todayShown: day !== today,
+    pick: { q: 'day', value: day, max: today },
   });
 }
 

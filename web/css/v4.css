@@ -1821,3 +1821,10 @@ body > #sysban.portal > b { flex: 0 1 auto; }
 .hr-home { margin-bottom: 18px; }
 .hr-col-l > .panel > .body, .hr-col-r > .panel > .body { padding-bottom: 20px; }
 .hr-col-l .mini-stats { gap: 14px 20px; }
+
+/* date navigation: the date opens a calendar */
+.dn-pick { position: relative; display: inline-flex; }
+.datenav .dn-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 190px; padding: 7px 12px; border: 1px solid transparent; border-radius: var(--r-ctl); background: none; color: inherit; cursor: pointer; font: inherit; font-weight: 650; font-family: var(--display); }
+.datenav .dn-btn:hover { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.18); }
+.datenav .dn-btn .ic { width: 16px; height: 16px; opacity: .75; }
+.dn-date { position: absolute; left: 0; right: 0; bottom: 0; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
