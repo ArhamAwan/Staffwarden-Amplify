@@ -1131,3 +1131,6 @@ html.ng-on body { overflow: hidden; }
 .sr-t tr.sr-f-red > td:first-child { box-shadow: inset 3px 0 0 #FF7A66; } .sr-t tr.sr-f-amber > td:first-child { box-shadow: inset 3px 0 0 #F7B544; }
 .sr-fn { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 99px; font-size: 12px; font-weight: 700; }
 .sr-fn.lv-red { background: rgba(255,122,102,.18); color: #FF9C88; } .sr-fn.lv-amber { background: rgba(247,181,68,.16); color: #F7C46A; } .sr-fn.lv-blue { background: rgba(125,167,255,.16); color: #9DBBFF; }
+/* the rail sits above the page (z 60) to open over it on hover; everything modal has to sit above the rail */
+.viewer { z-index: 70; }
+.scrim { z-index: 62; } .scrim.top { z-index: 64; }
