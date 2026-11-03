@@ -8,7 +8,13 @@ const same = (a, b) => a.nodeType === b.nodeType && a.nodeName === b.nodeName &&
 document.addEventListener('input', (e) => { if (e.target && e.target.dataset) e.target.dataset.dirty = '1'; }, true);
 // a <details> the reader opened or closed keeps that state through live refreshes
 document.addEventListener('toggle', (e) => { if (e.target && e.target.nodeName === 'DETAILS') e.target.dataset.touched = '1'; }, true);
-document.addEventListener('change', (e) => { if (e.target && e.target.dataset) e.target.dataset.dirty = '1'; }, true);
+document.addEventListener('change', (e) => {
+  const t = e.target; if (!t || !t.dataset) return;
+  t.dataset.dirty = '1';
+  // choosing one radio un-chooses the others in its group: they are all the reader's choice now, so a
+  // live refresh must not put the first one back
+  if (t.type === 'radio' && t.name) for (const r of (t.form || document).querySelectorAll(`input[type="radio"][name="${CSS.escape(t.name)}"]`)) r.dataset.dirty = '1';
+}, true);
 
 function syncAttrs(a, b) {
   for (const at of Array.from(a.attributes)) {
