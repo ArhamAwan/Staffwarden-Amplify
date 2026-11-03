@@ -7,16 +7,18 @@ const W = 595.28, H = 841.89;
 const HELV = [278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584];
 const BOLD = [278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584, 584, 611, 975, 722, 722, 722, 722, 667, 611, 778, 722, 278, 556, 722, 611, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 333, 278, 333, 584, 556, 333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556, 278, 889, 611, 611, 611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584];
 
-// text in the PDF's own encoding: typographic quotes and dashes become plain ones, anything else unknown a '?'
+// text in the PDF's own encoding (WinAnsi): typographic quotes, dashes, the middle dot and bullets are
+// kept as their WinAnsi bytes; anything else outside it becomes a '?'
+const WIN = { '‘': '\x91', '’': '\x92', '“': '\x93', '”': '\x94', '•': '\x95', '–': '\x96', '—': '\x97', '…': '\x85', '·': '\xB7', '×': '\xD7', '\u00A0': ' ', '\u202F': ' ' };
+const WIN_W = { 0x91: 222, 0x92: 222, 0x93: 333, 0x94: 333, 0x95: 350, 0x96: 556, 0x97: 1000, 0x85: 1000, 0xB7: 278, 0xD7: 584 };
 function clean(s) {
-  return String(s ?? '').replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-').replace(/…/g, '...').replace(/ /g, ' ')
-    .replace(/[^\x20-\x7E]/g, '?');
+  return String(s ?? '').replace(/[‘’“”•–—…·×\u00A0\u202F]/g, (c) => WIN[c]).replace(/[^\x20-\x7E\x85\x91-\x97\xB7\xD7]/g, '?');
 }
 const esc = (s) => clean(s).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
 function width(s, size, bold = false) {
   const t = bold ? BOLD : HELV;
   let w = 0;
-  for (const ch of clean(s)) w += t[ch.charCodeAt(0) - 32] || 556;
+  for (const ch of clean(s)) { const c = ch.charCodeAt(0); w += c < 127 ? t[c - 32] || 556 : WIN_W[c] || 556; }
   return (w / 1000) * size;
 }
 const rgb = (hex) => { const n = parseInt(String(hex || '#000000').slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => (v / 255).toFixed(3)).join(' '); };

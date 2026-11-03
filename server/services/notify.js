@@ -23,6 +23,7 @@ const KINDS = {
   chat_direct: 'chat_direct', chat_mention: 'chat_direct', chat_channel: 'chat_channel',
   announcement: 'announce', boost: 'boost', boost_clip: 'boost', checkin_reminder: 'checkin', checkin_blocked: 'checkin',
   idle_nudge: 'nudge', idle_alert: 'team', fun_mode: 'account',
+  shift_report: 'reports',
 };
 const CATEGORIES = {
   chat_direct: 'Direct messages and mentions',
@@ -39,6 +40,7 @@ const CATEGORIES = {
   checkin: 'Check-in reminder and blockers',
   timeoff: 'Time off requests and decisions',
   team: 'Team alerts: idle or silent timers',
+  reports: 'Shift report ready to download',
   explain: 'Notes and time requests from my team',
   pay: 'Payroll, expenses and advances to look at (HR)',
   nudge: '“Still there?” when I’m idle',
@@ -53,15 +55,16 @@ const SUBS = {
   checkin: '15 minutes before your shift ends',
   nudge: 'Always on, so your hours stay right',
   team: 'For managers',
+  reports: 'After the last shift of each work day ends',
 };
-const MANAGER_ONLY = new Set(['reviews', 'team', 'explain', 'pay']);
+const MANAGER_ONLY = new Set(['reviews', 'team', 'explain', 'pay', 'reports']);
 const LOCKED = new Set(['announce', 'nudge']);                    // can't be switched off
-const LOUD = new Set(['announce', 'nudge', 'account']);           // come through during quiet hours
+const LOUD = new Set(['announce', 'nudge', 'account', 'reports']);   // come through during quiet hours (a shift report comes after hours by nature)
 const IN_BELL_NOT = new Set(['chat_direct', 'chat_channel']);     // chats have their own badges
 const DEVICES = ['phone', 'desktop', 'browser'];
 const DEFAULTS = {
   chat_direct: [1, 1, 1], chat_channel: [0, 1, 0], announce: [1, 1, 1], boost: [1, 1, 1], tasks: [1, 1, 0], reviews: [1, 1, 0], results: [1, 1, 0],
-  comments: [1, 1, 0], deadlines: [1, 1, 0], projects: [1, 1, 0], clients: [1, 1, 1], checkin: [1, 1, 0], timeoff: [1, 1, 1], team: [1, 1, 1],
+  comments: [1, 1, 0], deadlines: [1, 1, 0], projects: [1, 1, 0], clients: [1, 1, 1], checkin: [1, 1, 0], timeoff: [1, 1, 1], team: [1, 1, 1], reports: [1, 1, 1],
   explain: [1, 1, 1], pay: [1, 1, 1], nudge: [1, 1, 1], account: [1, 1, 1],
 };
 const isPhone = (device) => /^(iphone|ipad|android)/i.test(String(device || ''));

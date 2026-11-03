@@ -423,6 +423,8 @@ function createApp(opts = {}) {
     if (ctx.portalSweep) { try { n += ctx.portalSweep(); } catch (e) { console.error('portal sweep', e); } }
     // the shift: idle nudges, check-in reminders, announcement reminders, fun modes that ran out
     if (ctx.shiftSweep) { try { n += ctx.shiftSweep(); } catch (e) { console.error('shift sweep', e); } }
+    // after the last shift of the day: the shift report is ready
+    if (ctx.shiftReportSweep) { try { n += ctx.shiftReportSweep(); } catch (e) { console.error('shift report sweep', e); } }
     return n;
   }
   const sweeper = setInterval(() => {
@@ -471,7 +473,7 @@ function createApp(opts = {}) {
   ctx.pnotify = createPortalNotify(ctx);
   ctx.changes = createChanges(ctx);
   ctx.payroll = createPayroll(ctx);
-  for (const f of ['auth', 'people', 'projects', 'tasks', 'performance', 'timer', 'capture', 'views', 'timeoff', 'admin', 'notifications', 'explain', 'hr', 'payroll', 'clients', 'portal', 'chat', 'portal2', 'team', 'shift', 'gifs', 'dev', 'leaderboard']) require(`./routes/${f}`)(ctx);
+  for (const f of ['auth', 'people', 'projects', 'tasks', 'performance', 'timer', 'capture', 'views', 'timeoff', 'admin', 'notifications', 'explain', 'hr', 'payroll', 'clients', 'portal', 'chat', 'portal2', 'team', 'shift', 'gifs', 'dev', 'leaderboard', 'shiftreport']) require(`./routes/${f}`)(ctx);
 
   // ---------- server ----------
   async function readBody(req) {

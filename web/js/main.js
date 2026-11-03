@@ -21,6 +21,7 @@ import timesheets from './pages/timesheets.js';
 import attendance from './pages/attendance.js';
 import timeoff from './pages/timeoff.js';
 import reports from './pages/reports.js';
+import shiftReport from './pages/shiftreport.js';
 import people from './pages/people.js';
 import { projectsPage as projects, projectPage as project } from './pages/projects.js';
 import { settingsPage, auditPage } from './pages/settings.js';
@@ -50,10 +51,10 @@ let liveState = 'connecting', lastOk = 0, lastErr = null, pendingBadge = 0, reqB
 let current = { name: null, key: null };
 let openedTask = null;
 
-const MGR = { '': teamPage, me: mePage, chat: teamChatPage, checkin: checkinPage, checkins: checkinsPage, announcements: announcementsPage, tasks, project, clients: clientsPage, inbox: inboxPage, performance, productivity: performance, timeline, screenshots, timesheets, attendance, timeoff, requests: requestsPage, reports, people, projects, audit: auditPage, profile };
+const MGR = { '': teamPage, me: mePage, chat: teamChatPage, checkin: checkinPage, checkins: checkinsPage, announcements: announcementsPage, tasks, project, clients: clientsPage, inbox: inboxPage, performance, productivity: performance, timeline, screenshots, timesheets, attendance, timeoff, requests: requestsPage, reports, 'shift-report': shiftReport, people, projects, audit: auditPage, profile };
 const MGR_NAV = [
   ['', 'Dashboard', 'dash'], ['projects', 'Projects', 'folder'], ['tasks', 'Tasks', 'tasks'], ['performance', 'Performance', 'bolt'], ['timeline', 'Activity', 'pulse'], ['screenshots', 'Screenshots', 'camera'],
-  ['timesheets', 'Timesheets', 'clock'], ['attendance', 'Attendance', 'cal'], ['timeoff', 'Time off', 'sun'], ['requests', 'Missing time', 'plus'], ['reports', 'Reports', 'chart'],
+  ['timesheets', 'Timesheets', 'clock'], ['attendance', 'Attendance', 'cal'], ['timeoff', 'Time off', 'sun'], ['requests', 'Missing time', 'plus'], ['reports', 'Reports', 'chart'], ['shift-report', 'Shift reports', 'file'],
 ];
 const MGR_NAV2 = [['people', 'People', 'users'], ['settings', 'Settings', 'gear'], ['audit', 'Audit log', 'log']];
 const EMP = { '': mePage, me: mePage, chat: teamChatPage, checkin: checkinPage, checkins: checkinsPage, announcements: announcementsPage, projects, project, tasks, inbox: inboxPage, performance, productivity: performance, timeline, screenshots, timesheets, attendance, timeoff, profile };
@@ -229,7 +230,7 @@ function navHtml() {
   if (isMgr()) {
     const money = isHR() ? HR_NAV : [HR_NAV[2]];
     return grp('Today', [...(god() ? [['', 'Home', 'dash'], ['team', 'Team', 'users']] : pick(MGR_NAV, [''])), ...(S.me.tracks_time || S.me.fun_mode ? [['me', 'Your day', 'user']] : []), CHAT_NAV, ['checkins', 'Check-ins', 'checkin'], ...LB_NAV(), ...pick(MGR_NAV, ['timeline', 'screenshots'])]) + grp('Work', [...pick(MGR_NAV, ['projects']), ['clients', 'Clients', 'client'], ['inbox', 'Client inbox', 'chat'], ...pick(MGR_NAV, ['tasks', 'performance'])])
-      + grp('Time', pick(MGR_NAV, ['timesheets', 'attendance', 'timeoff', 'requests', 'reports'])) + grp(isHR() ? 'HR' : 'Money', [...money, ...(S.me.role === 'owner' ? [] : [payNav])])
+      + grp('Time', pick(MGR_NAV, ['timesheets', 'attendance', 'timeoff', 'requests', 'reports', 'shift-report'])) + grp(isHR() ? 'HR' : 'Money', [...money, ...(S.me.role === 'owner' ? [] : [payNav])])
       + grp('Manage', [['announcements', 'Announcements', 'mega'], ...MGR_NAV2.filter((n) => n[0] !== 'settings' || S.me.role === 'owner'), ...DEV_NAV()]);
   }
   return grp('Today', [...(god() ? [['', 'Home', 'dash'], ['me', 'Your day', 'user']] : pick(EMP_NAV, [''])), CHAT_NAV, ...(S.me.tracks_time ? [['checkin', 'Check-in', 'checkin']] : []), ...LB_NAV(), ...pick(EMP_NAV, ['timeline', 'screenshots'])]) + grp('Work', [...pick(EMP_NAV, ['projects']), ...(hasClients ? [['inbox', 'Client inbox', 'chat']] : []), ...pick(EMP_NAV, ['tasks', 'performance'])])
