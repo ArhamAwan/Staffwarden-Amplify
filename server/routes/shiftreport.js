@@ -139,6 +139,20 @@ module.exports = (ctx) => {
     return { day, org: cfg.orgName || 'Staffwarden', ready_at: ready ? T.iso(ready) : null, final: ready != null && clockNow() >= ready, generated_at: nowIso(), totals, people };
   }
 
+  // what needs attention right now, for the dashboard: the same flags as the report, the serious ones only
+  ctx.attentionNow = (user, day) => {
+    const list = visibleUsers(user, { tracking: true });
+    const cal = calc().loadCalendar(list.map((u) => u.id), day, day);
+    const out = [];
+    for (const u of list) {
+      const p = personReport(u, day, cal);
+      if (['before', 'off', 'leave', 'holiday', 'upcoming'].includes(p.status) && !p.worked_secs) continue;
+      const f = p.flags.filter((x) => x.level !== 'blue');
+      if (f.length) out.push({ id: p.id, name: p.name, level: p.level, label: f[0].label, more: f.length - 1 });
+    }
+    return out.sort((a, b) => FLAG_ORDER[a.level] - FLAG_ORDER[b.level] || a.name.localeCompare(b.name));
+  };
+
   // the recent work days, newest first, with whether each one's report is ready
   function recentDays(user, n = 21) {
     const list = visibleUsers(user, { tracking: true });

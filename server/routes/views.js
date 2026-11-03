@@ -60,6 +60,8 @@ module.exports = (ctx) => {
     // the newest one from each person first, so the preview shows more than one face
     shots.sort((a, b) => (a.taken_at < b.taken_at ? 1 : -1));
     const seen = new Set(), first = shots.filter((s) => !seen.has(s.user_id) && seen.add(s.user_id));
+    // the owner's dashboard shows who needs attention right now (in place of the boost card)
+    if (user.role === 'owner' && ctx.attentionNow) { try { const ids = new Set(list.map((u) => u.id)); d.attention = ctx.attentionNow(user, day).filter((a) => ids.has(a.id)); } catch (e) { console.error('attention', e); d.attention = null; } }
     d.recent_shots = [...first, ...shots.filter((s) => !first.includes(s))].slice(0, 4).sort((a, b) => (a.taken_at < b.taken_at ? 1 : -1)).map((s) => ({ id: s.id, user_id: s.user_id, user_name: names.get(s.user_id), taken_at: s.taken_at, privacy: s.privacy || null }));
     return d;
   });

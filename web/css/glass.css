@@ -1134,3 +1134,29 @@ html.ng-on body { overflow: hidden; }
 /* the rail sits above the page (z 60) to open over it on hover; everything modal has to sit above the rail */
 .viewer { z-index: 70; }
 .scrim { z-index: 62; } .scrim.top { z-index: 64; }
+
+/* the owner's boost, at the top of the dashboard */
+.boost-top { display: inline-flex; align-items: stretch; height: 40px; border-radius: 12px; overflow: hidden; box-shadow: 0 12px 28px -14px rgba(247,181,68,.75); }
+.boost-top .bt-go { display: inline-flex; align-items: center; gap: 8px; padding: 0 16px; border: 0; cursor: pointer; background: linear-gradient(180deg, #F9C25E, #E9A53A); color: #2A1A00; font: 700 14.5px var(--body); white-space: nowrap; }
+.boost-top .bt-go .ic { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 2; }
+.boost-top .bt-go:hover { filter: brightness(1.06); }
+.boost-top .bt-go:focus-visible { outline: 2px solid #fff; outline-offset: -3px; }
+.boost-top .bt-st { display: inline-flex; align-items: center; padding: 0 12px; font-size: 12.5px; font-weight: 600; white-space: nowrap; color: #F7C46A; background: rgba(247,181,68,.13); border: 1px solid rgba(247,181,68,.28); border-left: 0; border-radius: 0 12px 12px 0; }
+.boost-top .bt-st.sent { color: #6FD8A8; background: rgba(61,190,131,.12); border-color: rgba(61,190,131,.28); }
+@media (max-width: 520px) { .boost-top .bt-st { display: none; } .boost-top .bt-go { border-radius: 12px; } }
+
+/* needs attention now, in the boost card's old place */
+.dash-bento > .bt-tc.na-bad { background: linear-gradient(155deg, rgba(255,122,102,.15), rgba(255,122,102,.03)); border-color: rgba(255,138,115,.28) !important; }
+.dash-bento > .bt-tc.na-warn { background: linear-gradient(155deg, rgba(247,181,68,.13), rgba(247,181,68,.02)); }
+.na-l { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.na-l li { display: grid; grid-template-columns: 8px minmax(90px, auto) minmax(0, 1fr); align-items: center; gap: 10px; font-size: 13.5px; min-width: 0; }
+.na-l i { width: 8px; height: 8px; border-radius: 2px; background: #F7B544; }
+.na-l li.na-r i { background: #FF7A66; }
+.na-l a { color: var(--ink); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.na-l a:hover b { text-decoration: underline; }
+.na-l b { font-weight: 600; }
+.na-l span { color: #F7C46A; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.na-l li.na-r span { color: #FF9C88; }
+.na-l em { font-style: normal; color: var(--muted); font-size: 12px; }
+.na-ok { display: flex; align-items: center; gap: 10px; margin-top: auto; font-size: 13.5px; color: var(--muted); }
+.na-ok .ic { width: 18px; height: 18px; flex: none; color: #3DBE83; stroke: currentColor; fill: none; stroke-width: 2.4; }

@@ -97,7 +97,7 @@ export const teamPage = {
     }
     return html`
       <div class="page-h"><div><h1>Team activity</h1><p class="sub">${dayLong(d.day)}${isToday ? ' · live' : ''} · ${plural(k.members, 'person', 'people')}</p></div>
-        <div class="tools">${S.me.fun_mode && isToday ? html`<a class="btn gm-go" href="#/">Back to god mode</a>` : ''}${teamSelect(q.get('team'))}${dayNav(d.day, today)}</div>
+        <div class="tools">${S.me.fun_mode && isToday ? html`<a class="btn gm-go" href="#/">Back to god mode</a>` : ''}${teamSelect(q.get('team'))}${dayNav(d.day, today)}${boostTop(d, isToday)}</div>
         <div class="hero hero-team">
           <div class="ht-top">
             <div class="ht-say"><b>${headline}</b><span>${subline}</span></div>
@@ -140,6 +140,14 @@ export const teamPage = {
   },
 };
 
+// the owner's boost, at the top of the page: the button and whether one went out this shift
+function boostTop(d, isToday) {
+  if (S.me.role !== 'owner' || !isToday || !d.boost) return '';
+  const b = d.boost.last, sent = b && nowMs() - Date.parse(b.created_at) < 14 * 3600000;
+  return html`<span class="boost-top"><button type="button" class="bt-go" data-act="boost-open">${icon('rocket')}Boost the team</button><span class="bt-st${sent ? ' sent' : ''}">${sent ? `Sent ${relTime(b.created_at)}` : 'Not sent this shift'}</span></span>`;
+}
+const NA_DOT = { red: 'r', amber: 'a' };
+
 // The numbers as a bento: the day's hours, attendance as a ring, the latest screenshots, the boost.
 const ATT_DOT = { present: 'ok', late: 'late', not_started: 'wait', absent: 'bad', leave: 'leave', holiday: 'leave', upcoming: 'off', off: 'off' };
 function dashBento(k, d, isToday, win, segsList, nowRel) {
@@ -152,11 +160,10 @@ function dashBento(k, d, isToday, win, segsList, nowRel) {
   const worked = Array.from({ length: hours }, (_, i) => { const a = lo + i * 60, z = a + 60; let n = 0; for (const segs of segsList) for (const [s0, e0, t] of segs) if (t === 'w') n += Math.max(0, Math.min(z, e0) - Math.max(a, s0)); return n; });
   const wmax = Math.max(1, ...worked), later = (i) => isToday && nowRel != null && lo + i * 60 > nowRel;
   const started = d.members.filter((x) => x.first_start).length;
-  const owner = S.me.role === 'owner', boostTile = owner && isToday && d.boost;
-  const b = d.boost && d.boost.last, bDay = b && nowMs() - Date.parse(b.created_at) < 14 * 3600000;   // this shift
+  const attn = S.me.role === 'owner' && Array.isArray(d.attention) ? d.attention : null;
   const shots = d.recent_shots || [];
   const tAtt = toneFor(k.attendance_rate, 70, 90);
-  return html`<section class="kpis bento dash-bento${boostTile ? '' : ' no-boost'}" aria-label="Key numbers">
+  return html`<section class="kpis bento dash-bento no-boost" aria-label="Key numbers">
     ${tile('wk', 'Worked today', 'clock', html`<div class="bt-row">${v(dur(k.worked_secs))}<span class="bt-say">${isToday ? `${plural(k.working, 'person', 'people')} working now` : `${plural(k.members, 'person', 'people')} tracked`}</span></div>
       <div class="bt-bars" aria-hidden="true">${worked.map((x, i) => html`<i class="${later(i) ? 'later' : x ? '' : 'zero'}" style="height:${x ? Math.max(10, Math.round((100 * x) / wmax)) : 8}%"></i>`)}</div>`)}
     ${tile('at', 'Attendance', 'cal', html`<div class="bt-ringw">${ring(k.attendance_rate, tAtt)}<span class="bt-rv ${tAtt}"><b class="num">${pctText(k.attendance_rate)}</b><small>${started} of ${k.members}</small></span></div>
@@ -171,10 +178,11 @@ function dashBento(k, d, isToday, win, segsList, nowRel) {
     ${tile('ot', 'On time', 'check', html`${v(pctText(k.punctuality_rate))}${f('Of those who started')}`, toneFor(k.punctuality_rate, 70, 90))}
     ${tile('ab', 'Average break', 'pause', html`${v(dur(k.avg_break_secs))}${f('Per person who worked')}`)}
     ${tile('id', 'Idle time', 'sun', html`${v(dur(k.idle_secs))}${f('Still counted as work')}`)}
-    ${tile('tk', 'Tasks', 'tasks', html`${v(String(k.tasks.open), 'open')}${f(`${k.tasks.overdue} overdue · ${k.tasks.in_review} in review${boostTile && k.tasks.completion_pct != null ? ` · ${k.tasks.completion_pct}% done on time` : ''}`)}`, k.tasks.overdue ? 'bad' : '')}
+    ${tile('tk', 'Tasks', 'tasks', html`${v(String(k.tasks.open), 'open')}${f(`${k.tasks.overdue} overdue · ${k.tasks.in_review} in review${attn && k.tasks.completion_pct != null ? ` · ${k.tasks.completion_pct}% done on time` : ''}`)}`, k.tasks.overdue ? 'bad' : '')}
     ${tile('ta', 'Task accuracy', 'check', html`${v(pctText(k.tasks.accuracy_pct))}${m(k.tasks.accuracy_pct, toneFor(k.tasks.accuracy_pct, 60, 85))}${f('Approved first time')}`, toneFor(k.tasks.accuracy_pct, 60, 85))}
-    ${boostTile ? tile('bo', 'Boost', 'rocket', html`<div class="bt-boost"><div>${v(b && bDay ? 'Sent this shift' : 'Not sent yet')}${f(b && bDay ? `Last one ${relTime(b.created_at)} · ${plural(b.boosted.length, 'person', 'people')} boosted` : `${plural(d.boost.working_now, 'person', 'people')} working could get one`)}</div>
-        <button class="btn go" data-act="boost-open">${icon('rocket')}Boost the team</button></div>`, '', ' style="--tint:1"')
+    ${attn ? tile('tc', isToday ? 'Needs attention now' : 'Needed attention', 'alert', html`<a class="bt-more" href="#/shift-report?day=${d.day}">Shift report</a>
+        ${attn.length ? html`<ul class="na-l">${attn.slice(0, 3).map((a) => html`<li class="na-${NA_DOT[a.level] || 'a'}"><i></i><a href="#/timeline?user=${a.id}&day=${d.day}"><b>${a.name}</b></a><span>${a.label}${a.more ? html` <em>+${a.more}</em>` : ''}</span></li>`)}</ul>${attn.length > 3 ? f(`and ${plural(attn.length - 3, 'more person', 'more people')}`) : ''}`
+        : html`<div class="na-ok">${icon('check')}<span>Nothing unusual${isToday ? ' so far' : ''}. Everyone is keeping to their hours.</span></div>`}`, attn.some((a) => a.level === 'red') ? 'na-bad' : attn.length ? 'na-warn' : '')
       : tile('tc', 'Task completion', 'tasks', html`<div class="bt-row">${v(pctText(k.tasks.completion_pct))}<span class="bt-say">Tasks due in 30 days that were done (${k.tasks.done_30} done)</span></div>${m(k.tasks.completion_pct, toneFor(k.tasks.completion_pct, 60, 85))}`, toneFor(k.tasks.completion_pct, 60, 85))}
   </section>`;
 }
