@@ -104,7 +104,14 @@ export async function showDownloads(box, { dark = true } = {}) {
   const opts = [['windows', 'Windows'], ['mac-arm', 'Mac with Apple chip (M1 and later)'], ['mac-intel', 'Mac with Intel chip']].map(([k, n]) => [pick(k), n]).filter(([d]) => d);
   if (!opts.length) return;
   const mb = (n) => `${Math.round(n / 1048576)} MB`;
-  box.innerHTML = `<b>Get the desktop app</b><ul>${opts.map(([d, n]) => `<li><a href="/downloads/${encodeURIComponent(d.file)}" download>${esc(n)}</a> <span>${mb(d.size)}</span></li>`).join('')}</ul>`;
+  // one button per computer, with its logo; the one matching this computer comes first
+  const OS = {
+    windows: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 5.5l7.5-1v7H3zM11.5 4.4L21 3v8.5h-9.5zM3 12.5h7.5v7L3 18.5zM11.5 12.5H21V21l-9.5-1.4z"/></svg>',
+    mac: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.4 12.6c0-2.4 2-3.6 2.1-3.7-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.3 1-4.2 2.5-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8s2 .8 3.3.8c1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9 0 0-2.8-1.1-2.8-4.2zM14 5.3c.7-.9 1.2-2 1-3.3-1 0-2.2.7-3 1.5-.6.7-1.2 1.9-1 3.1 1.1.1 2.3-.6 3-1.3z"/></svg>',
+  };
+  const here = /Mac/.test(navigator.platform) ? 'mac' : /Win/.test(navigator.platform) ? 'windows' : '';
+  const sorted = [...opts].sort((a, b) => (b[0].kind.startsWith(here || 'x') ? 1 : 0) - (a[0].kind.startsWith(here || 'x') ? 1 : 0));
+  box.innerHTML = `<b>Get the desktop app</b><span class="dl-sub">Start and stop your timer from it. It runs quietly in the menu bar or the tray.</span><div class="dl-grid">${sorted.map(([d, n]) => { const os = d.kind === 'windows' ? 'windows' : 'mac'; const short = d.kind === 'windows' ? 'Windows' : d.kind === 'mac-arm' ? 'Mac, Apple chip' : 'Mac, Intel chip'; return `<a class="dl-btn${here && d.kind.startsWith(here) ? ' mine' : ''}" href="/downloads/${encodeURIComponent(d.file)}" download title="${esc(n)}">${OS[os]}<span><b>${esc(short)}</b><small>${mb(d.size)}${d.kind === 'mac-arm' ? ' · for M1 and later' : d.kind === 'mac-intel' ? ' · for older Macs' : ' · Windows 10 and 11'}</small></span><svg class="dl-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></a>`; }).join('')}</div>`;
   box.classList.toggle('light', !dark);
 }
 
@@ -127,7 +134,7 @@ function showLogin(msg) {
   app.innerHTML = `<div class="login-split">
     <section class="login-art" aria-hidden="true">
       <div class="brand login-brand" style="padding:0"><span class="mark">${HELM}</span><div><b class="wordmark">Staffwarden</b><span>Amplify Media Technologies</span></div></div>
-      <div class="login-owl"><div class="login-owl-halo">${owl('live')}</div><p class="login-tag">Keeping watch through the night shift.</p></div>
+      <div class="login-owl"><div class="login-owl-halo">${owl('live')}</div><p class="login-tag">Keeping watch, so you don’t have to.</p></div>
       <p>${CREDIT}. Time is tracked only while you choose to, and private windows never leave your computer.</p>
     </section>
     <section class="login-side"><div class="login">
