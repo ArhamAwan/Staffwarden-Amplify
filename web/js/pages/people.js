@@ -216,7 +216,7 @@ function personRow(u, teams, downloads, st) {
   const diffs = differences(u, teams, st), probs = problems(u, downloads);
   const kind = KIND_OF(u.app_platform);
   return html`<li class="prow${u.active ? '' : ' off'}" data-k="u${u.id}" data-find="${(u.name + ' ' + u.email + ' ' + (u.title || '')).toLowerCase()}">
-    <div class="pr-who">${person({ id: u.id, name: u.name }, u.title || u.email)}${u.role !== 'employee' ? html`<span class="prole ${u.role}">${ROLE[u.role]}</span>` : ''}${u.hr ? html`<span class="prole hr">HR</span>` : ''}${u.is_dev ? html`<span class="prole dev">Developer</span>` : ''}</div>
+    <div class="pr-who">${person({ id: u.id, name: u.name }, u.title || u.email)}${u.role !== 'employee' || u.hr || u.is_dev ? html`<span class="pr-tags">${u.role !== 'employee' ? html`<span class="prole ${u.role}">${ROLE[u.role]}</span>` : ''}${u.hr ? html`<span class="prole hr">HR</span>` : ''}${u.is_dev ? html`<span class="prole dev">Developer</span>` : ''}</span>` : ''}</div>
     <div class="pr-state">${statusOf(u)}</div>
     <div class="pr-info">${diffs.length ? html`<ul class="pchips">${diffs.map((d) => html`<li>${d}</li>`)}</ul>` : (u.tracks_time ? html`<span class="faint small">Company schedule</span>` : '')}
       ${probs.some((p) => p.kind === 'policy') ? html`<ul class="pflags"><li class="warn">Has not accepted the policy</li></ul>` : ''}</div>

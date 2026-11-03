@@ -1222,3 +1222,12 @@ img[data-shot]:not([src]) { color: transparent; font-size: 0; background: rgba(2
 .tp-grid dd { min-width: 0; }
 .tp-grid select, .tp-grid input { max-width: 100%; min-width: 0 !important; }
 @media (max-width: 520px) { .tp-grid select, .tp-grid input { width: 100% !important; } }
+/* people: role badges stay beside the name, as one group */
+.pr-who { flex-wrap: wrap !important; row-gap: 4px !important; }
+.pr-who > :first-child { flex: 1 1 100%; }
+/* under the name and title, lined up with the text (past the avatar) */
+.pr-tags { display: flex; flex-wrap: wrap; gap: 5px; flex: 1 1 100%; padding-left: var(--pr-av, 46px); }
+.prole { white-space: nowrap; line-height: 20px; }
+.prole.manager { background: rgba(140,120,232,.18); color: #C3B3FF; }
+.prole.dev { background: rgba(110,130,255,.16); color: #A9B8FF; }
+.prole.hr { background: rgba(234,112,161,.16); color: #F29BBE; }
