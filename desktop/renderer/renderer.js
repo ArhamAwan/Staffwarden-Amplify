@@ -255,6 +255,10 @@ const ICON = {
   shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
   tablet: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M11 18h2"/>',
   moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
+  chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  rocket: '<path d="M12 3c3.5 2 5 5.5 5 9l-2 3H9l-2-3c0-3.5 1.5-7 5-9z"/><circle cx="12" cy="10" r="1.8"/><path d="M9 15l-2.5 3.5L9 18M15 15l2.5 3.5L15 18"/>',
+  power: '<path d="M12 3v8M6.3 6.8a8 8 0 1 0 11.4 0"/>'
 };
 const ico = (name, size = 17) => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('width', size); s.setAttribute('height', size); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '2'); s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round'); s.setAttribute('aria-hidden', 'true'); s.innerHTML = ICON[name]; return s; };
 const AV = ['#B45309', '#6B55D6', '#127A57', '#7A5AF8', '#C2410C', '#0F766E', '#9D174D'];
@@ -300,13 +304,12 @@ function mainView(st) {
         el('div', { class: 'stat' }, el('span', {}, 'Screenshots'), el('b', { class: 'num', id: 't-shots' }), el('small', {}, 'You can delete yours')),
         el('div', { class: 'stat' }, el('span', {}, 'Activity'), el('b', { class: 'num', id: 't-act' }), el('small', { id: 't-act-l' }, 'Keyboard, mouse'))),
       el('div', { class: 'privacy' }, el('span', { class: 'ok' }, ico('shield', 18)), el('span', { id: 'privtext' })),
-      el('div', { class: 'row tools' },
-        el('button', { class: 'link small', id: 'test', onclick: testCapture }, 'Test screenshot'),
-        el('span', { class: 'muted', id: 'queued' }),
-        el('button', { class: 'link small', onclick: () => showSummary() }, 'Full breakdown')),
-      el('div', { id: 'preview', class: 'preview' })),
-    startupToggle(),
-    boostPrefsBox(),
+      el('div', { class: 'tools2' },
+        el('button', { class: 'tool', id: 'test', onclick: testCapture }, ico('camera', 16), 'Test screenshot'),
+        el('button', { class: 'tool', onclick: () => showSummary() }, ico('chart', 16), 'Full breakdown')),
+      el('span', { class: 'muted queued', id: 'queued' }),
+      el('div', { id: 'preview', class: 'preview' }),
+      el('div', { class: 'prefs' }, startupToggle(), boostPrefsBox())),
     credit());
   dial = window.WhDial.create(document.getElementById('dialwrap'), { size: 264, stroke: 13 });
   document.getElementById('dialwrap').prepend(dial.svg);
@@ -319,7 +322,8 @@ function startupToggle() {
   const box = el('input', { type: 'checkbox', id: 'atlogin' });
   API.prefs().then((p) => { if (p && !p.error) box.checked = !!p.openAtLogin; });
   box.addEventListener('change', async () => { const r = await API.setOpenAtLogin(box.checked); if (r && !r.error) box.checked = !!r.openAtLogin; });
-  return el('label', { class: 'startup', for: 'atlogin' }, box, el('span', {}, 'Open Staffwarden when this computer starts'));
+  box.setAttribute('role', 'switch');
+  return el('label', { class: 'startup pref', for: 'atlogin' }, el('span', { class: 'pi' }, ico('power', 16)), el('span', { class: 'pt' }, el('b', {}, 'Open when this computer starts'), el('small', {}, 'So the timer is ready when your shift begins')), box);
 }
 API.onPrefs((p) => { const b = document.getElementById('atlogin'); if (b && p) b.checked = !!p.openAtLogin; });
 
@@ -334,7 +338,7 @@ function boostPrefsBox() {
   API.boostPrefs().then(set);
   pop.addEventListener('change', async () => set(await API.setBoostPrefs({ popup: pop.value })));
   corner.addEventListener('change', async () => set(await API.setBoostPrefs({ corner: corner.value })));
-  return el('div', { class: 'boostprefs' }, el('span', {}, 'Boosts'), pop, corner);
+  return el('div', { class: 'boostprefs pref' }, el('span', { class: 'pi' }, ico('rocket', 16)), el('span', { class: 'pt' }, el('b', {}, 'Boosts'), el('small', {}, 'How the owner’s cheer reaches you')), el('span', { class: 'sel' }, pop, corner));
 }
 
 // ---------- the task ----------

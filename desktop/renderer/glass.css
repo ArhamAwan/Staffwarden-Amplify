@@ -46,3 +46,35 @@ button:not(.ghost):not(.link):not(.lnk):not(.hb):not(.mini):not(.taskbtn) { back
 html.mac main#root { padding-top: 40px; }
 html.mac body::before { content: ""; position: fixed; left: 0; right: 0; top: 0; height: 34px; -webkit-app-region: drag; z-index: 50; }
 html.mac button, html.mac a, html.mac input, html.mac select { -webkit-app-region: no-drag; }
+
+/* the bottom of the window: two tools as buttons, then this computer's settings in one glass card */
+.tools2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tools2 .tool { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; border-radius: 12px; border: 1px solid rgba(255,255,255,.13) !important;
+  background: rgba(255,255,255,.06) !important; color: var(--ink) !important; font: 600 13px/1 inherit; cursor: pointer; transition: background .15s, border-color .15s; }
+.tools2 .tool:hover:not(:disabled) { background: rgba(255,255,255,.11) !important; border-color: rgba(195,179,255,.35) !important; }
+.tools2 .tool:disabled { opacity: .5; cursor: default; }
+.tools2 .tool svg { color: #C9BBFF; flex: none; }
+.queued:empty { display: none; } .queued { display: block; text-align: center; font-size: 12px; }
+.prefs { display: flex; flex-direction: column; border-radius: 14px; background: var(--glass); border: 1px solid rgba(255,255,255,.12); overflow: hidden; }
+.pref { display: flex !important; align-items: center; gap: 12px; padding: 12px 14px; margin: 0 !important; justify-content: flex-start !important; font-size: 13px; color: var(--ink) !important; }
+.pref + .pref { border-top: 1px solid rgba(255,255,255,.08); }
+.pref .pi { width: 32px; height: 32px; flex: none; border-radius: 10px; display: grid; place-items: center; background: rgba(255,255,255,.08); color: #C9BBFF; }
+.pref .pt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pref .pt b { font-weight: 600; font-size: 13px; } .pref .pt small { font-size: 11.5px; color: var(--muted); }
+/* the startup choice is a switch */
+.startup input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 38px !important; height: 22px !important; flex: none; border-radius: 99px; background: rgba(255,255,255,.16) !important; border: 0 !important; position: relative; cursor: pointer; transition: background .2s; margin: 0; }
+.startup input[type="checkbox"]::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 99px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4); transition: transform .2s cubic-bezier(.2,.7,.2,1); }
+.startup input[type="checkbox"]:checked { background: #2E9E6B !important; }
+.startup input[type="checkbox"]:checked::after { transform: translateX(16px); }
+.startup input[type="checkbox"]:focus-visible { outline: 2px solid #C3B3FF; outline-offset: 2px; }
+.boostprefs .sel { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.boostprefs select { width: 150px !important; height: 30px; padding: 0 26px 0 10px !important; border-radius: 9px !important; font-size: 12px !important; color: var(--ink) !important; background-color: rgba(255,255,255,.07) !important; border: 1px solid rgba(255,255,255,.14) !important;
+  -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23BDB5DE' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M7 10l5 5 5-5'/%3E%3C/svg%3E") !important; background-repeat: no-repeat !important; background-position: right 8px center !important; background-size: 13px !important; }
+.boostprefs select option { background: #1C1440; }
+.credit { margin-top: auto !important; padding-top: 14px; color: #8A84A4 !important; }
+.credit .chk { color: #C9BBFF !important; }
+/* one even night behind the whole window, however long it gets (no pale band at the bottom) */
+html.mac { background: linear-gradient(170deg, rgba(34,24,76,.86), rgba(12,8,30,.92)) fixed !important; }
+html.mac body { background: transparent !important; }
+html.solid { background: radial-gradient(120% 70% at 0% 0%, rgba(124,92,255,.32), transparent 60%), radial-gradient(90% 60% at 100% 100%, rgba(224,85,155,.2), transparent 60%), #0E0A22 fixed !important; }
+html.solid body { background: transparent !important; }

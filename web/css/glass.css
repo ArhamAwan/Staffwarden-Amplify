@@ -132,15 +132,19 @@ a { color: #C9BBFF; }
 .rail-search .ic { width: 16px; height: 16px; flex: none; }
 .rail-search span { flex: 1; white-space: nowrap; }
 .rail-search kbd { font: inherit; font-size: 11.5px; font-weight: 600; padding: 2px 6px; border-radius: 6px; background: rgba(255,255,255,.1); color: #D6D0EE; white-space: nowrap; }
-.nav-g.shut > .nav { display: none !important; }
+/* a group folds open and shut: its pages slide down under the heading */
+.nav-gi { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; grid-template-rows: 1fr; transition: grid-template-rows .3s cubic-bezier(.2,.7,.2,1), opacity .22s ease; }
+.nav-gi > div { min-height: 0; overflow: clip; overflow-clip-margin: 10px; display: flex; flex-direction: column; gap: 2px; }
+.nav-g.shut > .nav-gi { grid-template-rows: 0fr; opacity: 0; visibility: hidden; transition: grid-template-rows .3s cubic-bezier(.2,.7,.2,1), opacity .22s ease, visibility 0s .3s; }
+@media (prefers-reduced-motion: reduce) { .nav-gi { transition: none; } .rail .nav-ht .nav-chev { transition: none; } }
 .rail .nav-ht { display: flex !important; align-items: center; gap: 11px; width: 100%; height: 36px !important; padding: 0 10px !important; border: 0; border-radius: 11px; background: transparent; color: #DED8F3 !important; font-size: 13.5px !important; font-weight: 550 !important; text-align: left; cursor: pointer; }
 .rail .nav-ht:hover { background: rgba(255,255,255,.07); }
 .rail .nav-ht .ic { width: 18px; height: 18px; color: #BDB5DE; flex: none; }
 .rail .nav-ht .nav-ht-t { flex: 1; }
 .rail .nav-ht .nav-ht-n { font-size: 12px; color: #A69ECB; white-space: nowrap; }
-.rail .nav-ht .nav-chev { width: 15px; height: 15px; color: #A69ECB; transition: transform .2s; fill: none; stroke: currentColor; stroke-width: 2; }
-.rail .nav-ht[aria-expanded="true"] { color: #A69ECB !important; font-size: 11.5px !important; font-weight: 600 !important; height: 30px !important; margin-top: 6px; }
-.rail .nav-ht[aria-expanded="true"] .ic { display: none; }
+.rail .nav-ht .nav-chev { width: 15px; height: 15px; color: #A69ECB; transition: transform .3s cubic-bezier(.2,.7,.2,1); fill: none; stroke: currentColor; stroke-width: 2; margin-left: auto; }
+.rail .nav-ht[aria-expanded="true"] { color: #fff !important; }
+.rail .nav-ht[aria-expanded="true"] .ic:not(.nav-chev) { color: var(--lilac); }
 .rail .nav-ht[aria-expanded="true"] .nav-chev { transform: rotate(90deg); }
 .rail .nav-ht .badge { margin-left: 0; background: #F7B544; color: #1A1238; min-width: 20px; height: 20px; border-radius: 99px; display: grid; place-items: center; font-size: 11px; font-weight: 700; padding: 0 6px; }
 .nav-g.shut:first-of-type { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.1); }
@@ -156,7 +160,7 @@ a { color: #C9BBFF; }
 @media (prefers-reduced-motion: reduce) { .rail-clock i { animation: none; } }
 .rail .rail-credit { display: none; }
 @media (max-width: 1099px) { .rail-search span, .rail-search kbd, .rail-clock .rc-t { display: none; } .rail-search { justify-content: center; padding: 0; } .rail-clock { justify-content: center; padding: 9px 0; } .rail-clock .rc-v { display: none; } }
-@media (max-width: 900px) { .rail-search, .rail-clock { display: none; } .nav-g.shut > .nav { display: flex !important; } .rail .nav-ht { display: none !important; } }
+@media (max-width: 900px) { .rail-search, .rail-clock { display: none; } .nav-gi, .nav-gi > div { display: contents; } .nav-g.shut > .nav-gi { opacity: 1; visibility: visible; } .rail .nav-ht { display: none !important; } }
 /* the jump palette */
 .jump { align-items: start; padding-top: 14vh; }
 .jump-p { width: min(560px, 100%); border-radius: 20px; overflow: hidden; background: linear-gradient(160deg, rgba(44,32,92,.92), rgba(20,14,44,.9)); border: 1px solid rgba(195,179,255,.22); box-shadow: 0 40px 80px -30px rgba(0,0,0,.8); }
@@ -710,3 +714,22 @@ a { color: #C9BBFF; }
   .kpis.bento.rp-bento.short { grid-template-areas: "ch ch" "tw ac"; }
 }
 @media (min-width: 1101px) { #view > .page-h .tools select { width: auto !important; max-width: 190px; } #view > .page-h .tools input.search { width: 170px !important; } }
+
+/* ---------- blur that never shows up late ----------
+   A fading parent (opacity below 1) cuts the glass inside it off from the glow behind the page until
+   the fade ends, so pages come in with a short slide instead of a fade. Glass inside glass doesn't blur
+   a second time: the surface under it is already blurred, and Chrome is far quicker with one layer. */
+@keyframes viewInGlass { from { transform: translateY(6px); } to { transform: none; } }
+#view.enter > :not(.page-h) { animation: viewInGlass .22s cubic-bezier(.2,.7,.2,1) both !important; }
+@media (prefers-reduced-motion: reduce) { #view.enter > :not(.page-h) { animation: none !important; } }
+:is(.panel, .tch-q, .tch-c, .tch-rp, .modal, .tpanel, .wz, .kpi, .cic, .card, .cl-card, .hero, .rail, .jump-p) :is(.panel, .card, .cl-card, .tcard, .qr, .cic, .nb-c, .kpi, .lb-tile, .pay-tile, .banner, .bt-who, .btn, .np-list, .ws, .plist > li.prow) {
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+/* the narrow icon rail (it opens over the page on hover): a group heading is its icon until then */
+@media (min-width: 901px) and (max-width: 1099px) {
+  .rail .nav-ht { padding: 0 10px 0 18px !important; gap: 14px !important; height: 40px !important; position: relative; white-space: nowrap; }
+  .rail .nav-ht .ic { width: 20px; height: 20px; }
+  .rail .nav-ht .nav-ht-t, .rail .nav-ht .nav-ht-n, .rail .nav-ht .nav-chev { transition: opacity .15s; }
+  .rail:not(:hover):not(:has(:focus-visible)) .nav-ht .nav-ht-t, .rail:not(:hover):not(:has(:focus-visible)) .nav-ht .nav-ht-n, .rail:not(:hover):not(:has(:focus-visible)) .nav-ht .nav-chev { opacity: 0; }
+  .rail:not(:hover):not(:has(:focus-visible)) .nav-ht .badge { position: absolute; top: 2px; left: 32px; min-width: 18px; height: 18px; font-size: 10.5px; }
+}
+.nav-g { min-width: 0; } .nav-gi > div { min-width: 0; }

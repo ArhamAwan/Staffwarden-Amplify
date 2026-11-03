@@ -1,7 +1,7 @@
 {
   "name": "workhelm-desktop",
   "productName": "Staffwarden",
-  "version": "0.9.27",
+  "version": "0.9.28",
   "private": true,
   "description": "Staffwarden desktop app: visible, consent-based time tracking. Built entirely in-house by Amplify Media Technologies.",
   "author": "Amplify Media Technologies",

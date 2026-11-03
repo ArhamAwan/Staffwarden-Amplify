@@ -176,7 +176,7 @@ setNewBuildHandler(showUpdateNote);
 setUnauthorizedHandler(() => { setToken(null); S.me = null; showLogin('Your session ended. Please sign in again.'); });
 
 // ---------------- shell
-let navOpen = {};
+let navOpen = {}, navGroup = null, navGroupNow = null;
 try { navOpen = JSON.parse(localStorage.getItem('sw-nav-open') || '{}') || {}; } catch { navOpen = {}; }
 actions['nav-g'] = (el) => {
   const g = el.dataset.g, box = el.closest('.nav-g'), open = box.classList.contains('shut');
@@ -197,15 +197,19 @@ function navHtml() {
   const grp = (t, list) => {
     if (!list.length) return '';
     const mine = list.some((n) => routeOf(n) === here);
+    // going to a page in another group opens that group; after that it stays as you leave it, open or closed
+    if (mine) navGroupNow = t;
+    if (mine && t !== navGroup && navOpen[t] === false) delete navOpen[t];
     const pref = navOpen[t];
-    const open = t === 'Today' || (pref === undefined ? mine : pref || mine);
+    const open = t === 'Today' || (pref === undefined ? mine : pref);
     const items = list.map(link).join('');
     const bad = (items.match(/class="badge[^"]*"[^>]*>(\d+)/g) || []).reduce((a, m) => a + Number(m.replace(/.*>/, '')), 0);
     return `<div class="nav-g${open ? '' : ' shut'}" data-g="${t}">${t === 'Today' ? `<div class="nav-h">${t}</div>`
-      : `<button type="button" class="nav-h nav-ht" data-act="nav-g" data-g="${t}" aria-expanded="${open}">${icon(GI[t] || 'folder')}<span class="nav-ht-t">${t}</span>${!open && bad ? `<span class="badge">${bad}</span>` : ''}<span class="nav-ht-n">${open ? '' : list.length + ' pages'}</span><svg class="ic nav-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>`}${items}</div>`;
+      : `<button type="button" class="nav-h nav-ht" data-act="nav-g" data-g="${t}" aria-expanded="${open}">${icon(GI[t] || 'folder')}<span class="nav-ht-t">${t}</span>${!open && bad ? `<span class="badge">${bad}</span>` : ''}<span class="nav-ht-n">${open ? '' : list.length + ' pages'}</span><svg class="ic nav-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>`}${t === 'Today' ? items : `<div class="nav-gi"><div>${items}</div></div>`}</div>`;
   };
   const pick = (nav, keys) => keys.map((k) => nav.find((n) => n[0] === k)).filter(Boolean);
   const payNav = ['pay', 'Pay', 'wallet'];
+  queueMicrotask(() => { navGroup = navGroupNow; });
   if (isMgr()) {
     const money = isHR() ? HR_NAV : [HR_NAV[2]];
     return grp('Today', [...(god() ? [['', 'Home', 'dash'], ['team', 'Team', 'users']] : pick(MGR_NAV, [''])), ...(S.me.tracks_time || S.me.fun_mode ? [['me', 'Your day', 'user']] : []), CHAT_NAV, ['checkins', 'Check-ins', 'checkin'], ...LB_NAV(), ...pick(MGR_NAV, ['timeline', 'screenshots'])]) + grp('Work', [...pick(MGR_NAV, ['projects']), ['clients', 'Clients', 'client'], ['inbox', 'Client inbox', 'chat'], ...pick(MGR_NAV, ['tasks', 'performance'])])
