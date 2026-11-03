@@ -183,15 +183,22 @@ const rmBody = (f) => ({ on: f.querySelector('[name=on]').checked, to: f.querySe
 actions['report-mail'] = async (form) => {
   const err = form.querySelector('[data-err]'), btn = form.querySelector('button[type=submit]');
   err.textContent = ''; btn.disabled = true;
-  try { const r = await put('/api/shift-reports/email', rmBody(form)); toast(r.on ? `Shift reports will be emailed to ${r.to.join(', ')}` : 'Saved. The email is off'); S.refresh(); }
+  try { const r = await put('/api/shift-reports/email', rmBody(form)); rmClean(form); toast(r.on ? `Shift reports will be emailed to ${r.to.join(', ')}` : 'Saved. The email is off'); S.refresh(); }
   catch (e) { err.textContent = errMsg(e); } finally { btn.disabled = false; }
 };
-actions['rm-pre'] = (el) => { const f = el.closest('form'); f.querySelector('[name=host]').value = el.dataset.host; f.querySelector('[name=port]').value = el.dataset.port; f.querySelector('[name=user]').focus(); };
+// filled in by a button, so marked as edited: a live refresh of the page must not put the old values back
+actions['rm-pre'] = (el) => {
+  const f = el.closest('form'), host = f.querySelector('[name=host]'), port = f.querySelector('[name=port]');
+  host.value = el.dataset.host; port.value = el.dataset.port; host.dataset.dirty = '1'; port.dataset.dirty = '1';
+  f.querySelector('[name=user]').focus();
+};
+// once saved, the page shows what the server has (the password field empties)
+const rmClean = (f) => { f.querySelectorAll('[data-dirty]').forEach((x) => delete x.dataset.dirty); const p = f.querySelector('[name=pass]'); if (p) p.value = ''; };
 actions['rm-test'] = async (el) => {
   const f = el.closest('form'), err = f.querySelector('[data-err]');
   err.textContent = ''; el.disabled = true; const label = el.textContent; el.textContent = 'Sending…';
   try {
-    try { await put('/api/shift-reports/email', rmBody(f)); }               // what's on screen is what gets tested
+    try { await put('/api/shift-reports/email', rmBody(f)); rmClean(f); }   // what's on screen is what gets tested
     catch (e) { err.textContent = errMsg(e); return; }
     try { const r = await post('/api/shift-reports/email/test', {}); toast(`Test sent to ${r.to.join(', ')}. Check the inbox (and spam).`); }
     catch (e) { toast('The test didn’t go through. The reason is shown above the buttons.', true); }
