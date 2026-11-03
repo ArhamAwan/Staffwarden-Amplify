@@ -101,6 +101,8 @@ module.exports = (ctx) => {
     need(canSee(user, t.id), 403, 'Not allowed');
     need(t.role !== 'owner' || (user.role === 'owner' && !user.dev_owner), 403, 'Only the owner can change the owner');
     need(user.role === 'owner' || t.role === 'employee' || t.id === user.id, 403, 'Only the owner can change managers');
+    // a developer account sees what the owner sees: only the owner changes or removes it
+    need(!t.is_dev || t.id === user.id || (user.role === 'owner' && !user.dev_owner), 403, 'Only the owner can change or remove a developer account');
     const set = {};
     if ('name' in body) set.name = str(body.name, 'name', 100);
     if ('title' in body) set.title = optStr(body.title, 'title', 100);

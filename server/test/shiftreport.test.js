@@ -137,3 +137,20 @@ test('the report can be emailed: settings stay with the owner, the password is n
     assert.match((await ok('GET', '/api/shift-reports/email', { token: tokens.owner })).last_error, /username or password/);
   } finally { m.server.close(); await smtpEnv.close(); }
 });
+
+test('a manager can’t change or remove the owner or a developer account', async () => {
+  const e = await makeEnv();
+  try {
+    const mgr = await e.person('mona', 'Mona Lead', { role: 'manager' });
+    const dev = await e.person('devy', 'Dev Admin');
+    await e.ok('PATCH', `/api/users/${dev.id}`, { token: e.tokens.owner, body: { is_dev: true } });
+    const ownerId = e.app.db.prepare("SELECT id FROM users WHERE role = 'owner'").get().id;
+    assert.equal((await e.api('PATCH', `/api/users/${dev.id}`, { token: e.tokens.mona, body: { active: false } })).status, 403);
+    assert.equal((await e.api('PATCH', `/api/users/${dev.id}`, { token: e.tokens.mona, body: { name: 'X' } })).status, 403);
+    assert.equal((await e.api('PATCH', `/api/users/${ownerId}`, { token: e.tokens.mona, body: { active: false } })).status, 403);
+    assert.equal(e.app.db.prepare('SELECT active FROM users WHERE id = ?').get(dev.id).active, 1);
+    // the owner still can
+    await e.ok('PATCH', `/api/users/${dev.id}`, { token: e.tokens.owner, body: { name: 'Dev Admin 2' } });
+    assert.ok(mgr.id);
+  } finally { await e.close(); }
+});
