@@ -341,6 +341,7 @@ function createCalc(ctx) {
         activity_pct: m.activity_pct, shots: m.shots, last_shot_at: m.last_shot_at, first_start: m.first_start,
         segs: m.segs, attendance: m.att.status, late_by_min: m.att.late_by_min, expected_secs: m.att.expected_secs,
         week_secs: week, week_target_secs: weeklyTargetMin(u) * 60, week_expected_secs: weekExpected,
+        shift_start: hoursOn(u, day).shift_start, shift_end: hoursOn(u, day).shift_end,
       };
     });
 

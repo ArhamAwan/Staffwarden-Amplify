@@ -128,7 +128,7 @@ export const teamPage = {
                 <td class="r">${m.activity_pct == null ? html`<span class="faint">–</span>` : html`<span class="pct">${meter(m.activity_pct, toneFor(m.activity_pct, 35, 50))}<span class="num">${m.activity_pct}%</span></span>`}</td>
                 <td style="min-width:150px"><span class="num small">${dur(m.week_secs)} <span class="muted">of ${hoursText(m.week_target_secs)}</span></span>${meter(wk)}</td>
                 <td class="r muted small num">${m.last_shot_at ? relTime(m.last_shot_at) : html`<span class="faint">None</span>`}</td></tr>`;
-            }) : html`<tr class="lane-chips"><td colspan="8"><div class="chips">${list.map((m) => html`<a class="pchip" data-k="p${m.user_id}" href="#/timeline?user=${m.user_id}&day=${d.day}">${avatarOf(m)}<span>${m.name}</span>${m.title ? html`<small>${m.title}</small>` : ''}</a>`)}</div></td></tr>`}
+            }) : html`<tr class="lane-chips"><td colspan="8"><div class="pgrid2">${sortLane(list, g).map((m) => personTile(m, g, d.day, isToday))}</div></td></tr>`}
           </tbody>`)}</table></div>
 ` : empty('Nobody to show yet', html`Add people on the <a href="#/people">People</a> page.`)}</div></section>
       <div class="cols">
@@ -179,6 +179,27 @@ function dashBento(k, d, isToday, win, segsList, nowRel) {
   </section>`;
 }
 
+// people who aren't on a timeline row: one even tile each, saying the one thing that matters about them
+const hhmm = (t) => { const [h, mm] = String(t || '').split(':').map(Number); return Number.isFinite(h) ? h * 60 + (mm || 0) : null; };
+const until = (m) => { const sh = hhmm(m.shift_start); if (sh == null) return null; const ds = m.day_start_min || 0; return rel(sh, ds) - rel(minOfDayIn(m.tz_offset_min ?? 0), ds); };
+function sortLane(list, g) {
+  if (g === 'upcoming' || g === 'not_started') return [...list].sort((a, b) => (until(a) ?? 9e9) - (until(b) ?? 9e9) || a.name.localeCompare(b.name));
+  return [...list].sort((a, b) => a.name.localeCompare(b.name));
+}
+function personTile(m, g, day, isToday) {
+  const u = until(m), start = hhmm(m.shift_start);
+  const at = start == null ? '' : fmtMin(start);
+  let tag = '', tone = '';
+  if (g === 'upcoming') { tag = u != null && u > 0 ? `in ${dur(u * 60)}` : 'soon'; tone = u != null && u <= 60 ? 'soon' : ''; }
+  else if (g === 'not_started') { tag = u != null && u < 0 ? `${dur(-u * 60)} late` : 'not started'; tone = 'late'; }
+  else if (g === 'absent') { tag = 'absent'; tone = 'bad'; }
+  else if (g === 'leave') { tag = m.attendance === 'holiday' ? 'holiday' : 'on leave'; tone = 'leave'; }
+  else tag = 'day off';
+  const sub = g === 'upcoming' || g === 'not_started' ? (at ? `${g === 'upcoming' ? 'Starts' : 'Due'} ${at}` : 'No shift set') : (m.title || '');
+  return html`<div class="ptile t-${tone || 'plain'}" data-k="p${m.user_id}" data-act="go" data-href="#/timeline?user=${m.user_id}&day=${day}" role="link" tabindex="0" title="${m.name}${m.title ? ', ' + m.title : ''}">
+    ${avatarOf(m)}<span class="pt-m"><span class="pt-r1"><b>${m.name}</b><span class="pt-tag">${tag}</span></span><small>${g === 'upcoming' || g === 'not_started' ? html`${sub}${m.title ? html` · <span class="pt-role">${m.title}</span>` : ''}` : sub}</small></span>${g === 'not_started' && isToday ? html`<button type="button" class="pt-nudge" data-act="ci-reply" data-id="${m.user_id}" aria-label="Message ${m.name}" title="Message ${m.name}">${icon('chat')}</button>` : ''}</div>`;
+}
+
 function myTasks(sum) {
   if (!sum.next.length) return empty('Nothing assigned to you', html`<a href="#/tasks">Add a task</a> to keep track of your own work.`);
   return html`<ul class="blist">${sum.next.slice(0, 6).map((t) => html`<li data-k="t${t.id}" class="clickable" data-act="open-task" data-id="${t.id}" tabindex="0"><i class="dotbox" style="background:${t.overdue ? 'var(--bad)' : t.due_today ? 'var(--brk)' : 'var(--line)'}"></i>
@@ -190,7 +211,7 @@ actions.go = (el) => { location.hash = el.dataset.href; };
 // a status card in the band jumps to that group in the list
 actions.lane = (el) => { const t = document.getElementById('lane-' + el.dataset.id); if (t) t.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); };
 document.addEventListener('keydown', (e) => {
-  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('tr[data-act="go"]')) { e.preventDefault(); location.hash = e.target.dataset.href; }
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('tr[data-act="go"], .ptile[data-act="go"]')) { e.preventDefault(); location.hash = e.target.dataset.href; }
 });
 
 // ================= employee =================
