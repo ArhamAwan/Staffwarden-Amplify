@@ -924,3 +924,31 @@ a { color: #C9BBFF; }
 }
 @media (prefers-reduced-motion: reduce) { .rail { transition: none !important; } }
 @media (max-width: 900px) { .rail .who { background: transparent !important; border: 0 !important; padding: 0 !important; margin: 0 0 0 auto !important; } }
+@media (min-width: 901px) { .rail .who > .btn.icon { align-self: center !important; margin: 0 3px 0 0 !important; } .rail .who .me-link { align-self: center !important; } }
+/* while the rail widens, nothing inside it is laid out again: the words have their open-state widths from
+   the start and the things at the right end are pinned where they'll be once it's open */
+.nav-ht-end { display: inline-flex; align-items: center; gap: 8px; }
+@media (min-width: 901px) {
+  .rail > .brand > div { flex: none !important; width: 190px; white-space: nowrap; }
+  .rail > .brand > div > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .rail .nav-ht .nav-ht-end { position: absolute; top: 50%; left: calc(var(--rail-open) - 36px); transform: translate(-100%, -50%); }
+  .rail .nav-ht .nav-ht-end > * { opacity: inherit; }
+  .rail .nav-ht .nav-ht-end { opacity: 0; transition: opacity .16s ease; }
+  .rail:hover .nav-ht .nav-ht-end, .rail:has(:focus-visible) .nav-ht .nav-ht-end { opacity: 1; transition: opacity .2s ease .14s; }
+  .rail .nav-ht .nav-ht-n, .rail .nav-ht .nav-chev { opacity: 1 !important; transition: none !important; }
+  .rail .nav-ht .nav-chev { transition: transform .3s cubic-bezier(.2,.7,.2,1) !important; }
+  .rail .rail-search kbd { position: absolute; top: 50%; left: calc(var(--rail-open) - 36px); transform: translate(-100%, -50%); }
+  .rail .rail-clock { position: relative; } .rail .rail-clock .rc-t { flex: none !important; width: 150px; }
+  .rail .rail-clock .rc-v { position: absolute; top: 50%; left: calc(var(--rail-open) - 36px); transform: translate(-100%, -50%); }
+  .rail .who { position: relative; }
+  .rail .who .me-link { flex: none !important; width: 190px; }
+  .rail .who .me-txt { flex: none !important; width: 136px; }
+  .rail .who > .btn.icon { position: absolute !important; top: 50%; left: calc(var(--rail-open) - 71px); transform: translateY(-50%); margin: 0 !important; }
+}
+@media (min-width: 901px) { .rail .nav > span:not(.badge), .rail .nav-ht .nav-ht-t, .rail .rail-search span { flex: none !important; } }
+/* open over the page, the rail is near solid so the page under it doesn't show through the words */
+@media (min-width: 901px) {
+  .rail::after { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: linear-gradient(170deg, rgba(36,26,84,.96), rgba(16,11,40,.97)); opacity: 0; transition: opacity .25s ease .06s; pointer-events: none; }
+  .rail:hover::after, .rail:has(:focus-visible)::after { opacity: 1; transition-delay: .12s; }
+  .rail { isolation: isolate; }
+}

@@ -220,7 +220,7 @@ function navHtml() {
     const items = list.map(link).join('');
     const bad = (items.match(/class="badge[^"]*"[^>]*>(\d+)/g) || []).reduce((a, m) => a + Number(m.replace(/.*>/, '')), 0);
     return `<div class="nav-g${open ? '' : ' shut'}" data-g="${t}">${t === 'Today' ? `<div class="nav-h">${t}</div>`
-      : `<button type="button" class="nav-h nav-ht" data-act="nav-g" data-g="${t}" aria-expanded="${open}">${icon(GI[t] || 'folder')}<span class="nav-ht-t">${t}</span>${!open && bad ? `<span class="badge">${bad}</span>` : ''}<span class="nav-ht-n">${open ? '' : list.length + ' pages'}</span><svg class="ic nav-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>`}${t === 'Today' ? items : `<div class="nav-gi"><div>${items}</div></div>`}</div>`;
+      : `<button type="button" class="nav-h nav-ht" data-act="nav-g" data-g="${t}" aria-expanded="${open}">${icon(GI[t] || 'folder')}<span class="nav-ht-t">${t}</span>${!open && bad ? `<span class="badge">${bad}</span>` : ''}<span class="nav-ht-end"><span class="nav-ht-n">${open ? '' : list.length + ' pages'}</span><svg class="ic nav-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span></button>`}${t === 'Today' ? items : `<div class="nav-gi"><div>${items}</div></div>`}</div>`;
   };
   const pick = (nav, keys) => keys.map((k) => nav.find((n) => n[0] === k)).filter(Boolean);
   const payNav = ['pay', 'Pay', 'wallet'];
