@@ -111,13 +111,17 @@ export async function showDownloads(box, { dark = true } = {}) {
   };
   const here = /Mac/.test(navigator.platform) ? 'mac' : /Win/.test(navigator.platform) ? 'windows' : '';
   const sorted = [...opts].sort((a, b) => (b[0].kind.startsWith(here || 'x') ? 1 : 0) - (a[0].kind.startsWith(here || 'x') ? 1 : 0));
+  if (box.classList.contains('si-dl')) {
+    box.innerHTML = `<span class="si-dl-h">Track your time with the desktop app</span><div class="si-dl-row">${sorted.map(([d, n]) => { const os = d.kind === 'windows' ? 'windows' : 'mac'; const short = d.kind === 'windows' ? 'Windows' : d.kind === 'mac-arm' ? 'Apple chip' : 'Intel Mac'; return `<a class="si-dl-b${here && d.kind.startsWith(here) ? ' mine' : ''}" href="/downloads/${encodeURIComponent(d.file)}" download title="${esc(n)}, ${mb(d.size)}">${OS[os]}<span>${esc(short)}</span></a>`; }).join('')}</div>`;
+    return;
+  }
   box.innerHTML = `<b>Get the desktop app</b><span class="dl-sub">Start and stop your timer from it. It runs quietly in the menu bar or the tray.</span><div class="dl-grid">${sorted.map(([d, n]) => { const os = d.kind === 'windows' ? 'windows' : 'mac'; const short = d.kind === 'windows' ? 'Windows' : d.kind === 'mac-arm' ? 'Mac, Apple chip' : 'Mac, Intel chip'; return `<a class="dl-btn${here && d.kind.startsWith(here) ? ' mine' : ''}" href="/downloads/${encodeURIComponent(d.file)}" download title="${esc(n)}">${OS[os]}<span><b>${esc(short)}</b><small>${mb(d.size)}${d.kind === 'mac-arm' ? ' · for M1 and later' : d.kind === 'mac-intel' ? ' · for older Macs' : ' · Windows 10 and 11'}</small></span><svg class="dl-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></a>`; }).join('')}</div>`;
   box.classList.toggle('light', !dark);
 }
 
 // on the sign-in page the owl's eyes follow the cursor, and he covers them while the password is typed
 function watchLogin() {
-  const page = app.querySelector('.login-split'), o = app.querySelector('.login-owl .owl'), look = o && o.querySelector('.ow-look');
+  const page = app.querySelector('.si'), o = app.querySelector('.si-owl .owl'), look = o && o.querySelector('.ow-look');
   if (!page || !look) return;
   page.addEventListener('pointermove', (e) => {
     const r = o.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height * 0.58;
@@ -131,22 +135,25 @@ function watchLogin() {
 
 function showLogin(msg) {
   teardown();
-  app.innerHTML = `<div class="login-split">
-    <section class="login-art" aria-hidden="true">
-      <div class="brand login-brand" style="padding:0"><span class="mark">${HELM}</span><div><b class="wordmark">Staffwarden</b><span>Amplify Media Technologies</span></div></div>
-      <div class="login-owl"><div class="login-owl-halo">${owl('live')}</div><p class="login-tag">Keeping watch, so you don’t have to.</p></div>
-      <p>${CREDIT}. Time is tracked only while you choose to, and private windows never leave your computer.</p>
+  // one screen, never scrolls: the owl in front of the moon on the left, one glass card on the right
+  app.innerHTML = `<div class="si">
+    <div class="si-sky" aria-hidden="true"><i class="si-stars"></i><i class="si-stars s2"></i><i class="si-glow"></i></div>
+    <header class="si-top"><span class="si-brand"><span class="mark">${HELM}</span><b class="wordmark">Staffwarden</b></span><a class="si-home" href="/welcome">What is Staffwarden?</a></header>
+    <section class="si-art" aria-hidden="true">
+      <div class="si-stage"><div class="si-moon"></div><div class="si-owl">${owl('live')}</div></div>
+      <p class="si-tag">Keeping watch, so you don’t have&nbsp;to.</p>
     </section>
-    <section class="login-side"><div class="login">
-      <div class="brand login-brand login-brand-sm" style="padding:0"><span class="mark">${HELM}</span><div><b class="wordmark">Staffwarden</b><span>Amplify Media Technologies</span></div></div>
-      <h1>Sign in</h1><p class="muted">Use the email and password you were given.</p>
-      <form id="login" class="mt" novalidate>
-        <div class="field"><label class="f" for="em">Email</label><input id="em" name="email" type="email" autocomplete="username" required autofocus></div>
-        <div class="field"><label class="f" for="pw">Password</label><input id="pw" name="password" type="password" autocomplete="current-password" required></div>
+    <section class="si-card" aria-labelledby="si-h">
+      <h1 id="si-h">Welcome back</h1><p class="si-sub">Sign in with the email and password you were given.</p>
+      <form id="login" novalidate>
+        <label class="si-f"><span>Email</span><input id="em" name="email" type="email" autocomplete="username" required autofocus placeholder="you@company.com"></label>
+        <label class="si-f"><span>Password</span><input id="pw" name="password" type="password" autocomplete="current-password" required placeholder="Your password"></label>
         <p class="err" role="alert" id="login-err">${esc(msg || '')}</p>
-        <button class="btn primary" type="submit">Sign in</button></form>
-      <p class="small muted">To track your time, sign in to the Staffwarden desktop app. This website is for your day, your team, chat, tasks and time off.</p>
-      <div id="dl" class="dl light"></div></div></section></div>`;
+        <button class="si-go" type="submit">Sign in</button></form>
+      <div id="dl" class="si-dl"></div>
+    </section>
+    <footer class="si-foot">${CREDIT}. Time is tracked only while you choose to, and private windows never leave your computer.</footer>
+  </div>`;
   showDownloads(document.getElementById('dl'), { dark: false });
   watchLogin();
   document.getElementById('login').addEventListener('submit', async (e) => {
