@@ -137,6 +137,13 @@ module.exports = (ctx) => {
     emit('hr', u.id); ctx.emitTo(u.id, 'hr');
     return personOut(u, user, { full: true });
   });
+  // just the open request, if any: the reminder at the top of every page until it's done
+  route('GET', '/api/me/details-request', ({ user }) => {
+    const rec = db.prepare('SELECT upd_fields, upd_note, upd_by, upd_at FROM hr_records WHERE user_id = ?').get(user.id);
+    if (!rec || !rec.upd_fields) return { request: null };
+    const fields = JSON.parse(rec.upd_fields);
+    return { request: { fields, label: listOf(fields), note: rec.upd_note || null, by: nameOf(rec.upd_by), at: rec.upd_at } };
+  });
   route('PUT', '/api/me/details', ({ user, body }) => {
     const rec = P().recordOf(user.id);
     need(rec && rec.upd_fields, 403, 'HR hasn’t asked you to update your details. Ask HR if something is wrong.');

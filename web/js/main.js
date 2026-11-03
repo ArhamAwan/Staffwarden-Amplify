@@ -466,7 +466,7 @@ async function refreshBadge() {
 
 // ---------------- live connection
 async function onEvent(ev) {
-  if (ev.type === 'notify') { onNotify(); return; }
+  if (ev.type === 'notify') { onNotify(); refreshAnnBar(); return; }
   // the live chat updates itself; typing and reads never need the page reloaded
   if (ev.type === 'chat' || ev.type === 'chat_read' || ev.type === 'typing') { chatEvent(ev); if (ev.type === 'chat' || ev.type === 'chat_read') chatCount(); if (ev.type === 'typing' || (ev.type === 'chat_read' && current.name !== 'chat')) return; }
   if (ev.type === 'team_threads') { chatCount(); if (current.name !== 'chat') return; }

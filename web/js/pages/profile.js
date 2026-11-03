@@ -46,7 +46,7 @@ actions['det-upd'] = () => {
       for (const [k, val] of fd.entries()) b[k] = String(val).trim() === '' ? null : String(val).trim();
       if (f.has('bank') && !b.iban) throw new Error('Type your IBAN');
       if (f.has('cnic') && !b.cnic) throw new Error('Type your CNIC');
-      await put('/api/me/details', b); toast('Sent. HR has been told.'); S.refresh();
+      await put('/api/me/details', b); toast('Sent. HR has been told.'); S.refresh(); import('../v4.js').then((m) => m.refreshAnnBar()).catch(() => {});
     },
   });
 };
@@ -58,14 +58,17 @@ export default {
       const [prefs, chats, push] = await Promise.all([get('/api/me/notify-prefs'), get('/api/team/threads').catch(() => ({ threads: [] })), pushState().catch(() => 'unsupported')]);
       return { tab: 'notifications', prefs, chats, push };
     }
-    const [u, prefs, sessions, downloads, changes, me, devs] = await Promise.all([get(`/api/users/${S.me.id}`), get('/api/me/notify-prefs'), get('/api/me/sessions'), get('/api/downloads').catch(() => []), get('/api/me/changes').catch(() => []), get('/api/me'), get('/api/developers').catch(() => [])]); S.me = me; const hr = await get('/api/me/hr').catch(() => null); return { ...u, prefs, sessions, downloads, changes, devs, hr, openUpd: q && q.get('details') === '1' };
+    const [u, prefs, sessions, downloads, changes, me, devs] = await Promise.all([get(`/api/users/${S.me.id}`), get('/api/me/notify-prefs'), get('/api/me/sessions'), get('/api/downloads').catch(() => []), get('/api/me/changes').catch(() => []), get('/api/me'), get('/api/developers').catch(() => [])]); S.me = me; const hr = await get('/api/me/hr').catch(() => null); return { ...u, prefs, sessions, downloads, changes, devs, hr, openUpd: q && q.get('details') === '1', loadedAt: Date.now() };
   },
-  // opened from the "please update your details" notification: straight to the form, once
+  // opened from the notification or the reminder at the top: straight to the form. The ?details=1 is then
+  // taken off the address, so a refresh doesn't reopen it and the next click on the link opens it again.
   after(view, u) {
-    if (!u || !u.openUpd || !u.hr || !u.hr.update_request || view.dataset.updOpened) return;
-    view.dataset.updOpened = '1';
+    // (not from an older copy shown while the page loads: that one may not know about the request yet)
+    if (!u || !u.openUpd || Date.now() - u.loadedAt > 5000 || !/[?&]details=1/.test(location.hash)) return;
+    history.replaceState(null, '', '#/profile');
+    if (!u.hr || !u.hr.update_request) { toast('Nothing to update. HR has no open request for you.'); return; }
     const el = document.getElementById('details'); if (el) el.scrollIntoView({ block: 'start' });
-    actions['det-upd']();
+    if (!document.querySelector('#overlay .modal')) actions['det-upd']();
   },
   render(u) {
     if (u.tab === 'notifications') return notifyTab(u);

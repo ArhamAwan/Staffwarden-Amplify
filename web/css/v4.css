@@ -228,7 +228,11 @@
 }
 
 /* ---------- an announcement waiting for "I've read it" ---------- */
-.annbar { margin-right: auto; min-width: 0; display: flex; }
+.annbar { margin-right: auto; min-width: 0; display: flex; gap: 8px; flex-wrap: wrap; }
+.ab-pill.det { border-color: rgba(167,139,250,.5); background: rgba(139,92,246,.18); color: #E4DAFF; }
+.ab-pill.det:hover { background: rgba(139,92,246,.28); }
+.ab-pill.det .ic, .ab-pill.det .ab-l { color: #C4B5FD; }
+.ab-pill.det .ab-go { background: #C4B5FD; color: #1A1033; }
 .annbar[hidden] { display: none; }
 .ab-pill { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: min(560px, 100%); height: 32px; padding: 0 4px 0 11px; border-radius: 99px; border: 1px solid rgba(247,181,68,.45); background: rgba(247,181,68,.14); color: #F3DDA8; font: 600 13px var(--body); cursor: pointer; }
 .ab-pill:hover { background: rgba(247,181,68,.22); }

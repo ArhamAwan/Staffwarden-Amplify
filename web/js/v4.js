@@ -20,6 +20,7 @@ const IC = {
   back: '<path d="M15 5l-7 7 7 7"/>',
   chev: '<path d="M9 5l7 7-7 7"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+  idcard: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="9" cy="11" r="2.2"/><path d="M5.8 16.2c.5-1.6 1.7-2.4 3.2-2.4s2.7.8 3.2 2.4M14.5 10h3.5M14.5 13.5h3.5"/>',
 };
 const ic = (n, s = 18) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]}</svg>`;
 const av = (p, size = 28) => `<span class="cav" style="width:${size}px;height:${size}px;background:${avColor(p.id)};font-size:${Math.round(size * 0.38)}px" aria-hidden="true">${esc(initials(p.name))}</span>`;
@@ -294,15 +295,22 @@ let annHidden = new Set();
 export async function refreshAnnBar() {
   const bar = document.getElementById('annbar');
   if (!bar || !S.me || S.me.kind === 'client') return;
-  let list = [];
-  try { list = (await get('/api/announcements/pending')).filter((a) => !annHidden.has(a.id)); } catch { return; }
-  if (!list.length || /^#\/announcements/.test(location.hash)) { bar.hidden = true; bar.innerHTML = ''; return; }
-  const a = list[0];
+  let list = [], det = null;
+  try {
+    const [l, d] = await Promise.all([get('/api/announcements/pending'), get('/api/me/details-request').catch(() => ({ request: null }))]);
+    list = l.filter((a) => !annHidden.has(a.id)); det = d.request;
+  } catch { return; }
+  // HR asked you to update your details: stays here, on every page, until you send them (not on Profile, where the form is)
+  const detPill = det && !/^#\/profile(\?|$)/.test(location.hash) ? `<button type="button" class="ab-pill det" data-ab="det" title="${esc(det.by || 'HR')} asked you${det.note ? `: ${esc(det.note)}` : ''}">${ic('idcard', 16)}<span class="ab-l">HR request</span><b>Update your ${esc(det.label)}</b><span class="ab-go">Update</span></button>` : '';
+  const a = /^#\/announcements/.test(location.hash) ? null : list[0];
+  const annPill = a ? `<button type="button" class="ab-pill" data-ab="read" data-id="${a.id}" title="Announcement from ${esc(a.author ? a.author.name : 'the owner')}">${ic('mega', 16)}<span class="ab-l">Announcement</span><b>${esc(a.title)}</b>${list.length > 1 ? `<i>+${list.length - 1}</i>` : ''}<span class="ab-go">Read it</span></button>` : '';
+  if (!detPill && !annPill) { bar.hidden = true; bar.innerHTML = ''; return; }
   bar.hidden = false;
-  bar.innerHTML = `<button type="button" class="ab-pill" data-ab="read" data-id="${a.id}" title="Announcement from ${esc(a.author ? a.author.name : 'the owner')}">${ic('mega', 16)}<span class="ab-l">Announcement</span><b>${esc(a.title)}</b>${list.length > 1 ? `<i>+${list.length - 1}</i>` : ''}<span class="ab-go">Read it</span></button>`;
+  bar.innerHTML = detPill + annPill;
 }
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('#annbar [data-ab]'); if (!b) return;
+  if (b.dataset.ab === 'det') { location.hash = '#/profile?details=1'; return; }
   if (b.dataset.ab === 'later') { const id = Number(document.querySelector('#annbar [data-ab="read"]').dataset.id); annHidden.add(id); refreshAnnBar(); return; }
   openAnnouncement(Number(b.dataset.id));
 });
