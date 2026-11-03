@@ -79,3 +79,61 @@ test('a day of work becomes a report, announced after the shift, with a PDF', as
   assert.equal((await api('GET', `/api/shift-reports/${day}`, { token: tokens.hira })).status, 403);
   assert.equal((await api('GET', '/api/shift-reports/2099-01-01', { token: tokens.owner })).status, 400);
 });
+
+// a tiny mail server that accepts one message, to check what Staffwarden sends
+function fakeSmtp() {
+  const net = require('node:net');
+  const got = { lines: [], data: '', auth: null };
+  const server = net.createServer((s) => {
+    let inData = false, buf = '';
+    s.write('220 fake ESMTP\r\n');
+    s.on('data', (d) => {
+      buf += d.toString();
+      let i;
+      while ((i = buf.indexOf('\r\n')) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 2);
+        if (inData) { if (line === '.') { inData = false; s.write('250 queued\r\n'); } else got.data += line + '\n'; continue; }
+        got.lines.push(line);
+        if (/^EHLO/.test(line)) s.write('250-fake\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n');
+        else if (/^AUTH PLAIN/.test(line)) { got.auth = Buffer.from(line.slice(11), 'base64').toString(); s.write(got.auth.endsWith('right-pass') ? '235 ok\r\n' : '535 bad\r\n'); }
+        else if (/^(MAIL|RCPT)/.test(line)) s.write('250 ok\r\n');
+        else if (line === 'DATA') { inData = true; s.write('354 go\r\n'); }
+        else if (line === 'QUIT') { s.write('221 bye\r\n'); s.end(); }
+      }
+    });
+  });
+  return new Promise((r) => server.listen(0, '127.0.0.1', () => r({ server, got, port: server.address().port })));
+}
+
+test('the report can be emailed: settings stay with the owner, the password is never sent back, a test sends the PDF', async () => {
+  const smtpEnv = await makeEnv({ app: { smtpOptions: { allowInsecure: true } } });
+  const { ok, api, tokens } = smtpEnv;
+  const m = await fakeSmtp();
+  try {
+    await smtpEnv.person('dana', 'Dana Hill');
+    assert.equal((await api('GET', '/api/shift-reports/email', { token: tokens.dana })).status, 403);
+    assert.equal((await api('PUT', '/api/shift-reports/email', { token: tokens.owner, body: { on: true, to: 'not-an-email', host: '127.0.0.1.nip.io', port: 587 } })).status, 400);
+    // the fake server listens on a random port; the port check only allows the usual ones, so set it directly
+    const saved = await ok('PUT', '/api/shift-reports/email', { token: tokens.owner, body: { on: true, to: 'arham@example.com, ceo@example.com', host: 'mail.example.com', port: 587, user: 'reports@example.com', pass: 'right-pass' } });
+    assert.equal(saved.has_pass, true); assert.equal(saved.pass, undefined); assert.deepEqual(saved.to, ['arham@example.com', 'ceo@example.com']);
+    const c = JSON.parse(smtpEnv.app.db.prepare("SELECT value FROM settings WHERE key = 'report_mail'").get().value);
+    c.host = '127.0.0.1'; c.port = m.port;
+    smtpEnv.app.db.prepare("UPDATE settings SET value = ? WHERE key = 'report_mail'").run(JSON.stringify(c));
+    const r = await ok('POST', '/api/shift-reports/email/test', { token: tokens.owner });
+    assert.deepEqual(r.to, ['arham@example.com', 'ceo@example.com']);
+    assert.ok(m.got.lines.includes('RCPT TO:<ceo@example.com>'));
+    assert.match(m.got.auth, /reports@example\.com\0right-pass$/);
+    assert.match(m.got.data, /Subject: \[Test\] Shift report/);
+    assert.match(m.got.data, /Content-Type: application\/pdf; name="shift-report-\d{4}-\d\d-\d\d\.pdf"/);
+    // saving again without a password keeps the stored one
+    const again = await ok('PUT', '/api/shift-reports/email', { token: tokens.owner, body: { on: true, to: ['arham@example.com'], host: 'mail.example.com', port: 465, user: 'reports@example.com' } });
+    assert.equal(again.has_pass, true);
+    // a wrong password comes back as a plain message
+    const c2 = JSON.parse(smtpEnv.app.db.prepare("SELECT value FROM settings WHERE key = 'report_mail'").get().value);
+    c2.host = '127.0.0.1'; c2.port = m.port; c2.pass = 'wrong';
+    smtpEnv.app.db.prepare("UPDATE settings SET value = ? WHERE key = 'report_mail'").run(JSON.stringify(c2));
+    const bad = await api('POST', '/api/shift-reports/email/test', { token: tokens.owner });
+    assert.equal(bad.status, 400); assert.match(bad.data.error, /username or password/);
+    assert.match((await ok('GET', '/api/shift-reports/email', { token: tokens.owner })).last_error, /username or password/);
+  } finally { m.server.close(); await smtpEnv.close(); }
+});

@@ -11,7 +11,7 @@ const bytes = (n) => (n > 1e9 ? (n / 1e9).toFixed(2) + ' GB' : n > 1e6 ? (n / 1e
 // The settings page: a list of sections on the left (each with what it is set to now), the sections on
 // the right as plain rows (what it is, then the control), a picture of the shift that follows the times
 // as they are typed, and a save bar that only appears once something has changed.
-const SECTIONS = [['company', 'Company'], ['hours', 'Working hours'], ['shots', 'Screenshots'], ['privacy', 'Private windows'], ['tasks', 'Tasks'], ['open', 'Transparency'], ['live', 'Live status'], ['storage', 'Storage'], ['chat', 'Chat']];
+const SECTIONS = [['company', 'Company'], ['hours', 'Working hours'], ['shots', 'Screenshots'], ['privacy', 'Private windows'], ['tasks', 'Tasks'], ['open', 'Transparency'], ['live', 'Live status'], ['reports', 'Shift report email'], ['storage', 'Storage'], ['chat', 'Chat']];
 const ALWAYS = ['Messaging apps (WhatsApp, Telegram, Signal…)', 'Password managers', 'Private and incognito windows', 'Banking and payments', 'Social media', 'Notification pop-ups'];
 const SHOTS = [[0, 'Off'], [1, '1'], [2, '2'], [3, '3']];
 const short = (t) => (t ? hhmmText(t).replace(':00', '') : '');
@@ -68,11 +68,11 @@ function shotRuler(n) {
 export const settingsPage = {
   title: 'Settings',
   async load() {
-    const [s, storage, gifs] = await Promise.all([get('/api/settings'), get('/api/admin/storage'), get('/api/chat/gifs/setup').catch(() => null)]);
+    const [s, storage, gifs, mail] = await Promise.all([get('/api/settings'), get('/api/admin/storage'), get('/api/chat/gifs/setup').catch(() => null), get('/api/shift-reports/email').catch(() => null)]);
     S.settings = s;
-    return { s, storage, gifs };
+    return { s, storage, gifs, mail };
   },
-  render({ s, storage, gifs }) {
+  render({ s, storage, gifs, mail }) {
     const wd = new Set(String(s.work_days).split(',').map(Number));
     const sum = summaries(s);
     const row = (label, hint, control, { id, wide, tog } = {}) => html`<div class="srow ${wide ? 'wide' : ''} ${tog ? 'tog' : ''}"><div class="srow-t">${id ? html`<label for="${id}">${label}</label>` : html`<span class="srow-l">${label}</span>`}${hint ? html`<p>${hint}</p>` : ''}</div><div class="srow-c">${control}</div></div>`;
@@ -139,6 +139,7 @@ export const settingsPage = {
           <div class="set-bar" data-setbar hidden><span><b data-setcount>Unsaved changes</b><span class="err" data-err></span></span><span class="set-bar-a"><button type="button" class="btn" data-act="set-discard">Discard</button><button type="submit" class="btn primary">Save changes</button></span></div>
         </form>
 
+        ${mail ? sec('reports', 'Shift report email', 'After the last shift of each work day, the report is emailed with the PDF attached. Staffwarden sends it from a mailbox you choose.', mailForm(mail, row, sw)) : ''}
         <div class="set-tiles${gifs ? ' two' : ' one'}">
         ${sec('storage', 'Storage', '', row(`${plural(storage.screenshots, 'screenshot')} stored`, html`Using <b>${bytes(storage.bytes)}</b>. Anything older than ${s.retention_days} days is removed on its own.`, html`<button class="btn danger" data-act="purge">Delete expired now</button>`))}
         ${gifs ? sec('chat', 'Chat', 'GIFs in every chat, for everyone.', html`
@@ -151,6 +152,51 @@ export const settingsPage = {
       </div>`;
   },
   after(view) { setupForm(view); },
+};
+
+// ---- emailing the shift report ----
+const PROVIDERS = [['Hostinger', 'smtp.hostinger.com', 465], ['Gmail', 'smtp.gmail.com', 465], ['Outlook', 'smtp.office365.com', 587]];
+function mailForm(m, row, sw) {
+  const when = (iso) => new Date(iso).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  const status = m.last_error && (!m.last_sent_at || m.last_error_at > m.last_sent_at)
+    ? html`<p class="rm-st bad">${icon('alert')}<span><b>Last try failed</b> ${when(m.last_error_at)}: ${m.last_error}</span></p>`
+    : m.last_sent_at ? html`<p class="rm-st ok">${icon('check')}<span>Last sent ${when(m.last_sent_at)}</span></p>` : '';
+  return html`<form class="rm" data-submit="report-mail" novalidate>
+    ${row('Email the report after each shift', m.on ? `On. Goes to ${m.to.join(', ')}.` : 'Off. Reports are still on the Shift reports page and in the bell.', sw('on', m.on, 'rm-on'), { id: 'rm-on', tog: true })}
+    ${row('Send it to', 'Up to 10 addresses, separated by commas. Yours for now; add the owner’s when you’re happy with it.', html`<input id="rm-to" name="to" type="text" inputmode="email" autocomplete="off" value="${m.to.join(', ')}" placeholder="${m.owner_email || 'you@company.com'}">`, { id: 'rm-to', wide: true })}
+    <div class="srow wide"><div class="srow-t"><span class="srow-l">Send from this mailbox</span><p>Its mail server login. A Gmail account needs an app password (Google Account › Security › App passwords), not the normal one.</p></div>
+      <div class="srow-c rm-box">
+        <div class="rm-pre" role="group" aria-label="Fill in for">${PROVIDERS.map(([n, h, pt]) => html`<button type="button" class="chip" data-act="rm-pre" data-host="${h}" data-port="${pt}">${n}</button>`)}</div>
+        <div class="rm-grid">
+          <div class="field"><label class="f" for="rm-host">Mail server</label><input id="rm-host" name="host" value="${m.host}" placeholder="smtp.hostinger.com" autocomplete="off" spellcheck="false"></div>
+          <div class="field"><label class="f" for="rm-port">Port</label><select id="rm-port" name="port">${[[465, '465 (SSL)'], [587, '587 (STARTTLS)'], [2525, '2525']].map(([v, t]) => html`<option value="${v}" ${Number(m.port) === v ? raw('selected') : ''}>${t}</option>`)}</select></div>
+          <div class="field"><label class="f" for="rm-user">Username</label><input id="rm-user" name="user" value="${m.user}" placeholder="reports@yourcompany.com" autocomplete="off" spellcheck="false"></div>
+          <div class="field"><label class="f" for="rm-pass">Password</label><input id="rm-pass" name="pass" type="password" autocomplete="new-password" placeholder="${m.has_pass ? 'Saved. Type a new one to change it' : 'The mailbox password'}"></div>
+          <div class="field rm-from"><label class="f" for="rm-from">Send as <span class="muted">(optional)</span></label><input id="rm-from" name="from" value="${m.from}" placeholder="Same as the username" autocomplete="off" spellcheck="false"></div>
+        </div></div></div>
+    ${status}
+    <div class="rm-a"><span class="err" data-err></span><button type="button" class="btn" data-act="rm-test">Send a test now</button><button type="submit" class="btn primary">Save</button></div>
+  </form>`;
+}
+const rmBody = (f) => ({ on: f.querySelector('[name=on]').checked, to: f.querySelector('[name=to]').value, host: f.querySelector('[name=host]').value, port: Number(f.querySelector('[name=port]').value),
+  user: f.querySelector('[name=user]').value, pass: f.querySelector('[name=pass]').value, from: f.querySelector('[name=from]').value });
+actions['report-mail'] = async (form) => {
+  const err = form.querySelector('[data-err]'), btn = form.querySelector('button[type=submit]');
+  err.textContent = ''; btn.disabled = true;
+  try { const r = await put('/api/shift-reports/email', rmBody(form)); toast(r.on ? `Shift reports will be emailed to ${r.to.join(', ')}` : 'Saved. The email is off'); S.refresh(); }
+  catch (e) { err.textContent = errMsg(e); } finally { btn.disabled = false; }
+};
+actions['rm-pre'] = (el) => { const f = el.closest('form'); f.querySelector('[name=host]').value = el.dataset.host; f.querySelector('[name=port]').value = el.dataset.port; f.querySelector('[name=user]').focus(); };
+actions['rm-test'] = async (el) => {
+  const f = el.closest('form'), err = f.querySelector('[data-err]');
+  err.textContent = ''; el.disabled = true; const label = el.textContent; el.textContent = 'Sending…';
+  try {
+    try { await put('/api/shift-reports/email', rmBody(f)); }               // what's on screen is what gets tested
+    catch (e) { err.textContent = errMsg(e); return; }
+    try { const r = await post('/api/shift-reports/email/test', {}); toast(`Test sent to ${r.to.join(', ')}. Check the inbox (and spam).`); }
+    catch (e) { toast('The test didn’t go through. The reason is shown above the buttons.', true); }
+    S.refresh();                                                            // the result shows in the status line
+  } finally { el.disabled = false; el.textContent = label; }
 };
 
 // ---- the live parts: the shift picture, the screenshot ruler, the tags, and the save bar ----

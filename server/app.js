@@ -464,7 +464,7 @@ function createApp(opts = {}) {
 
   const ctx = {
     backupDir: opts.backupDir || null, offsiteLog: opts.offsiteLog || null,
-    POLICY_VERSION, db, cfg, route, clientIp, tokenHash, verifyNobody, passwordProblem, now: clockNow, nowIso, emit, emitTo, emitUsers, emitPortal, emitClientUser, onlineNow, publicUrl: opts.publicUrl || null, pushFetch: opts.pushFetch || null, gifFetch: opts.gifFetch || null, publicClient, managersOf, sweepNotify, audit, publicUser, shotPolicy, shotDir, hashPassword, verifyPassword, newToken, PAUSE_REASONS,
+    POLICY_VERSION, db, cfg, route, clientIp, tokenHash, verifyNobody, passwordProblem, now: clockNow, nowIso, emit, emitTo, emitUsers, emitPortal, emitClientUser, onlineNow, publicUrl: opts.publicUrl || null, pushFetch: opts.pushFetch || null, gifFetch: opts.gifFetch || null, smtpOptions: opts.smtpOptions || null, publicClient, managersOf, sweepNotify, audit, publicUser, shotPolicy, shotDir, hashPassword, verifyPassword, newToken, PAUSE_REASONS,
     isManager, isHR, needHR, hrDir, needConsent, needConsentNow, needManager, cmpVersion, POLICY_CHANGES, needOwner, canSee, visibleUsers, targetUser, managedTeamIds, touch, removeShots, purgeOld, sweepStale,
     saveSetting, defaults, T, MAX_BODY, clockNow, listDownloads: () => listDownloads(), latestApp: (p, a) => latestApp(p, a),
   };

@@ -6,12 +6,13 @@
 const { need } = require('../lib/http');
 const T = require('../lib/time');
 const { Pdf, width, PAGE_W, PAGE_H } = require('../lib/pdf');
+const smtp = require('../lib/smtp');
 
 const READY_AFTER_MIN = 15;          // the report is ready this long after the last shift of the day ends
 const NOTIFY_WITHIN_H = 18;          // a report older than this is never announced (no backlog after a deploy)
 
 module.exports = (ctx) => {
-  const { db, cfg, route, nowIso, clockNow, needManager, visibleUsers } = ctx;
+  const { db, cfg, route, nowIso, clockNow, needManager, visibleUsers, audit } = ctx;
   const calc = () => ctx.calc;
 
   const teamName = (id) => (id ? (db.prepare('SELECT name FROM teams WHERE id = ?').get(id) || {}).name || null : null);
@@ -169,6 +170,42 @@ module.exports = (ctx) => {
   }
 
   const dayOf = (params) => { need(T.isDay(params.day), 400, 'day must look like 2026-10-24'); need(params.day <= calc().companyToday(), 400, 'That day hasn’t happened yet'); return params.day; };
+
+  // the email settings (registered before /:day so "email" isn't read as a day)
+  const needOwnerHere = (user) => need(user.role === 'owner', 403, 'Only the owner can do this');
+  route('GET', '/api/shift-reports/email', ({ user }) => { needOwnerHere(user); const c = mailCfg(); const o = ownerUser(); return { ...publicMail(c), owner_email: o ? o.email : null }; });
+  route('PUT', '/api/shift-reports/email', ({ user, body }) => {
+    needOwnerHere(user);
+    const c = mailCfg();
+    const to = (Array.isArray(body.to) ? body.to : String(body.to || '').split(/[,;\s]+/)).map((x) => String(x).trim()).filter(Boolean);
+    need(to.length <= 10, 400, 'Up to 10 addresses');
+    need(to.every(smtp.validAddr), 400, `That doesn’t look like an email address: ${to.find((x) => !smtp.validAddr(x)) || ''}`);
+    const host = String(body.host || '').trim().toLowerCase();
+    need(!host || /^[a-z0-9.-]+\.[a-z]{2,}$/.test(host), 400, 'The mail server looks like smtp.hostinger.com');
+    const port = Number(body.port || 587);
+    need([25, 465, 587, 2525].includes(port), 400, 'The port is usually 465 or 587');
+    const userName = String(body.user || '').trim().slice(0, 200);
+    const from = String(body.from || '').trim();
+    need(!from || smtp.validAddr(from), 400, 'The "send from" address doesn’t look like an email address');
+    const on = !!body.on;
+    const pass = body.pass != null && String(body.pass) !== '' ? String(body.pass).slice(0, 300) : c.pass;
+    if (on) { need(to.length, 400, 'Add who gets the report'); need(host && userName && pass, 400, 'Fill in the mail server, username and password to switch it on'); }
+    const next = { ...c, on, to, host, port, user: userName, from, pass };
+    saveMail(next);
+    audit(user, 'reports.email', null, on ? `Shift report emailed to ${to.join(', ')}` : 'Shift report email off');
+    return publicMail(next);
+  });
+  route('POST', '/api/shift-reports/email/test', async ({ user }) => {
+    needOwnerHere(user);
+    const c = mailCfg();
+    need(c.host && c.user && c.pass && (c.to || []).length, 400, 'Save the mail server, login and who gets it first');
+    // the newest report that's final, else today's so far
+    const people = tracked(), today = calc().companyToday();
+    let day = today;
+    for (let i = 0; i < 14; i++) { const d = T.addDays(today, -i); const r = readyAt(people, d); if (r != null && clockNow() >= r) { day = d; break; } }
+    try { const res = await mailReport(day, { test: true, cfg: c }); return { ok: true, to: res.to, day }; }
+    catch (e) { need(false, 400, e.message); }
+  });
 
   route('GET', '/api/shift-reports', ({ user }) => { needManager(user); return { days: recentDays(user), today: calc().companyToday() }; });
   route('GET', '/api/shift-reports/:day', ({ user, params }) => { needManager(user); return build(user, dayOf(params)); });
@@ -388,6 +425,54 @@ module.exports = (ctx) => {
     return doc.toBuffer({ title: `Shift report ${r.day}`, author: r.org });
   }
 
+  // ---------- emailing it ----------
+  // The owner sets a mailbox for Staffwarden to send from and who gets the report. The password is stored
+  // on the server and never sent back to the browser.
+  const MAIL_KEY = 'report_mail';
+  const mailCfg = () => { try { return JSON.parse((db.prepare('SELECT value FROM settings WHERE key = ?').get(MAIL_KEY) || {}).value || '{}') || {}; } catch { return {}; } };
+  const saveMail = (c) => db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(MAIL_KEY, JSON.stringify(c));
+  const publicMail = (c) => ({ on: !!c.on, to: c.to || [], host: c.host || '', port: c.port || 587, user: c.user || '', from: c.from || '', has_pass: !!c.pass,
+    last_day: c.last_day || null, last_sent_at: c.last_sent_at || null, last_error: c.last_error || null, last_error_at: c.last_error_at || null });
+  const ownerUser = () => db.prepare("SELECT * FROM users WHERE active = 1 AND role = 'owner' ORDER BY id LIMIT 1").get();
+  const escH = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  function mailBody(r) {
+    const t = r.totals, link = ctx.publicUrl ? `${String(ctx.publicUrl).replace(/\/+$/, '')}/#/shift-report?day=${r.day}` : null;
+    const flagged = r.people.filter((p) => p.level === 'red' || p.level === 'amber').sort((a, b) => FLAG_ORDER[a.level] - FLAG_ORDER[b.level]);
+    const nums = [['Worked', `${dur(t.worked_secs)}${t.expected_secs ? ` of ${dur(t.expected_secs)} planned` : ''}`], ['In', `${t.present} of ${t.people}`], ['Late', String(t.late)], ['Absent', String(t.absent)], ['Activity', t.activity_pct == null ? '-' : `${t.activity_pct}%`]];
+    const text = [`Shift report for ${longDay(r.day)}`, '', ...nums.map(([k, v]) => `${k}: ${v}`), '',
+      flagged.length ? 'Needs attention:' : 'Nothing unusual. Everyone kept to their hours.',
+      ...flagged.map((p) => `- ${p.name}: ${p.flags.filter((f) => f.level !== 'blue').map((f) => f.label).join('; ')}`), '',
+      'The full report is attached as a PDF.', link ? `Open it in Staffwarden: ${link}` : ''].join('\n');
+    const C = { red: '#B91C1C', amber: '#B45309' };
+    const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#f4f5f8;font-family:Arial,Helvetica,sans-serif;color:#151a2d">
+<table role="presentation" width="100%" style="max-width:620px;margin:0 auto;background:#fff;border-radius:10px;border-top:4px solid #5b47d6" cellpadding="0" cellspacing="0"><tr><td style="padding:24px 28px">
+<div style="font-size:12px;color:#6b7280;font-weight:bold">${escH(r.org)}</div>
+<h1 style="margin:6px 0 2px;font-size:22px">Shift report</h1><div style="font-size:14px;color:#6b7280">${escH(longDay(r.day))}</div>
+<table role="presentation" width="100%" style="margin:18px 0;border-collapse:collapse"><tr>${nums.map(([k, v]) => `<td style="padding:8px 6px;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb"><div style="font-size:11px;color:#6b7280">${escH(k)}</div><div style="font-size:15px;font-weight:bold">${escH(v)}</div></td>`).join('')}</tr></table>
+<h2 style="font-size:15px;margin:0 0 8px">${flagged.length ? 'Needs attention' : 'Nothing unusual'}</h2>
+${flagged.length ? flagged.map((p) => `<div style="margin:0 0 8px;padding:10px 12px;border-left:3px solid ${C[p.level]};background:${p.level === 'red' ? '#fdecec' : '#fef4e6'}"><b>${escH(p.name)}</b><br>${p.flags.filter((f) => f.level !== 'blue').map((f) => `<span style="color:${C[f.level]};font-size:13px">${escH(f.label)}</span>`).join('<br>')}</div>`).join('') : '<p style="color:#15803d;margin:0">Everyone kept to their hours.</p>'}
+<p style="font-size:13px;color:#6b7280;margin:18px 0 0">The full report, person by person, is attached as a PDF.${link ? ` <a href="${escH(link)}" style="color:#5b47d6">Open it in Staffwarden</a>.` : ''}</p>
+</td></tr></table></body></html>`;
+    const subject = `Shift report, ${T.human(r.day)}: ${flagged.length ? `${flagged.length} ${flagged.length === 1 ? 'person needs' : 'people need'} attention` : 'nothing unusual'}`;
+    return { subject, text, html };
+  }
+  async function mailReport(day, { test = false, cfg: c = mailCfg() } = {}) {
+    if (!test && !c.on) return { skipped: true };
+    const owner = ownerUser(); if (!owner) throw new Error('No owner account');
+    const r = build(owner, day);
+    const { subject, text, html } = mailBody(r);
+    try {
+      const res = await smtp.sendMail({ host: c.host, port: c.port, user: c.user, pass: c.pass, from: c.from || c.user, fromName: `${r.org} · Staffwarden`, to: c.to,
+        subject: test ? `[Test] ${subject}` : subject, text, html, attachments: [{ filename: `shift-report-${r.day}.pdf`, type: 'application/pdf', content: pdfOf(r) }] }, ctx.smtpOptions || {});
+      const now = mailCfg(); if (!test) now.last_day = day; now.last_sent_at = nowIso(); now.last_error = null; saveMail(now);
+      return res;
+    } catch (e) {
+      const now = mailCfg(); now.last_error = e.message; now.last_error_at = nowIso(); saveMail(now);
+      console.error('shift report email', e.message);
+      throw e;
+    }
+  }
+  ctx.mailShiftReport = mailReport;
   // ---------- telling the owner and managers it's ready ----------
   const lastKey = 'shift_report_last';
   ctx.shiftReportSweep = () => {
@@ -406,11 +491,13 @@ module.exports = (ctx) => {
       db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(lastKey, day);
       if (now - r > NOTIFY_WITHIN_H * 3600000) continue;
       const bosses = db.prepare("SELECT * FROM users WHERE active = 1 AND role IN ('owner','manager')").all();
+      let mailTried = false;
       for (const b of bosses) {
         const mine = visibleUsers(b, { tracking: true });
         const worked = mine.filter((u) => { const m = calc().computeDay(u, day); return m.worked_secs > 0; });
         if (!worked.length) continue;
         const secs = worked.reduce((s, u) => s + calc().computeDay(u, day).worked_secs, 0);
+        if (b.role === 'owner' && !mailTried) { mailTried = true; mailReport(day).catch(() => {}); }
         n += ctx.notify.notify(b.id, {
           kind: 'shift_report', title: `Shift report for ${T.human(day)} is ready`,
           body: `${worked.length} ${worked.length === 1 ? 'person' : 'people'} worked ${dur(secs)} in all. Open it to read or download the PDF.`,
