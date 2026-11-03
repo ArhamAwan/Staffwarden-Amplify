@@ -1,6 +1,6 @@
-import { html, raw, esc, dayShort, dayMD, dayLong, plural, todayIn, addDays, LEAVE_KIND } from '../util.js';
+import { html, raw, esc, icon, initials, avColor, dayShort, dayMD, dayLong, plural, todayIn, addDays, eachDay, monthEnd, monthLabel, dow, LEAVE_KIND } from '../util.js';
 import { get, post, del, qs } from '../api.js';
-import { S, actions, kpis, tag, person, empty, openModal, confirmBox, toast, errMsg, meter } from '../ui.js';
+import { S, actions, ring, kpis, tag, person, empty, openModal, confirmBox, toast, errMsg, meter } from '../ui.js';
 import { isMgr as isMgrOnly, loadPeople, select, companyToday, myToday } from '../parts.js';
 // HR decides everyone's time off, like a manager
 const isMgr = () => isMgrOnly() || !!S.me.hr;
@@ -25,15 +25,6 @@ export default {
     const mine = bal.find((b) => b.user_id === S.me.id);
     const away = reqs.filter((r) => r.status === 'approved' && r.start_day <= today && r.end_day >= today);
     const upcoming = reqs.filter((r) => r.status === 'approved' && r.start_day > today);
-    const cells = mgr
-      ? [{ label: 'Waiting for a decision', value: String(pending.length), tone: pending.length ? 'warn' : '', foot: pending.length ? 'Review below' : 'All caught up' },
-         { label: 'Away today', value: String(away.length), foot: away.length ? away.map((a) => a.user_name).join(', ') : 'Nobody' },
-         { label: 'Coming up', value: String(upcoming.length), foot: 'Approved requests that have not started' },
-         { label: 'Holidays this year', value: String(hol.length), foot: 'Company-wide days off' }]
-      : [{ label: 'Days left this year', value: String(mine ? mine.left : 0), tone: 'good', meter: mine ? (100 * mine.left) / Math.max(1, mine.allowance) : 0, foot: `${mine ? mine.taken : 0} of ${mine ? mine.allowance : 0} used` },
-         { label: 'Waiting for approval', value: String(pending.length), foot: pending.length ? 'Your manager has been notified' : 'None' },
-         { label: 'Coming up', value: String(upcoming.length), foot: upcoming[0] ? range(upcoming[upcoming.length - 1]) : 'Nothing booked' },
-         { label: 'Holidays this year', value: String(hol.length), foot: 'Company-wide days off' }];
     const row = (r) => html`<tr data-k="r${r.id}">
       ${mgr ? html`<td><b>${r.user_name}</b></td>` : ''}
       <td>${LEAVE_KIND[r.kind] || r.kind}</td><td class="num">${range(r)}</td><td class="num">${plural(r.working_days, 'working day')}</td>
@@ -45,7 +36,7 @@ export default {
     return html`
       <div class="page-h"><div><h1>Time off</h1><p class="sub">${year} · ${mgr ? 'Requests from your people' : 'Request days off and see your balance'}</p></div>
         <div class="tools"><button class="btn primary" data-act="new-leave">${mgr ? 'Record time off' : 'Request time off'}</button></div></div>
-      ${kpis(cells)}
+      ${leaveBento({ reqs, hol, pending, away, upcoming, mine, mgr, today })}
       ${pending.length && !status ? html`<section class="panel flush"><header><h2>${mgr ? 'Waiting for a decision' : 'Waiting for approval'}</h2></header><div class="body">${table(pending, ['', ''])}</div></section>` : ''}
       <section class="panel flush"><header><h2>${status ? 'Requests' : 'All requests'}</h2>${select({ q: 'status', value: status, label: 'Status', options: [['', 'Any status'], ['pending', 'Waiting'], ['approved', 'Approved'], ['denied', 'Denied'], ['cancelled', 'Cancelled']] })}</header>
         <div class="body">${table(status ? reqs : reqs.filter((r) => r.status !== 'pending'), ['No requests yet', mgr ? 'Requests from your people appear here.' : 'Use "Request time off" to ask for days off.'])}</div></section>
@@ -57,6 +48,34 @@ export default {
       </div>`;
   },
 };
+
+// the top of the page as a bento: what needs a decision, who is away, the holidays, and this month
+function leaveBento({ reqs, hol, pending, away, upcoming, mine, mgr, today }) {
+  const m = today.slice(0, 7), days = eachDay(`${m}-01`, monthEnd(m)), lead = (dow(days[0]) + 6) % 7;
+  const live = reqs.filter((r) => (r.status === 'approved' || r.status === 'pending') && r.end_day >= `${m}-01` && r.start_day <= days[days.length - 1]);
+  const hols = hol.filter((h) => h.day.startsWith(m));
+  const on = (d) => live.filter((r) => r.start_day <= d && r.end_day >= d);
+  const nextHol = hol.find((h) => h.day >= today);
+  const p0 = pending[0];
+  const first = (n) => String(n || '').split(' ')[0];
+  const face = (id, name) => html`<span class="avatar sm" style="background:${avColor(id)}" title="${name}">${initials(name)}</span>`;
+  const lead1 = mgr
+    ? html`<div class="kpi bt-wa ${pending.length ? 'warn' : 'good'}"><div class="l">${icon('bell')}Waiting for a decision</div><div class="v">${pending.length}</div>
+        ${p0 ? html`${p0.note ? html`<p class="lv-q">“${p0.note}”</p>` : ''}<div class="lv-who">${face(p0.user_id, p0.user_name)}<span><b>${p0.user_name}</b>, ${range(p0)}<br><span class="muted">${plural(p0.working_days, 'working day')}</span></span></div>` : html`${upcoming.length ? html`<ul class="at-who lv-up">${upcoming.slice(0, 3).map((r) => html`<li>${face(r.user_id, r.user_name)}<span><b>${first(r.user_name)}</b>, ${range(r)}</span></li>`)}</ul>` : ''}<div class="f">All caught up.${upcoming.length ? ` ${plural(upcoming.length, 'approved request')} coming up.` : ''} New requests show here and you get a notification.</div>`}</div>`
+    : html`<div class="kpi bt-wa good"><div class="l">${icon('sun')}Days left this year</div><div class="lv-ring"><div class="bt-ringw">${ring(mine ? (100 * mine.left) / Math.max(1, mine.allowance) : 0, 'good')}<span class="bt-rv"><b class="num">${mine ? mine.left : 0}</b><small>of ${mine ? mine.allowance : 0}</small></span></div>
+        <span class="muted small">${mine ? mine.taken : 0} used${pending.length ? `, ${pending.length} waiting for approval` : ''}</span></div></div>`;
+  const chips = [...new Map([...live.map((r) => [`r${r.id}`, html`<span class="lv-chip ${r.status === 'pending' ? 'ask' : ''}"><i></i>${first(r.user_name)}, ${r.status === 'pending' ? 'asked' : (LEAVE_KIND[r.kind] || r.kind).toLowerCase()}</span>`]), ...hols.map((h) => [h.day, html`<span class="lv-chip hol"><i></i>${h.name}</span>`])]).values()].slice(0, 5);
+  return html`<section class="kpis bento lv-bento" aria-label="Time off at a glance">
+    ${lead1}
+    <div class="kpi bt-aw"><div class="l">${icon('users')}Away today</div><div class="bt-row"><div class="v">${away.length}</div>${away.length ? html`<span class="stack bt-faces">${away.slice(0, 5).map((a) => face(a.user_id, a.user_name))}</span>` : ''}</div>
+      <div class="f">${away.length ? away.map((a) => first(a.user_name)).join(', ') : upcoming.length ? `Nobody. ${plural(upcoming.length, 'request')} coming up` : 'Nobody'}</div></div>
+    <div class="kpi bt-ho"><div class="l">${icon('cal')}Holidays this year</div><div class="v">${hol.length}</div><div class="f">${nextHol ? `Next: ${nextHol.name}, ${dayMD(nextHol.day)}` : hol.length ? 'No more this year' : 'None added yet'}</div></div>
+    <div class="kpi bt-ca"><div class="l">${icon('cal')}${monthLabel(m)}<span class="bt-r">Who’s away</span></div>
+      <div class="lv-cal">${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((w) => html`<span class="h">${w}</span>`)}${Array.from({ length: lead }, () => html`<span></span>`)}
+        ${days.map((d) => { const o = on(d), h = hols.find((x) => x.day === d); const cls = h ? 'hol' : o.some((r) => r.status === 'approved') ? 'off' : o.length ? 'ask' : ''; return html`<span class="d ${cls}${d === today ? ' today' : ''}" title="${[dayLong(d), h ? h.name : '', ...o.map((r) => `${r.user_name}${r.status === 'pending' ? ' (asked)' : ''}`)].filter(Boolean).join(', ')}">${Number(d.slice(8))}</span>`; })}</div>
+      <div class="lv-chips">${chips.length ? chips : html`<span class="muted small">Nobody away this month and no holidays</span>`}</div></div>
+  </section>`;
+}
 
 actions['new-leave'] = () => {
   const mgr = isMgr();

@@ -703,7 +703,7 @@ module.exports = (ctx) => {
     const [y, m] = month.split('-').map(Number), daysIn = new Date(Date.UTC(y, m, 0)).getUTCDate(), daysLeft = daysIn - Number(today.slice(8, 10));
     const out = {};
     for (const c of db.prepare('SELECT * FROM clients WHERE archived = 0').all()) {
-      const people = db.prepare('SELECT last_seen_at, name FROM client_users WHERE client_id = ? AND active = 1').all(c.id);
+      const people = db.prepare('SELECT id, last_seen_at, name FROM client_users WHERE client_id = ? AND active = 1').all(c.id);
       const last = people.map((p) => p.last_seen_at).filter(Boolean).sort().pop() || null;
       const lastBy = last ? (people.find((p) => p.last_seen_at === last) || {}).name : null;
       const pids = db.prepare('SELECT id FROM projects WHERE client_id = ?').all(c.id).map((r) => r.id);
@@ -722,7 +722,9 @@ module.exports = (ctx) => {
       if (pct != null && pct >= 95 && daysLeft > 2) why.push(`Retainer at ${pct}% with ${daysLeft} days left`);
       const health = bad.length ? 'risk' : why.length ? 'watch' : 'good';
       out[c.id] = { health, reasons: [...bad, ...why], last_seen_at: last, last_seen_by: lastBy, waiting: mine.length, oldest_min: mine.length ? Math.max(...mine.map((i) => i.waited_min)) : 0,
-        level: lateN ? 'late' : mine.some((i) => i.level === 'warn') ? 'warn' : 'ok', retainer_pct: pct, rating: avg, ratings: ratings.length };
+        level: lateN ? 'late' : mine.some((i) => i.level === 'warn') ? 'warn' : 'ok', retainer_pct: pct, rating: avg, ratings: ratings.length,
+        retainer_hours: c.retainer_hours || null, month_secs: secs, days_left: daysLeft,
+        seen_week: people.filter((p) => p.last_seen_at && clockNow() - Date.parse(p.last_seen_at) < 7 * 86400000).map((p) => ({ id: p.id, name: p.name })) };
     }
     return out;
   });

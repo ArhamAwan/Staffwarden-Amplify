@@ -79,6 +79,9 @@ module.exports = (ctx) => {
     const members = db.prepare(`SELECT m.project_id, m.role, u.id, u.name, u.title, u.active FROM project_members m JOIN users u ON u.id = m.user_id WHERE m.project_id IN (${ph}) ORDER BY u.name`).all(...ids);
     const tracked = trackedByProject(ids);
     const day = today();
+    // this week (from Monday) and this month, in the company's work days
+    const since = (d) => T.iso(T.dayStartMs(d, ctx.calc.companyDayTz()));
+    const week = trackedByProject(ids, since(T.mondayOf(day))), month = trackedByProject(ids, since(day.slice(0, 8) + '01'));
     const names = new Map(db.prepare('SELECT id, name FROM users').all().map((u) => [u.id, u.name]));
     return projects.map((p) => {
       const mine = tasks.filter((t) => t.project_id === p.id);
@@ -91,7 +94,7 @@ module.exports = (ctx) => {
         members: mem, member_count: mem.length,
         my_role: p.lead_id === user.id ? 'lead' : mem.some((m) => m.id === user.id) ? 'member' : null,
         can_manage: canManageProject(user, p),
-        counts: counts(mine, day), tracked_secs: tracked.get(p.id) || 0,
+        counts: counts(mine, day), tracked_secs: tracked.get(p.id) || 0, week_secs: week.get(p.id) || 0, month_secs: month.get(p.id) || 0,
         // kept for the desktop app and older pages: the project's tasks
         tasks: mine.map((t) => ({ id: t.id, key: `${p.key}-${t.number}`, name: t.title, done: t.status === 'done', status: t.status, assignee_id: t.assignee_id })),
       };

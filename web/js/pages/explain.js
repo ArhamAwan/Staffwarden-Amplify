@@ -4,7 +4,7 @@
 //  - teamNow: the whole team's status right now, on an employee's dashboard.
 //  - changesPanel / agreedPanel: on the profile, every change made to their tracking, schedule or time,
 //    and what changed since they last agreed to the tracking policy.
-import { html, raw, esc, dur, tod, fmtMin, relTime, dayShort, plural, initials, avColor, rel, icon, nowMs, zoneShort } from '../util.js';
+import { html, raw, esc, dur, tod, fmtMin, relTime, dayShort, plural, initials, avColor, rel, icon, nowMs, zoneShort, todayIn } from '../util.js';
 import { get, post, put, del } from '../api.js';
 import { S, actions, tag, empty, openModal, confirmBox, toast, errMsg } from '../ui.js';
 
@@ -278,6 +278,35 @@ actions['agree-now'] = async () => {
 };
 
 // ---------------- managers: every request to add missing time ----------------
+// why people ask, sorted into a few plain reasons by the words they used
+const WHY = [['Forgot to start after a break', /forg|break|lunch|prayer|namaz/i], ['Power cut or internet down', /power|electric|internet|wifi|wi-fi|connection|network|load ?shed/i], ['App or laptop restarted', /app|laptop|computer|crash|restart|update|froze|frozen|battery/i]];
+const whyOf = (t) => (WHY.find(([, re]) => re.test(t || '')) || ['Other'])[0];
+function askBento(list, pending) {
+  const secs = (r) => Math.max(0, (Date.parse(r.end_at) - Date.parse(r.start_at)) / 1000);
+  const month = (S.settings && todayIn(S.settings.tz_offset_min || 0).slice(0, 7)) || '';
+  const decided = list.filter((r) => r.status !== 'pending' && String(r.decided_at || r.created_at).slice(0, 7) === month);
+  const ok = decided.filter((r) => r.status === 'approved'), no = decided.filter((r) => r.status !== 'approved');
+  const recent = list.filter((r) => nowMs() - Date.parse(r.created_at) < 30 * 86400000);
+  const why = [...WHY.map(([n]) => n), 'Other'].map((n) => [n, recent.filter((r) => whyOf(r.reason) === n).length]).filter(([, c]) => c).sort((a, b) => b[1] - a[1]);
+  const wmax = Math.max(1, ...why.map(([, c]) => c));
+  const per = new Map(); for (const r of recent) { const x = per.get(r.user_id) || { id: r.user_id, name: r.user_name, secs: 0 }; x.secs += secs(r); per.set(r.user_id, x); }
+  const people = [...per.values()].sort((a, b) => b.secs - a.secs).slice(0, 4);
+  const face = (id, name) => html`<span class="avatar sm" style="background:${avColor(id)}" title="${name}">${initials(name)}</span>`;
+  return html`<section class="kpis bento rq-bento" aria-label="Missing time at a glance">
+    <div class="kpi bt-w ${pending.length ? 'warn' : 'good'}"><div class="l">${icon('bell')}Waiting</div><div class="v">${pending.length}</div>
+      ${pending.length ? html`<span class="stack bt-faces">${pending.slice(0, 6).map((r) => face(r.user_id, r.user_name))}</span>` : ''}
+      <div class="f">${pending.length ? `${dur(pending.reduce((n, r) => n + secs(r), 0))} asked in total` : 'All caught up'}</div></div>
+    <div class="kpi bt-ok ${ok.length ? 'good' : ''}"><div class="l">${icon('check')}Approved this month</div><div class="v">${dur(ok.reduce((n, r) => n + secs(r), 0))}</div><div class="f">${plural(ok.length, 'request')}</div></div>
+    <div class="kpi bt-no"><div class="l">${icon('alert')}Declined</div><div class="v">${no.length}</div><div class="f">This month</div></div>
+    <div class="kpi bt-why"><div class="l">${icon('help')}Why people asked<span class="bt-r">30 days</span></div>
+      ${why.length ? html`<ul class="rq-why">${why.map(([n, c], i) => html`<li><span><b>${n}</b><span class="num">${c}</span></span><span class="meter ${['', 'warn', 'good', ''][i] || ''}"><i style="width:${Math.round((100 * c) / wmax)}%"></i></span></li>`)}</ul>`
+        : html`<div class="bt-noshot">${icon('check')}<span>Nobody has asked for missing time in the last 30 days.</span></div>`}</div>
+    <div class="kpi bt-by"><div class="l">${icon('users')}By person, 30 days</div>
+      ${people.length ? html`<ul class="at-who">${people.map((p) => html`<li>${face(p.id, p.name)}<span><b>${p.name.split(' ')[0]}</b></span><b class="num">${dur(p.secs)}</b></li>`)}</ul>` : html`<div class="f">Nobody yet</div>`}</div>
+  </section>
+  <p class="rq-note small muted">${icon('help')}Approved time counts as work but has no screenshots or activity, and is marked “added by request” on their day.</p>`;
+}
+
 export const requestsPage = {
   title: 'Missing time',
   async load(q) { return get('/api/time-requests'); },
@@ -291,6 +320,7 @@ export const requestsPage = {
       <div class="rq-a">${r.status === 'pending' ? (r.user_id === S.me.id && S.me.role !== 'owner' ? html`<span class="faint small">Another manager decides your own</span>` : html`<button class="btn sm primary" data-act="ex-decide" data-id="${r.id}" data-ok="1">Approve</button><button class="btn sm" data-act="ex-decide" data-id="${r.id}" data-ok="0">Decline</button>`) : tag(...STATUS[r.status])}
         <a class="btn sm" href="#/timeline?user=${r.user_id}&day=${r.day}">Their day</a></div></li>`;
     return html`<div class="page-h"><div><h1>Missing time</h1><p class="sub">Time people asked to have added because the timer was not running. Approving adds it to their day; they are told either way.</p></div></div>
+      ${askBento(list, pending)}
       <section class="panel flush"><header><h2>Waiting for a decision</h2><span class="muted small">${plural(pending.length, 'request')}</span></header>
         <div class="body">${pending.length ? html`<ul class="rq">${pending.map(row)}</ul>` : empty('All caught up', 'When someone asks for missing time, it shows here and you get a notification.')}</div></section>
       ${done.length ? html`<section class="panel flush"><header><h2>Decided</h2></header><div class="body"><ul class="rq">${done.map(row)}</ul></div></section>` : ''}`;

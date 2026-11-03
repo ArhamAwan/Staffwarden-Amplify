@@ -181,6 +181,11 @@ export function bars(items, { max, fmt = dur } = {}) {
     <span class="lab">${i.label}</span>${anySub ? html`<span class="sub">${i.sub || raw('&nbsp;')}</span>` : ''}</div>`)}</div>`;
 }
 
+// a progress ring for the bento tiles (the number sits on top of it, in .bt-rv)
+export function ring(pct, tone = '') {
+  const r = 40, c = 2 * Math.PI * r, v = Math.max(0, Math.min(100, pct || 0));
+  return html`<svg class="bt-ring ${tone}" viewBox="0 0 96 96" aria-hidden="true"><circle cx="48" cy="48" r="${r}" class="tr"/><circle cx="48" cy="48" r="${r}" class="fg" stroke-dasharray="${((c * v) / 100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 48 48)"/></svg>`;
+}
 export function meter(pct, tone = '') { return html`<span class="meter ${tone}"><i style="width:${Math.max(0, Math.min(100, pct || 0))}%"></i></span>`; }
 export const toneFor = (v, bad, warn) => (v == null ? '' : v < bad ? 'bad' : v < warn ? 'warn' : 'good');
 

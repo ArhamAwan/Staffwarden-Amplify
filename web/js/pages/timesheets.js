@@ -1,6 +1,6 @@
-import { html, raw, dur, hoursText, pctText, dayShort, dayNum, dowShort, dow, mondayOf, addDays, eachDay, tod, plural, dayMD, ATT, todayIn, tzLabel } from '../util.js';
+import { html, raw, icon, dur, hoursText, pctText, dayShort, dayNum, dowShort, dow, mondayOf, addDays, eachDay, tod, plural, dayMD, ATT, todayIn, tzLabel } from '../util.js';
 import { get, qs, download } from '../api.js';
-import { S, actions, kpis, tag, attTag, person, meter, toneFor, empty, toast, errMsg, qAttr, dateNav, avatar } from '../ui.js';
+import { S, actions, ring, kpis, tag, attTag, person, meter, toneFor, empty, toast, errMsg, qAttr, dateNav, avatar } from '../ui.js';
 import { isMgr, loadPeople, select, teamSelect, companyToday, myToday, withZone } from '../parts.js';
 
 // ---------- the week grid: one row a person, one cell a day ----------
@@ -86,15 +86,6 @@ export default {
     const sum = (f) => g.rows.reduce((n, r) => n + f(r.totals), 0);
     const worked = sum((t) => t.worked_secs), expected = sum((t) => t.expected_done_secs ?? t.expected_secs);
     const actW = g.rows.reduce((n, r) => n + (r.totals.activity_pct == null ? 0 : r.totals.activity_pct * r.totals.worked_secs), 0);
-    const cells = [
-      { label: 'Worked', value: dur(worked), foot: expected ? `of ${dur(expected)} due by now` : 'Nothing due yet', meter: expected ? Math.min(100, Math.round((100 * worked) / expected)) : null, tone: expected ? toneFor(Math.round((100 * worked) / expected), 70, 90) : '' },
-      { label: worked >= expected ? 'Ahead of schedule' : 'Behind schedule', value: Math.abs(worked - expected) < 900 ? 'On pace' : dur(Math.abs(worked - expected)), tone: expected && worked < expected * 0.85 ? 'warn' : worked >= expected && expected ? 'good' : '', foot: 'Today counts only the hours gone by' },
-      { label: 'Breaks', value: dur(sum((t) => t.break_secs)), foot: 'Not counted as work' },
-      { label: 'Idle', value: dur(sum((t) => t.idle_secs)), foot: 'No input, still counted as work' },
-      { label: 'Activity', value: pctText(worked ? Math.round(actW / worked) : null), foot: 'Weighted by hours' },
-      { label: 'Days late', value: String(sum((t) => t.days_late)), tone: sum((t) => t.days_late) ? 'warn' : '', foot: plural(sum((t) => t.days_present), 'day') + ' present' },
-      { label: 'Days absent', value: String(sum((t) => t.days_absent)), tone: sum((t) => t.days_absent) ? 'bad' : '', foot: `${sum((t) => t.days_leave)} on leave` },
-    ];
     const days = g.days;
     let table;
     if (!g.rows.length) table = empty('Nobody to show', 'Pick another team or person.');
@@ -116,10 +107,29 @@ export default {
       <div class="page-h"><div><h1>${isMgr() ? 'Timesheets' : 'Your timesheet'}</h1><p class="sub">${dayMD(from)} to ${dayMD(to)} · ${single ? g.rows[0].name : plural(g.rows.length, 'person', 'people')}</p></div>
         <div class="tools">${isMgr() ? html`${select({ q: 'user', value: who, label: 'Person', options: [['all', 'Everyone'], ...S.people.map((p) => [p.id, p.name])] })}${who === 'all' ? teamSelect(q.get('team')) : ''}` : ''}${nav}
           <button class="btn" data-act="csv" data-query="${exportQ}" data-name="timesheets-${from}-to-${to}.csv">Export CSV</button></div></div>
-      ${kpis(cells)}
+      ${sheetBento(g, { worked, expected, act: worked ? Math.round(actW / worked) : null, sum }, today)}
       ${single || !g.rows.length ? html`<section class="panel flush"><div class="body" style="padding-top:0">${table}</div></section>` : html`<section class="panel flush tsg-panel">${table}</section>`}`;
   },
 };
+
+// the week as a bento: hours worked against what was due (a ring and a bar a day), and six numbers
+function sheetBento(g, { worked, expected, act, sum }, today) {
+  const pct = expected ? Math.round((100 * worked) / expected) : null, tone = expected ? toneFor(pct, 70, 90) : '';
+  const per = g.days.map((d) => g.rows.reduce((n, r) => n + (r.cells[d] ? r.cells[d].worked_secs : 0), 0)), max = Math.max(1, ...per);
+  const gap = worked - expected, late = sum((t) => t.days_late), absent = sum((t) => t.days_absent);
+  const t = (cls, label, ic, val, foot, tone2 = '') => html`<div class="kpi ${cls} ${tone2}"><div class="l">${icon(ic)}${label}</div><div class="v">${val}</div><div class="f">${foot}</div></div>`;
+  return html`<section class="kpis bento ts-bento" aria-label="The week at a glance">
+    <div class="kpi bt-wk"><div class="l">${icon('clock')}Worked this week<span class="bt-r">${expected ? `of ${dur(expected)} due by now` : 'Nothing due yet'}</span></div>
+      <div class="ts-wk"><div class="bt-ringw">${ring(pct, tone)}<span class="bt-rv ${tone}"><b class="num">${pct == null ? '–' : pct + '%'}</b><small>${dur(worked)}</small></span></div>
+        <div class="ts-days">${g.days.map((d, i) => html`<a class="ts-day${d === today ? ' today' : ''}${d > today ? ' later' : ''}" href="#/attendance?day=${d}" title="${dayShort(d)}: ${dur(per[i])}"><span class="num">${per[i] ? hoursText(per[i]) : ''}</span><i style="height:${per[i] ? Math.max(6, Math.round((100 * per[i]) / max)) : 4}%"></i><b>${dowShort(d).slice(0, 1)}</b></a>`)}</div></div></div>
+    ${t('bt-a', gap >= 0 ? 'Ahead of schedule' : 'Behind schedule', 'chart', Math.abs(gap) < 900 ? 'On pace' : dur(Math.abs(gap)), 'Today counts only the hours gone by', expected && worked < expected * 0.85 ? 'warn' : gap >= 0 && expected ? 'good' : '')}
+    ${t('bt-b', 'Breaks', 'pause', dur(sum((x) => x.break_secs)), 'Not counted as work')}
+    ${t('bt-c', 'Activity', 'pulse', pctText(act), 'Weighted by hours', toneFor(act, 35, 50))}
+    ${t('bt-d', 'Idle', 'sun', dur(sum((x) => x.idle_secs)), 'No input, still counted')}
+    ${t('bt-e', 'Days late', 'cal', String(late), `${plural(sum((x) => x.days_present), 'day')} present`, late ? 'warn' : '')}
+    ${t('bt-f', 'Days absent', 'alert', String(absent), `${sum((x) => x.days_leave)} on leave`, absent ? 'bad' : '')}
+  </section>`;
+}
 
 actions.csv = async (el) => {
   try { await download(`/api/reports/export.csv?${el.dataset.query}`, el.dataset.name); toast('CSV downloaded'); }

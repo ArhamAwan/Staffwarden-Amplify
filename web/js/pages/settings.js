@@ -1,4 +1,4 @@
-import { html, raw, icon, plural, tod, dayShort, addDays, minOfDayIn, dur, hhmmText, hm, zoneOffset } from '../util.js';
+import { html, raw, icon, plural, tod, dayShort, addDays, minOfDayIn, dur, hhmmText, hm, zoneOffset, initials, avColor, nowMs } from '../util.js';
 
 const breakLen = (a, b) => (((hm(b) - hm(a)) % 1440) + 1440) % 1440;
 import { get, post, put } from '../api.js';
@@ -87,6 +87,7 @@ export const settingsPage = {
         <nav class="set-nav" aria-label="Settings sections">${SECTIONS.filter(([k]) => k !== 'chat' || gifs).map(([k, t]) => html`<button type="button" data-act="set-jump" data-to="${k}" data-k="nav-${k}"><b>${t}</b>${sum[k] ? html`<span data-sum="${k}">${sum[k]}</span>` : ''}</button>`)}</nav>
         <div class="set-main">
         <form data-submit="save-settings" data-setform novalidate>
+          <div class="set-cols"><div class="set-col">
           ${sec('company', 'Company', '', row('Company name', 'Shown in the app, on payslips and in emails.', html`<input id="s-org" name="org_name" value="${s.org_name}" maxlength="80" required>`, { id: 's-org' }))}
 
           ${sec('hours', 'Working hours', 'Attendance, lateness and weekly targets are worked out from these.', html`
@@ -103,6 +104,8 @@ export const settingsPage = {
             ${row('Weekly target', 'Hours each person aims for in a week.', num('s-wt', 'weekly_h', s.weekly_target_min / 60, 0, 100, 'hours', 0.5), { id: 's-wt' })}
             ${row('Time off per year', 'Paid days off each person gets.', num('s-lv', 'leave_days_per_year', s.leave_days_per_year, 0, 365, 'days'), { id: 's-lv' })}
             ${row('Time zone', 'The default for everyone. Set each remote person’s own zone on the People page.', html`<select id="s-tz" name="tz">${zoneOptions(s.tz_name || null, { fixed: s.tz_name ? null : s.tz_offset_min })}</select>`, { id: 's-tz' })}`)}
+          ${sec('tasks', 'Tasks', '', row('Review before done', 'Assigned tasks go to a manager or the project lead before they count as done. Task accuracy on Performance is the share approved first time.', sw('task_review_required', s.task_review_required !== false, 's-rv'), { id: 's-rv', tog: true }))}
+          </div><div class="set-col">
 
           ${sec('shots', 'Screenshots and activity', 'Everyone sees this same policy in the desktop app.', html`
             ${row('Screenshots per 10 minutes', 'The company default. Teams and people can have their own.', radios('shots_per_10', s.shots_per_10, SHOTS, 'Screenshots per 10 minutes'), { wide: true })}
@@ -120,8 +123,9 @@ export const settingsPage = {
                 <div class="tags" data-tags>${extra.map((t) => html`<span class="tag-x">${t}<button type="button" data-act="set-tag-rm" data-tag="${t}" aria-label="Stop hiding ${t}">${icon('x')}</button></span>`)}
                   <input id="s-bo-add" data-tag-add placeholder="${extra.length ? 'Add another' : 'Add an app or site, like Gmail'}" maxlength="40" autocomplete="off"></div>
                 <p class="hint">Press Enter to add.</p></div></div>`)}
+          </div></div>
+          <div class="set-tiles two">
 
-          ${sec('tasks', 'Tasks', '', row('Review before done', 'Assigned tasks go to a manager or the project lead before they count as done. Task accuracy on Performance is the share approved first time.', sw('task_review_required', s.task_review_required !== false, 's-rv'), { id: 's-rv', tog: true }))}
 
           ${sec('open', 'Transparency', 'Changes here are shown to everyone they affect.', html`
             ${row('Who sees colleagues’ status', 'Working, on a break, idle or not started, and hours today. Never screenshots or activity. Widening it asks everyone to agree again.', html`<select id="s-tv" name="team_visibility">${[['everyone', 'Everyone in the company'], ['team', 'Only their own team'], ['off', 'Nobody, only managers']].map(([v, t]) => html`<option value="${v}" ${(s.team_visibility || 'everyone') === v ? raw('selected') : ''}>${t}</option>`)}</select>`, { id: 's-tv' })}
@@ -130,16 +134,19 @@ export const settingsPage = {
           ${sec('live', 'Live status', '', html`
             ${row('“No signal” after', 'A running timer that has gone quiet.', num('s-ns', 'no_signal_min', s.no_signal_min, 1, 60, 'min'), { id: 's-ns' })}
             ${row('Close a silent session after', 'It ends at the last time the app was heard from.', num('s-st', 'stale_min', s.stale_min, 5, 240, 'min'), { id: 's-st' })}`)}
+          </div>
 
           <div class="set-bar" data-setbar hidden><span><b data-setcount>Unsaved changes</b><span class="err" data-err></span></span><span class="set-bar-a"><button type="button" class="btn" data-act="set-discard">Discard</button><button type="submit" class="btn primary">Save changes</button></span></div>
         </form>
 
+        <div class="set-tiles${gifs ? ' two' : ' one'}">
         ${sec('storage', 'Storage', '', row(`${plural(storage.screenshots, 'screenshot')} stored`, html`Using <b>${bytes(storage.bytes)}</b>. Anything older than ${s.retention_days} days is removed on its own.`, html`<button class="btn danger" data-act="purge">Delete expired now</button>`))}
         ${gifs ? sec('chat', 'Chat', 'GIFs in every chat, for everyone.', html`
           <form class="gif-set" data-submit="gif-key" novalidate>
             ${row('GIF search', gifs.has_key ? html`On, from <b>${gifs.provider === 'tenor' ? 'Tenor' : 'GIPHY'}</b>. Paste a new key to change it.` : 'Free from developers.giphy.com, or a Tenor key from Google Cloud. GIFs come through Staffwarden, so nobody’s browser talks to them directly.',
               html`<div class="gif-in"><input id="s-gif" name="key" autocomplete="off" spellcheck="false" aria-label="GIF search key" placeholder="${gifs.has_key ? `Key ending ${gifs.hint}` : 'Paste a GIPHY or Tenor key'}"><button type="submit" class="btn">Save key</button>${gifs.has_key ? html`<button type="button" class="btn" data-act="gif-off">Turn off</button>` : ''}</div><span class="err" data-err></span>`, { wide: true })}
           </form>`) : ''}
+        </div>
         </div>
       </div>`;
   },
@@ -192,7 +199,7 @@ function addTag(input) {
   setTags(f, list);
 }
 actions['set-tag-rm'] = (el) => { const f = formOf(); setTags(f, tagValues(f).filter((x) => x !== el.dataset.tag)); };
-actions['set-jump'] = (el) => { const t = document.getElementById(`set-${el.dataset.to}`); if (t) t.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); };
+actions['set-jump'] = (el) => { el.parentElement.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === el)); const t = document.getElementById(`set-${el.dataset.to}`); if (t) t.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); };
 actions['set-nobreak'] = () => { const f = formOf(); for (const n of ['break_start', 'break_end']) { const i = f.querySelector(`[name=${n}]`); i.value = ''; i.dataset.dirty = '1'; } refreshForm(f); };
 actions['set-discard'] = () => {
   const f = formOf(); f.reset();
@@ -266,6 +273,12 @@ const LABEL = {
 // anything not named above still reads as words, never as a code
 const words = (a) => { const t = String(a).replace(/[._]/g, ' ').trim(); return t.charAt(0).toUpperCase() + t.slice(1); };
 const AUDIT_PAGE = 100;
+// what kind of thing an entry is about, for the filters and the chip on each row
+const AU_KINDS = [['money', 'Money'], ['privacy', 'Privacy'], ['settings', 'Settings'], ['time', 'Time'], ['people', 'People'], ['clients', 'Clients'], ['signin', 'Sign-ins']];
+const kindOf = (a) => (/^screenshot|hr\.(viewed|doc_opened)|payroll\.slip_viewed/.test(a) ? 'privacy' : /^(payroll|expense|advance)|hr\.pay/.test(a) ? 'money' : /^(settings|holiday|team\.screenshots|policy)/.test(a) ? 'settings'
+  : /^(time|timer|timeoff)/.test(a) ? 'time' : /^client/.test(a) ? 'clients' : /^(login|logout|password)/.test(a) ? 'signin' : /^(user|team|hr|project|task)/.test(a) ? 'people' : 'other');
+const kindChip = (a) => { const k = kindOf(a), n = (AU_KINDS.find((x) => x[0] === k) || [k, 'Other'])[1]; return html`<span class="au-k k-${k}">${n}</span>`; };
+
 export const auditPage = {
   title: 'Audit log',
   // 100 entries a page; "Show older" raises ?n= and the next pages are read with ?before=<id>
@@ -283,14 +296,22 @@ export const auditPage = {
     }
     return { rows, users: await usersP, more, want };
   },
-  render({ rows, users, more, want }) {
+  render({ rows: all, users, more, want }, q) {
     const name = (id) => (id == null ? '' : (users.find((u) => u.id === id) || {}).name || `#${id}`);
     const tz = S.settings.tz_offset_min;
-    const stamp = (iso) => { const d = new Date(Date.parse(iso) + tz * 60000).toISOString().slice(0, 10); return `${dayShort(d)}, ${tod(iso, tz)}`; };
+    const dayOf = (iso) => new Date(Date.parse(iso) + tz * 60000).toISOString().slice(0, 10);
+    const kind = q.get('kind') || '';
+    const rows = kind ? all.filter((r) => kindOf(r.action) === kind) : all;
+    const count = (k) => all.filter((r) => kindOf(r.action) === k).length;
+    const today = dayOf(new Date(nowMs()).toISOString());
+    let lastDay = null;
+    const dayRow = (r) => { const d = dayOf(r.at); if (d === lastDay) return ''; lastDay = d; return html`<tr class="au-day"><th colspan="6">${d === today ? 'Today, ' : ''}${dayShort(d)}</th></tr>`; };
+    const who = (r) => (r.actor_id ? html`<span class="au-who"><span class="avatar sm" style="background:${avColor(r.actor_id)}" aria-hidden="true">${initials(r.actor_name || '?')}</span>${r.actor_name}</span>` : html`<span class="au-who"><span class="avatar sm au-sys" aria-hidden="true">${icon('gear')}</span>${r.actor_name || 'System'}</span>`);
     return html`
-      <div class="page-h"><div><h1>Audit log</h1><p class="sub">Who changed what, newest first. Deleted screenshots are recorded here too.</p></div></div>
-      <section class="panel flush"><div class="body">${rows.length ? html`<div class="tbl-wrap"><table class="t stack"><thead><tr><th>When</th><th>Who</th><th>What</th><th>About</th><th>Details</th></tr></thead><tbody>
-        ${rows.map((r) => html`<tr data-k="a${r.id}"><td class="num small nowrap">${stamp(r.at)}</td><td class="nowrap">${r.actor_name || 'System'}</td><td>${LABEL[r.action] || words(r.action)}</td><td>${name(r.target_user_id)}</td><td class="au-d">${r.detail || ''}</td></tr>`)}</tbody></table></div>
+      <div class="page-h"><div><h1>Audit log</h1><p class="sub">Who changed what, newest first. Deleted and opened screenshots are recorded here too.</p></div>
+        <div class="seg au-kinds" role="group" aria-label="Show">${[['', 'Everything', all.length], ...AU_KINDS.map(([k, n]) => [k, n, count(k)])].filter(([k, , n]) => !k || n).map(([k, n, c]) => html`<button type="button" data-act="q" ${raw(qAttr('kind', k))} aria-pressed="${String(kind === k)}">${n}<span class="au-n">${c}</span></button>`)}</div></div>
+      <section class="panel flush"><div class="body">${rows.length ? html`<div class="tbl-wrap"><table class="t stack au-t"><thead><tr><th>When</th><th>Who</th><th>What</th><th>About</th><th>Details</th><th>Kind</th></tr></thead><tbody>
+        ${rows.map((r) => html`${dayRow(r)}<tr data-k="a${r.id}"><td class="num small nowrap">${tod(r.at, tz)}</td><td class="nowrap">${who(r)}</td><td><b>${LABEL[r.action] || words(r.action)}</b></td><td>${name(r.target_user_id)}</td><td class="au-d">${r.detail || ''}</td><td>${kindChip(r.action)}</td></tr>`)}</tbody></table></div>
         <div class="au-more"><span class="muted small">${more ? `Showing the latest ${rows.length}` : `${plural(rows.length, 'entry', 'entries')}, all of them`}</span>${more ? html`<button type="button" class="btn sm" data-act="q" ${raw(qAttr('n', String(want + AUDIT_PAGE)))}>Show ${AUDIT_PAGE} older</button>` : ''}</div>` : empty('Nothing recorded yet', '')}</div></section>`;
   },
 };

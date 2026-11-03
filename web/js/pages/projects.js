@@ -1,6 +1,6 @@
 // Projects, Jira / ClickUp style: a space per project with a key (MA) that numbers its tasks (MA-12),
 // a lead, members, a board, a list, an overview and settings.
-import { html, raw, esc, dur, plural, dayShort, todayIn, daysBetween, initials, avColor, relTime, icon } from '../util.js';
+import { html, raw, esc, dur, hoursText, plural, dayShort, todayIn, daysBetween, initials, avColor, relTime, icon } from '../util.js';
 import { get, post, patch, del, put, qs } from '../api.js';
 import { S, actions, empty, toast, errMsg, openModal, confirmBox, kpis, meter, toneFor, qAttr, person } from '../ui.js';
 import { isMgr, loadPeople, select } from '../parts.js';
@@ -43,26 +43,40 @@ export const projectsPage = {
           <div class="seg" role="group" aria-label="Show">${[['open', 'Open'], ['done', 'Done'], ['archived', 'Archived']].map(([v, n]) => html`<button type="button" data-act="q" ${raw(qAttr('show', v === 'open' ? '' : v))} aria-pressed="${String(show === v)}">${n}</button>`)}</div>
           <label class="sr" for="pq">Search projects</label><input id="pq" class="search" type="search" placeholder="Search" value="${q.get('q') || ''}" data-q="q">
           ${isMgr() ? html`<button class="btn primary" data-act="project-new">${raw('+')} New project</button>` : html`<button class="btn" data-act="guide-projects">${icon('help')} How projects work</button>`}</div></div>
+      ${show === 'open' && !term && shown.length ? summary(shown) : ''}
       ${shown.length ? grouped(shown)
         : html`<section class="panel">${empty(term ? 'No projects match' : show === 'open' ? (mine ? 'You are not in any project yet' : 'No projects yet') : `No ${show} projects`,
           mine ? 'A manager or project lead adds you to a project. Its tasks then show up here and in the desktop app.' : show === 'open' ? html`<button class="btn primary mt" data-act="project-new">${raw('+')} Create the first project</button>` : '')}</section>`}`;
   },
 };
 
-// client work and the company's own work, side by side but apart: client projects grouped by client
+// a bento over the open projects: this week's hours by project, and the numbers that need someone
+function summary(list) {
+  const sum = (f) => list.reduce((n, p) => n + f(p), 0);
+  const open = sum((p) => p.counts.open), late = sum((p) => p.counts.overdue), lateIn = list.filter((p) => p.counts.overdue).length;
+  const review = sum((p) => p.counts.in_review), week = sum((p) => p.week_secs || 0), month = sum((p) => p.month_secs || 0);
+  const top = [...list].sort((a, b) => (b.week_secs || 0) - (a.week_secs || 0)).slice(0, 7), max = Math.max(1, ...top.map((p) => p.week_secs || 0));
+  const tile = (cls, label, ic, val, foot, href, area) => html`<a class="kpi ${cls} bt-${area}" href="${href}"><div class="l">${icon(ic)}${label}</div><div class="v">${val}</div><div class="f">${foot}</div></a>`;
+  return html`<section class="kpis bento pj-bento" aria-label="Projects at a glance">
+    <div class="kpi bt-chart"><div class="l">${icon('chart')}Hours this week, by project<span class="bt-r">${dur(week)} in total</span></div>
+      ${week ? html`<div class="pj-bars">${top.map((p) => html`<a class="pj-bar" href="#/project?id=${p.id}" title="${p.name}: ${dur(p.week_secs || 0)} this week"><span class="pj-bv num">${p.week_secs ? hoursText(p.week_secs) : '–'}</span><i style="height:calc((100% - 44px) * ${Math.max(0.03, (p.week_secs || 0) / max).toFixed(3)});--pc:${p.color}"></i><span class="pj-bn">${p.key}</span></a>`)}</div>`
+        : html`<div class="bt-noshot">${icon('clock')}<span>No time on projects this week yet. Hours show here as soon as someone tracks time on a project.</span></div>`}</div>
+    ${tile('', 'Open tasks', 'tasks', String(open), `across ${plural(list.length, 'project')}`, '#/tasks', 'a')}
+    ${tile(late ? 'bad' : 'good', 'Past deadline', 'cal', String(late), late ? `in ${plural(lateIn, 'project')}` : 'Nothing late', '#/tasks?due=overdue', 'b')}
+    ${tile(review ? 'warn' : '', 'Waiting for approval', 'check', String(review), 'in review', '#/tasks?status=in_review', 'c')}
+    ${tile('', 'This month', 'clock', dur(month), 'tracked on projects', '#/reports?group=project', 'd')}
+  </section>`;
+}
+
+// one grid of cards, client work first; each card says whose it is (a client, or internal)
 function grouped(list) {
-  const client = list.filter((p) => p.client_id), own = list.filter((p) => !p.client_id);
-  const byClient = new Map();
-  for (const p of client) { if (!byClient.has(p.client_id)) byClient.set(p.client_id, { name: p.client, list: [] }); byClient.get(p.client_id).list.push(p); }
-  const groups = [...byClient].sort((a, b) => String(a[1].name).localeCompare(String(b[1].name)));
-  return html`${client.length ? html`<section class="pj-sec" data-k="sec-client"><div class="pj-sh"><h2>${icon('client')}Client projects</h2><span class="muted small">${plural(client.length, 'project')} for ${plural(groups.length, 'client')}. The client follows these in their portal.</span>${isMgr() ? html`<a class="linkbtn small" href="#/clients">Manage clients</a>` : ''}</div>
-      ${groups.map(([cid, g]) => html`<div class="pj-client" data-k="cl${cid}"><h3><span class="pj-cm" aria-hidden="true">${String(g.name || '?').split(/\s+/).filter((w) => /^[\p{L}\d]/u.test(w)).slice(0, 2).map((w) => w[0].toUpperCase()).join('')}</span>${isMgr() ? html`<a href="#/clients?id=${cid}">${g.name}</a>` : g.name}</h3><div class="pgrid">${g.list.map(cardHtml)}</div></div>`)}</section>` : ''}
-    ${own.length ? html`<section class="pj-sec" data-k="sec-own"><div class="pj-sh"><h2>${icon('folder')}${client.length ? 'Internal projects' : 'Projects'}</h2><span class="muted small">${client.length ? 'Your own work. No client sees these.' : ''}</span></div><div class="pgrid">${own.map(cardHtml)}</div></section>` : ''}`;
+  const client = list.filter((p) => p.client_id).sort((a, b) => String(a.client).localeCompare(String(b.client))), own = list.filter((p) => !p.client_id);
+  return html`<div class="pgrid pj-all">${[...client, ...own].map(cardHtml)}</div>`;
 }
 function cardHtml(p) {
   const c = p.counts;
   return html`<a class="pcard" href="#/project?id=${p.id}" data-k="p${p.id}" style="--pc:${p.color}">
-    <div class="pc-top">${keyBlock(p)}<div class="pc-name"><h2>${p.name}</h2><span>${p.lead ? `Led by ${p.lead.name}` : 'No lead yet'}</span></div>${statusTag(p)}</div>
+    <div class="pc-top">${keyBlock(p)}<div class="pc-name"><h2>${p.name}</h2><span>${p.client_id ? html`<b class="pc-cl">${icon('client')}${p.client}</b>` : 'Internal'} · ${p.lead ? `Led by ${p.lead.name}` : 'No lead yet'}</span></div>${statusTag(p)}</div>
     ${p.description ? html`<p class="pc-desc">${p.description}</p>` : ''}
     <div class="pc-prog"><div class="pc-prog-l"><b class="num">${c.progress_pct == null ? '–' : c.progress_pct + '%'}</b><span>${c.total ? `${c.done} of ${plural(c.total, 'task')} done` : 'No tasks yet'}</span></div>${meter(c.progress_pct || 0, 'good')}</div>
     <div class="pc-stats"><span><b class="num">${c.open}</b> open</span>${c.overdue ? html`<span class="bad-ink"><b class="num">${c.overdue}</b> overdue</span>` : ''}${c.in_review ? html`<span><b class="num">${c.in_review}</b> in review</span>` : ''}${p.tracked_secs ? html`<span>${icon('clock')}${dur(p.tracked_secs)}</span>` : ''}</div>

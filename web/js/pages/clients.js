@@ -29,13 +29,13 @@ export const clientsPage = {
   title: 'Clients',
   async load(q) {
     const id = Number(q.get('id'));
-    const [list, projects, health] = await Promise.all([get('/api/clients?all=1'), get('/api/projects'), id ? null : get('/api/client-health').catch(() => ({}))]);
-    return { list, projects, health, one: id ? await get(`/api/clients/${id}`) : null };
+    const [list, projects, health, inbox] = await Promise.all([get('/api/clients?all=1'), get('/api/projects'), id ? null : get('/api/client-health').catch(() => ({})), id ? null : get('/api/client-inbox').catch(() => null)]);
+    return { list, projects, health, inbox, one: id ? await get(`/api/clients/${id}`) : null };
   },
-  render({ list, projects, one, health }) {
+  render({ list, projects, one, health, inbox }) {
     if (one) return clientPage(one, projects);
     const active = list.filter((c) => !c.archived);
-    if (active.length && health && Object.keys(health).length) return healthPage(list, health);
+    if (active.length && health && Object.keys(health).length) return healthPage(list, health, inbox);
     return html`<div class="page-h"><div><h1>Clients</h1><p class="sub">${active.length ? `${plural(active.length, 'client')}. Give people at a client a sign-in, and they follow their projects in the client portal.` : 'Give your clients a sign-in to follow their projects.'}</p></div>
       <div class="tools"><button class="btn primary" data-act="client-new">${raw('+')} New client</button></div></div>
       ${list.length ? html`<div class="clist">${list.map((c) => html`<a class="panel cl-card" href="#/clients?id=${c.id}" data-k="c${c.id}"><div class="cl-top"><span class="cl-mark" aria-hidden="true">${marks(c.name)}</span><div><h2>${c.name}</h2><span class="muted small">${[c.city, c.retainer_hours ? `${c.retainer_hours}h a month` : ''].filter(Boolean).join(' · ') || 'No details yet'}</span></div>${c.archived ? html`<span class="tag off"><i></i>Archived</span>` : ''}</div>
@@ -47,7 +47,7 @@ export const clientsPage = {
 };
 
 // the Clients page as a table of how each client is doing, worst first
-function healthPage(list, health) {
+function healthPage(list, health, inbox) {
   const RANK = { risk: 0, watch: 1, good: 2 };
   const HL = { risk: 'At risk', watch: 'Watch', good: 'Good' };
   const rows = list.filter((c) => !c.archived && health[c.id]).sort((a, b) => RANK[health[a.id].health] - RANK[health[b.id].health] || health[b.id].oldest_min - health[a.id].oldest_min);
@@ -61,10 +61,35 @@ function healthPage(list, health) {
     <td>${h.rating == null ? html`<span class="muted">None yet</span>` : html`<b class="stars">★ ${h.rating}</b><span class="clh-why">${plural(h.ratings, 'rating')}</span>`}</td></tr>`; };
   return html`<div class="page-h"><div><h1>Clients</h1><p class="sub">${plural(rows.length, 'client')} · ${plural(rows.reduce((n, c) => n + c.projects.length, 0), 'project')} · everyone who can sign in to a portal</p></div>
       <div class="tools"><a class="btn" href="#/inbox">${icon('chat')} Client inbox</a><button class="btn primary" data-act="client-new">${raw('+')} Add a client</button></div></div>
-    <div class="clh-wrap"><section class="panel"><header><h2>All clients</h2><span class="muted small">Worst first</span></header><div class="body" style="overflow-x:auto"><table class="clh-t"><thead><tr><th>Client</th><th>Health</th><th>Last signed in</th><th>Waiting on us</th><th>Retainer this month</th><th>Milestone ratings</th></tr></thead><tbody>${rows.map(tr)}</tbody></table></div></section>
-      <div class="clh-side"><section class="panel"><header><h2>How health is worked out</h2></header><div class="body"><ul class="pdots">${['More than one reply waiting over 4 hours, or one over a day', 'Nobody has signed in for 10 days or more'].map((x) => html`<li class="late">${x}</li>`)}${['A reply past 4 hours', 'The last milestone rated 3 stars or less', 'Retainer past 95% with days left'].map((x) => html`<li class="warn">${x}</li>`)}</ul><p class="muted small mt">Red points make a client <b>At risk</b>, amber ones <b>Watch</b>. Only owners and managers see this. Clients never do.</p></div></section>
-      ${archived.length ? html`<section class="panel"><header><h2>Archived</h2></header><div class="body"><ul class="pdots">${archived.map((c) => html`<li><a href="#/clients?id=${c.id}">${c.name}</a></li>`)}</ul></div></section>` : ''}</div></div>
+    ${clientBento(rows, health, inbox)}
+    <section class="panel"><header><h2>All clients</h2><span class="muted small">Worst first</span></header><div class="body" style="overflow-x:auto"><table class="clh-t"><thead><tr><th>Client</th><th>Health</th><th>Last signed in</th><th>Waiting on us</th><th>Retainer this month</th><th>Milestone ratings</th></tr></thead><tbody>${rows.map(tr)}</tbody></table></div>
+      <details class="clh-how"><summary>${icon('help')}How health is worked out</summary><div class="clh-how-b"><ul class="pdots">${['More than one reply waiting over 4 hours, or one over a day', 'Nobody has signed in for 10 days or more'].map((x) => html`<li class="late">${x}</li>`)}${['A reply past 4 hours', 'The last milestone rated 3 stars or less', 'Retainer past 95% with days left'].map((x) => html`<li class="warn">${x}</li>`)}</ul><p class="muted small">Red points make a client <b>At risk</b>, amber ones <b>Watch</b>. Only owners and managers see this. Clients never do.</p></div></details>
+      ${archived.length ? html`<p class="clh-arch small muted">Archived: ${archived.map((c, i) => html`${i ? ', ' : ''}<a href="#/clients?id=${c.id}">${c.name}</a>`)}</p>` : ''}</section>
     <p class="small muted cl-never">${icon('lock')} ${NEVER}</p>`;
+}
+// four tiles over the table: what is waiting on us, how they rate us, who looked in, the retainers
+function clientBento(rows, health, inbox) {
+  const items = (inbox && inbox.items) || [], late = items.filter((i) => i.level === 'late').length;
+  const rated = rows.filter((c) => health[c.id].rating != null), nRatings = rated.reduce((n, c) => n + health[c.id].ratings, 0);
+  const avg = nRatings ? Math.round((rated.reduce((n, c) => n + health[c.id].rating * health[c.id].ratings, 0) / nRatings) * 10) / 10 : null;
+  const seen = rows.flatMap((c) => (health[c.id].seen_week || []).map((p) => ({ ...p, client: c.name })));
+  const ret = rows.filter((c) => health[c.id].retainer_hours);
+  const used = ret.reduce((n, c) => n + health[c.id].month_secs, 0), of = ret.reduce((n, c) => n + health[c.id].retainer_hours * 3600, 0);
+  const daysLeft = ret.length ? health[ret[0].id].days_left : null;
+  const h = (secs) => `${Math.round(secs / 3600)}h`;
+  return html`<section class="kpis bento cl-bento" aria-label="Clients at a glance">
+    <div class="kpi bt-wt"><div class="l">${icon('chat')}Waiting on us${late ? html`<span class="bt-chip late">${late} past 4 hours</span>` : ''}</div>
+      ${items.length ? html`<ul class="bt-list">${items.slice(0, 5).map((i) => html`<li><i class="d-${i.level}"></i><a href="#/inbox"><b>${i.client}</b>: ${i.text}</a><span class="num">${waitText(i.waited_min)}</span></li>`)}</ul>${items.length > 5 ? html`<a class="bt-foot" href="#/inbox">${items.length - 5} more in the client inbox</a>` : ''}`
+        : html`<div class="bt-noshot">${icon('check')}<span>Nothing is waiting on the team. Every client message, request and change has an answer.</span></div>`}
+      ${inbox && inbox.summary ? html`<div class="f bt-sum">${inbox.summary.typical_reply_min != null ? html`Typical reply this week <b>${waitText(inbox.summary.typical_reply_min)}</b> · ` : ''}<b>${inbox.summary.answered_today}</b> ${inbox.summary.answered_today === 1 ? 'reply' : 'replies'} to clients in the last day</div>` : ''}</div>
+    <div class="kpi bt-rt"><div class="l">${icon('trophy')}Average rating</div>${avg == null ? html`<div class="v">–</div><div class="f">No milestone rated yet</div>` : html`<div class="bt-row"><div class="v">${avg}</div><span class="bt-stars" aria-label="${avg} out of 5">${[1, 2, 3, 4, 5].map((n) => html`<i class="${n <= Math.round(avg) ? 'on' : ''}">★</i>`)}</span></div><div class="f">From ${plural(nRatings, 'milestone rating')}</div>`}</div>
+    <div class="kpi bt-sg"><div class="l">${icon('users')}Signed in this week</div>${seen.length ? html`<span class="stack bt-faces">${seen.slice(0, 6).map((p) => html`<span class="avatar sm" style="background:${avColor(2000 + p.id)}" title="${p.name}, ${p.client}">${initials(p.name)}</span>`)}${seen.length > 6 ? html`<span class="avatar sm more">+${seen.length - 6}</span>` : ''}</span>` : html`<div class="v">0</div>`}
+      <div class="f">${seen.length ? `${plural(seen.length, 'person', 'people')} across ${plural(new Set(seen.map((p) => p.client)).size, 'client')}` : 'Nobody at a client has looked in'}</div></div>
+    <div class="kpi bt-rn"><div class="l">${icon('clock')}Retainers this month${of ? html`<span class="bt-r">${h(used)} of ${h(of)}</span>` : ''}</div>
+      ${ret.length ? html`<div class="bt-row"><div class="v">${Math.round((100 * used) / of)}%</div><span class="bt-say">of the month's retainer hours used, ${h(Math.max(0, of - used))} left</span></div><ul class="bt-ret">${ret.slice(0, 4).map((c) => { const x = health[c.id], pct = Math.round((100 * x.month_secs) / (x.retainer_hours * 3600)); return html`<li><span><b>${c.name}</b><span class="num">${h(x.month_secs)} of ${x.retainer_hours}h</span></span><span class="clh-bar"><i class="${pct >= 95 ? 'late' : pct >= 80 ? 'warn' : ''}" style="width:${Math.min(100, pct)}%"></i></span></li>`; })}</ul>
+        <div class="f">${daysLeft != null ? `${plural(daysLeft, 'day')} left this month` : ''}</div>`
+        : html`<div class="bt-noshot">${icon('clock')}<span>No client has a monthly retainer. Set one in a client's details to see the hours used here.</span></div>`}</div>
+  </section>`;
 }
 actions['go-client'] = (el, e) => { if (e.target.closest('a')) return; S.navigate(`#/clients?id=${el.dataset.id}`); };
 

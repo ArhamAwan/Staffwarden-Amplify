@@ -110,7 +110,13 @@ module.exports = (ctx) => {
     items.sort((a, b) => b.created_at.localeCompare(a.created_at));
     const moods = { smooth: 0, busy: 0, rough: 0 };
     for (const c of items) if (c.mood) moods[c.mood]++;
-    return { day, items, missing, counts: { checked: items.length, expected: items.length + missing.filter((m) => m.state !== 'off').length, tracked_secs: items.reduce((n, c) => n + c.tracked_secs, 0) + missing.reduce((n, m) => n + m.worked_secs, 0), blocked: items.filter((c) => c.blockers).length, moods } };
+    // the week so far (Monday to this day): each day's moods, and who checked in on which days
+    const mon = T.mondayOf(day), ids = team.map((u) => u.id);
+    const wk = ids.length ? db.prepare(`SELECT user_id, day, mood FROM checkins WHERE day >= ? AND day <= ? AND user_id IN (${ids.map(() => '?').join(',')})`).all(mon, day, ...ids) : [];
+    const week = { days: [], people: [] };
+    for (let d = mon; d <= day; d = T.addDays(d, 1)) { const on = wk.filter((r) => r.day === d); week.days.push({ day: d, smooth: on.filter((r) => r.mood === 'smooth').length, busy: on.filter((r) => r.mood === 'busy').length, rough: on.filter((r) => r.mood === 'rough').length, none: on.filter((r) => !r.mood).length }); }
+    for (const u of team) { if (!u.tracks_time) continue; const ds = new Set(wk.filter((r) => r.user_id === u.id).map((r) => r.day)); week.people.push({ user: brief(u), days: week.days.map((x) => ds.has(x.day)) }); }
+    return { day, items, missing, week, counts: { checked: items.length, expected: items.length + missing.filter((m) => m.state !== 'off').length, tracked_secs: items.reduce((n, c) => n + c.tracked_secs, 0) + missing.reduce((n, m) => n + m.worked_secs, 0), blocked: items.filter((c) => c.blockers).length, moods } };
   });
   route('POST', '/api/checkins/nudge', ({ user, body }) => {
     staffOnly(user);

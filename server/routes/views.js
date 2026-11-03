@@ -50,7 +50,18 @@ module.exports = (ctx) => {
     let list = visibleUsers(user, { tracking: true });
     const team = query.get('team_id');
     if (team) list = list.filter((u) => u.team_id === Number(team));
-    return calc.teamDashboard(list, dayParam(query, companyToday()), user);
+    const day = dayParam(query, companyToday());
+    const d = calc.teamDashboard(list, day, user);
+    // the latest few screenshots of the day, for the little preview on the dashboard
+    const latest = db.prepare('SELECT id, user_id, taken_at, privacy FROM screenshots WHERE user_id = ? AND deleted = 0 AND taken_at >= ? AND taken_at < ? ORDER BY taken_at DESC LIMIT 4');
+    const names = new Map(list.map((u) => [u.id, u.name]));
+    const shots = [];
+    for (const u of list) { const [ws, we] = T.dayWindow(day, calc.dayTz(u, day)); shots.push(...latest.all(u.id, T.iso(ws), T.iso(we))); }
+    // the newest one from each person first, so the preview shows more than one face
+    shots.sort((a, b) => (a.taken_at < b.taken_at ? 1 : -1));
+    const seen = new Set(), first = shots.filter((s) => !seen.has(s.user_id) && seen.add(s.user_id));
+    d.recent_shots = [...first, ...shots.filter((s) => !first.includes(s))].slice(0, 4).sort((a, b) => (a.taken_at < b.taken_at ? 1 : -1)).map((s) => ({ id: s.id, user_id: s.user_id, user_name: names.get(s.user_id), taken_at: s.taken_at, privacy: s.privacy || null }));
+    return d;
   });
 
   route('GET', '/api/dashboard/me', ({ user, query }) => calc.myDashboard(user, dayParam(query, calc.todayOf(user))));

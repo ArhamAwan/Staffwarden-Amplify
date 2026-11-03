@@ -11,6 +11,25 @@ const catName = (c) => (CATS.find((x) => x[0] === c) || [c, c])[1];
 const av = (id, name) => html`<span class="avatar" style="background:${avColor(id)}" aria-hidden="true">${initials(name)}</span>`;
 const mine = (e) => (isHRme() ? e.status === 'pending' || e.status === 'manager_ok' : e.status === 'pending');
 
+// the claims as a bento: what waits for you, what goes on the next payroll, what was paid, and this month by category
+function expBento(claims, waiting, sum) {
+  const st = (k) => claims.filter((e) => e.status === k);
+  const month = (claims.map((e) => e.spent_on).sort().pop() || '').slice(0, 7);
+  const cats = new Map(); for (const e of claims) if (e.spent_on.startsWith(month) && e.status !== 'declined' && e.currency === 'PKR') cats.set(e.category, (cats.get(e.category) || 0) + e.amount);
+  const cl = [...cats].sort((a, b) => b[1] - a[1]).slice(0, 4), cmax = Math.max(1, ...cl.map((x) => x[1]));
+  const ppl = [...new Map(waiting.map((e) => [e.user_id, e])).values()];
+  const [y, m] = month.split('-').map(Number);
+  const mName = month ? new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' }) : '';
+  return html`<section class="kpis bento ex-bento" aria-label="Expenses at a glance">
+    <div class="kpi bt-wa ${waiting.length ? 'warn' : 'good'}"><div class="l">${icon('bell')}Waiting for you</div><div class="v">${waiting.length}</div><div class="f">${waiting.length ? money(sum(waiting)) : 'All caught up'}</div>
+      ${ppl.length ? html`<span class="stack bt-faces">${ppl.slice(0, 6).map((e) => av(e.user_id, e.user_name))}</span>` : ''}</div>
+    <div class="kpi bt-nx"><div class="l">${icon('wallet')}On the next payroll</div><div class="v">${money(sum(st('approved')))}</div><div class="f">${plural(st('approved').length, 'claim')}</div></div>
+    <div class="kpi bt-pd"><div class="l">${icon('check')}Paid</div><div class="v">${money(sum(st('paid')))}</div><div class="f">${plural(st('paid').length, 'claim')}${st('declined').length ? `, ${st('declined').length} declined` : ''}</div></div>
+    <div class="kpi bt-ca"><div class="l">${icon('receipt')}${mName ? `${mName} by category` : 'By category'}</div>
+      ${cl.length ? html`<ul class="bt-ret">${cl.map(([k, v], i) => html`<li><span><b>${catName(k)}</b><span class="num">${money(v)}</span></span><span class="meter ${['warn', '', 'good', ''][i]}"><i style="width:${Math.round((100 * v) / cmax)}%"></i></span></li>`)}</ul>` : html`<div class="f">Nothing claimed yet this month</div>`}</div>
+  </section>`;
+}
+
 export default {
   title: 'Expenses',
   async load(q) {
@@ -31,19 +50,14 @@ export default {
       <div class="tools">${sub}</div>${hr ? ptabs('expenses') : ''}</div>`;
     if (tab === 'advances' && hr) return html`${head}${advancesView(advances)}`;
     const sum = (list) => list.reduce((n, e) => n + (e.currency === 'PKR' ? e.amount : 0), 0);
-    const cells = [
-      { label: hr ? 'Waiting for you' : 'Waiting for you', value: String(waiting.length), tone: waiting.length ? 'warn' : '', foot: money(sum(waiting)) },
-      { label: 'Going on the next payroll', value: String(claims.filter((e) => e.status === 'approved').length), foot: money(sum(claims.filter((e) => e.status === 'approved'))) },
-      { label: 'Paid', value: String(claims.filter((e) => e.status === 'paid').length), foot: money(sum(claims.filter((e) => e.status === 'paid'))) },
-      { label: 'Declined', value: String(claims.filter((e) => e.status === 'declined').length), foot: money(sum(claims.filter((e) => e.status === 'declined'))) },
-    ];
     if (!claims.length) return html`${head}<section class="panel">${empty('No expense claims yet', 'People send them from their Pay page with a photo of the receipt.')}</section>`;
     const c = claims.find((x) => x.id === sel) || claims[0];
     const list = html`<section class="panel flush"><div class="body"><div class="tbl-wrap"><table class="t ext"><thead><tr><th>Person</th><th>Claim</th><th class="r">Amount</th><th>Where it is</th></tr></thead><tbody>
       ${claims.map((e) => { const over = e.limit != null && e.amount > e.limit; const [k, w] = EXP_STATUS[e.status];
         return html`<tr class="link ${e.id === c.id ? 'sel' : ''}" data-k="e${e.id}" data-act="q" ${raw(qAttr('id', e.id))} tabindex="0"><td class="nm"><span class="person">${av(e.user_id, e.user_name)}<span><b>${e.user_name}</b><span>${relTime(e.created_at)}</span></span></span></td>
         <td><b>${e.note}</b><div class="small muted">${catName(e.category)} · ${dayMD(e.spent_on)}</div></td><td class="r num"><b>${money(e.amount, e.currency)}</b></td>
-        <td>${over && mine(e) ? tag('absent', `Over the ${catName(e.category).toLowerCase()} limit`) : tag(k, mine(e) ? (e.status === 'manager_ok' ? `${e.manager_name || 'Manager'} approved, waiting for you` : 'Waiting for you') : w)}</td></tr>`; })}</tbody></table></div></div></section>`;
+        <td>${over && mine(e) ? tag('absent', `Over the ${catName(e.category).toLowerCase()} limit`) : tag(k, mine(e) ? (e.status === 'manager_ok' ? `${e.manager_name || 'Manager'} approved, waiting for you` : 'Waiting for you') : w)}</td></tr>`; })}</tbody></table></div>
+      <p class="ext-foot"><span>${plural(claims.length, 'claim')}</span><b class="num">${money(sum(claims.filter((e) => e.status !== 'declined')))}${claims.some((e) => e.currency !== 'PKR') ? ' and more in other currencies' : ''}</b></p></div></section>`;
     const [k, w] = EXP_STATUS[c.status];
     const over = c.limit != null && c.amount > c.limit;
     const detail = html`<section class="panel exp-detail" data-k="d${c.id}"><div class="body">
@@ -54,7 +68,7 @@ export default {
         ${c.limit != null ? html`<dt>Limit</dt><dd class="${over ? 'bad-t' : 'good-t'}">${over ? `Over the ${catName(c.category).toLowerCase()} limit of ${money(c.limit, c.currency)}` : `Within the ${catName(c.category).toLowerCase()} limit (${money(c.limit, c.currency)})`}</dd>` : ''}
         ${c.manager_name ? html`<dt>Manager</dt><dd>${c.manager_name}${c.manager_at ? `, ${relTime(c.manager_at)}` : ''}</dd>` : ''}${c.status === 'declined' && c.decline_reason ? html`<dt>Declined</dt><dd>${c.decline_reason}</dd>` : ''}</dl>
       ${mine(c) && c.user_id !== S.me.id ? html`<div class="exp-act"><button class="btn" data-act="exp-decide" data-id="${c.id}" data-name="${c.user_name}">${icon('x')} Decline</button><button class="btn go" data-act="exp-decide" data-id="${c.id}" data-approve="1" data-name="${c.user_name}">${icon('check')} ${hr ? 'Approve for the next payroll' : 'Approve, then HR'}</button></div>` : html`<p class="muted small">${tag(k, w)}</p>`}</div></section>`;
-    return html`${head}${kpis(cells)}<div class="cols exp-cols">${list}${detail}</div>`;
+    return html`${head}${expBento(claims, waiting, sum)}<div class="cols exp-cols">${list}${detail}</div>`;
   },
 };
 

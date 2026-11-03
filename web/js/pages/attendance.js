@@ -1,6 +1,6 @@
-import { html, raw, dur, pctText, dayNum, dow, addDays, monthKey, monthStart, monthEnd, addMonths, monthLabel, todayIn, tod, hhmmText, plural, LEAVE_KIND, eachDay, dayLong } from '../util.js';
+import { html, raw, icon, initials, avColor, dur, pctText, dayNum, dow, addDays, monthKey, monthStart, monthEnd, addMonths, monthLabel, todayIn, tod, hhmmText, plural, LEAVE_KIND, eachDay, dayLong } from '../util.js';
 import { get, qs } from '../api.js';
-import { S, kpis, person, empty, qAttr, dateNav, toneFor, tag, meter } from '../ui.js';
+import { S, ring, kpis, person, empty, qAttr, dateNav, toneFor, tag, meter } from '../ui.js';
 import { isMgr, loadPeople, select, teamSelect, dayNav, companyToday, myToday, withZone } from '../parts.js';
 
 // One word or phrase per status, the same everywhere on this page.
@@ -34,12 +34,15 @@ export default {
     const day = view === 'day' ? (q.get('day') && q.get('day') <= today ? q.get('day') : today) : null;
     const month = view === 'month' ? (q.get('month') || monthKey(today)) : null;
     const from = day || monthStart(month), to = day || monthEnd(month);
-    const [g, teams] = await Promise.all([
-      get(`/api/attendance${qs({ from, to, user_id: who === 'all' ? undefined : who, team_id: who === 'all' ? q.get('team') : undefined })}`),
+    const scope = { user_id: who === 'all' ? undefined : who, team_id: who === 'all' ? q.get('team') : undefined };
+    const [g, teams, mg] = await Promise.all([
+      get(`/api/attendance${qs({ from, to, ...scope })}`),
       mgr ? get('/api/teams') : Promise.resolve([]),
+      // the day view also shows its month so far, as a small calendar and a summary
+      view === 'day' && who === 'all' ? get(`/api/attendance${qs({ from: monthStart(monthKey(day)), to: day, ...scope })}`).catch(() => null) : null,
     ]);
     S.teams = teams;
-    return { g, view, day, month, who, today };
+    return { g, mg, view, day, month, who, today };
   },
 
   render(d, q) {
@@ -64,7 +67,7 @@ function monthNav(month, today) {
 }
 
 // ---------- one day, everyone: who came in, when, and who didn't ----------
-function dayView({ g, day }) {
+function dayView({ g, mg, day, today }) {
   const rows = g.rows.map((r) => ({ r, c: r.cells[day] })).sort((a, b) => (ORDER[a.c.status] ?? 9) - (ORDER[b.c.status] ?? 9) || a.r.name.localeCompare(b.r.name));
   const n = (s) => rows.filter((x) => s.includes(x.c.status)).length;
   const came = n(['present', 'late']), absent = n(['absent']), waiting = n(['not_started']);
@@ -78,7 +81,7 @@ function dayView({ g, day }) {
     { label: 'On time off', value: String(n(['leave', 'holiday'])), foot: 'Approved leave or a holiday' },
   ];
   if (!rows.length) return html`${kpis(cells)}<section class="panel">${empty('Nobody to show', 'Pick another team or person.')}</section>`;
-  return html`${kpis(cells)}
+  return html`${dayBento(rows, { came, absent, waiting, planned, rate }, day === today)}
     <section class="panel flush"><div class="tbl-wrap"><table class="t att-day stack"><thead><tr>
       <th>Person</th><th>Status</th><th>Shift</th><th>Started</th><th>Stopped</th><th class="r">Worked</th></tr></thead><tbody>
       ${rows.map(({ r, c }) => html`<tr class="link" data-k="u${r.user_id}" data-act="go" data-href="#/timeline?user=${r.user_id}&day=${day}" tabindex="0">
@@ -88,8 +91,61 @@ function dayView({ g, day }) {
         <td class="num">${c.first_in ? tod(c.first_in, r.tz_offset_min) : html`<span class="faint">–</span>`}</td>
         <td class="num">${c.running ? html`<span class="muted">Still working</span>` : c.last_out ? tod(c.last_out, r.tz_offset_min) : html`<span class="faint">–</span>`}</td>
         <td class="num r"><b>${c.worked_secs ? dur(c.worked_secs) : html`<span class="faint">–</span>`}</b></td></tr>`)}
-    </tbody></table></div></section>`;
+    </tbody></table></div></section>
+    ${mg ? monthGlance(mg, day) : ''}`;
 }
+
+// the day as a bento: who is in (a ring), who was late, who is missing
+const first = (n) => String(n).split(' ')[0];
+const face = (r) => html`<span class="avatar sm" style="background:${avColor(r.user_id)}" title="${r.name}">${initials(r.name)}</span>`;
+function dayBento(rows, { came, absent, waiting, planned, rate }, isToday) {
+  const by = (st) => rows.filter((x) => st.includes(x.c.status));
+  const inn = by(['present', 'late']), late = by(['late']), wait = by(['not_started']), off = by(['leave', 'holiday']), abs = by(['absent']);
+  const working = inn.filter((x) => x.c.running).length;
+  const tone = toneFor(rate, 70, 90);
+  const names = (list) => (list.length <= 2 ? list.map((x) => first(x.r.name)).join(' and ') : `${list.slice(0, 3).map((x) => first(x.r.name)).join(', ')}${list.length > 3 ? ` and ${list.length - 3} more` : ''}`);
+  return html`<section class="kpis bento at-bento" aria-label="The day at a glance">
+    <div class="kpi bt-pr ${tone}"><div class="l">${icon('users')}Present</div>
+      <div class="at-pr"><div class="bt-ringw">${ring(rate, tone)}<span class="bt-rv"><b class="num">${came} of ${planned}</b><small>present</small></span></div>
+        <ul class="at-leg">${[[working, isToday ? 'working now' : 'worked', 'ok'], [inn.length - working, isToday ? 'stopped or on a break' : '', 'brk'], [wait.length, 'not started', 'late'], [off.length, 'on time off', 'leave']].filter(([n, t]) => n && t).map(([n, t, c]) => html`<li><i class="d-${c}"></i><b class="num">${n}</b> ${t}</li>`)}${!inn.length && !wait.length && !off.length ? html`<li class="muted">Nobody was due to work</li>` : ''}</ul></div>
+      ${inn.length ? html`<div class="at-in"><span class="stack">${inn.slice(0, 5).map((x) => face(x.r))}</span><span class="muted small">${names(inn)} ${inn.length === 1 ? 'is' : 'are'} in</span></div>` : ''}</div>
+    <div class="kpi bt-la ${late.length ? 'warn' : ''}"><div class="l">${icon('clock')}Late</div><div class="v">${late.length}</div>
+      ${late.length ? html`<ul class="at-who">${late.slice(0, 3).map((x) => html`<li>${face(x.r)}<span><b>${first(x.r.name)}</b>, ${lateText(x.c.late_by_min || 0)}</span></li>`)}</ul>` : html`<div class="f">Everyone who started was on time</div>`}
+      <div class="f">Started after the ${S.settings.grace_min}-minute grace period</div></div>
+    <div class="kpi bt-ab ${absent ? 'bad' : ''}"><div class="l">${icon('alert')}Absent</div><div class="v">${absent}</div><div class="f">${abs.length ? names(abs) : 'No time tracked, no time off'}</div></div>
+    <div class="kpi bt-of"><div class="l">${icon('sun')}On time off</div><div class="v">${off.length}</div><div class="f">${off.length ? names(off) : 'Approved leave or a holiday'}</div></div>
+    <div class="kpi bt-ns ${waiting ? 'warn' : ''}"><div class="l">${icon('bell')}Not started yet</div><div class="v">${waiting}</div>
+      ${wait.length ? html`<ul class="at-who">${wait.slice(0, 4).map((x) => html`<li>${face(x.r)}<span><b>${first(x.r.name)}</b></span><button class="btn sm" data-act="ci-reply" data-id="${x.r.user_id}">${icon('chat')}Message</button></li>`)}</ul>${wait.length > 4 ? html`<div class="f">and ${wait.length - 4} more below</div>` : ''}`
+        : html`<div class="f">${isToday ? 'Everyone due has started' : 'Nobody was left waiting'}</div>`}</div>
+  </section>`;
+}
+
+// the month so far, for everyone: a calendar of who came in, and the totals beside it
+function monthGlance(mg, day) {
+  const m = monthKey(day), days = eachDay(monthStart(m), monthEnd(m)), lead = (dow(days[0]) + 6) % 7, trail = (7 - ((lead + days.length) % 7)) % 7;
+  const per = (d) => { let came = 0, due = 0; for (const r of mg.rows) { const c = r.cells[d]; if (!c) continue; if (['present', 'late'].includes(c.status)) { came++; due++; } else if (['absent', 'not_started'].includes(c.status)) due++; } return due ? Math.round((100 * came) / due) : null; };
+  const sum = (k) => mg.rows.reduce((n, r) => n + (r.totals[k] || 0), 0);
+  const present = sum('days_present'), late = sum('days_late'), absent = sum('days_absent'), leave = sum('days_leave');
+  const workDays = days.filter((d) => d <= day && per(d) != null).length;
+  const lateBy = mg.rows.filter((r) => r.totals.days_late).sort((a, b) => b.totals.days_late - a.totals.days_late);
+  const leaveBy = mg.rows.filter((r) => r.totals.days_leave);
+  return html`<div class="cols at-month">
+    <section class="panel"><header><h2>${monthLabel(m)} at a glance</h2><span class="muted small">Share of people who were in</span></header><div class="body">
+      <div class="at-cal" role="grid" aria-label="${monthLabel(m)}">${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((w) => html`<span class="h">${w}</span>`)}
+        ${Array.from({ length: lead }, () => html`<span class="d blank"></span>`)}
+        ${days.map((d) => { const v = d <= day ? per(d) : null; return html`<a class="d${d === day ? ' on' : ''}${v == null ? ' quiet' : v >= 90 ? ' good' : v >= 70 ? ' warn' : ' bad'}" href="#/attendance?day=${d}" aria-label="${dayLong(d)}${v != null ? `, ${v}% in` : ''}"><b>${dayNum(d)}</b>${v != null ? html`<small>${v}%</small>` : ''}</a>`; })}
+        ${Array.from({ length: trail }, () => html`<span class="d blank"></span>`)}</div></div></section>
+    <section class="panel"><header><h2>${monthLabel(m).split(' ')[0]} so far</h2></header><div class="body">
+      <dl class="at-sum">
+        <div><dt>Working days so far</dt><dd class="num">${workDays}</dd></div>
+        <div><dt>People on time</dt><dd class="num">${present ? `${Math.round((100 * (present - late)) / present)}%` : '–'}</dd></div>
+        <div><dt>Late starts</dt><dd>${late ? `${late}${lateBy[0] ? `, most ${first(lateBy[0].name)}` : ''}` : 'None'}</dd></div>
+        <div><dt>Absences</dt><dd>${absent || 'None'}</dd></div>
+        <div><dt>Time off taken</dt><dd>${leave ? `${plural(leave, 'day')}${leaveBy.length ? `, ${names2(leaveBy)}` : ''}` : 'None'}</dd></div>
+        <div><dt>Hours worked</dt><dd class="num">${dur(sum('worked_secs'))}</dd></div>
+      </dl></div></section></div>`;
+}
+const names2 = (rs) => rs.slice(0, 2).map((r) => first(r.name)).join(', ') + (rs.length > 2 ? ` and ${rs.length - 2} more` : '');
 
 // ---------- one month, everyone: a plain summary, one row each ----------
 function monthKpis(g) {

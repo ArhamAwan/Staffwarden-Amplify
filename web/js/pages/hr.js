@@ -18,13 +18,14 @@ export default {
   title: 'People and pay',
   async load(q) {
     if (q.get('id')) return { person: await get(`/api/hr/people/${q.get('id')}`), tab: q.get('tab') || 'overview' };
-    return { people: await get(`/api/hr/people${qs({ all: q.get('all') })}`) };
+    const [people, ov] = await Promise.all([get(`/api/hr/people${qs({ all: q.get('all') })}`), get('/api/hr/overview').catch(() => null)]);
+    return { people, ov };
   },
-  render(d, q) { return d.person ? personView(d.person, d.tab) : listView(d.people, q); },
+  render(d, q) { return d.person ? personView(d.person, d.tab) : listView(d.people, q, d.ov); },
 };
 
 // ---------- everyone ----------
-function listView(people, q) {
+function listView(people, q, ov) {
   const find = (q.get('find') || '').toLowerCase();
   const all = people.filter((p) => p.role !== 'owner' && (!find || p.name.toLowerCase().includes(find)));
   // developer and test accounts are not employees: listed on their own, off payroll
@@ -49,7 +50,7 @@ function listView(people, q) {
     <div class="page-h"><div><h1>People and pay</h1><p class="sub">HR records, pay and bank details. Only HR and the owner can open this.</p></div>
       <div class="tools"><a class="btn" href="#/hr-import">${icon('file')} Import from contracts</a><label class="psearch"><span class="sr">Find a person</span>${icon('search')}<input type="search" placeholder="Find by name" value="${q.get('find') || ''}" data-q="find" autocomplete="off"></label></div>
       ${ptabs('people')}</div>
-    ${noPay || noBank ? html`<div class="banner"><span>${noPay ? `${plural(noPay, 'person has', 'people have')} no pay set, so they are left off payroll. ` : ''}${noBank ? `${plural(noBank, 'person has', 'people have')} no bank details.` : ''}</span></div>` : ''}
+    ${ov && !find ? hrBento(list, ov, { noPay, noBank }) : noPay || noBank ? html`<div class="banner"><span>${noPay ? `${plural(noPay, 'person has', 'people have')} no pay set, so they are left off payroll. ` : ''}${noBank ? `${plural(noBank, 'person has', 'people have')} no bank details.` : ''}</span></div>` : ''}
     <section class="panel flush"><div class="body">${list.length ? html`<div class="tbl-wrap"><table class="t stack"><thead><tr><th>Person</th><th>Contract</th><th>Joined</th><th>Pay</th><th>Tax</th><th>Bank</th><th>Advances</th><th class="row-a"><span class="sr">Move</span></th></tr></thead><tbody>${rows}</tbody></table></div>` : empty('Nobody here', 'Add people on the People page first.')}</div></section>
     ${others.length ? html`<section class="panel hr-others" data-k="others"><header><div><h2>Not employees <span class="muted num hr-ocount">${others.length}</span></h2><p class="small muted">Developer and test accounts. They are kept off payroll and out of HR’s reminders, so they need no pay, bank or contract.</p></div></header><div class="body"><ul class="hr-olist">${otherRows}</ul></div></section>` : ''}
     <p class="small muted">${icon('lock')} Pay, bank details and documents are only for HR, the owner${owner ? ` (${owner.name})` : ''} and the person. Opening someone’s record is kept in the audit log.</p>`;
@@ -109,6 +110,35 @@ const AUTO_WHY = { account: 'They can sign in', app: 'Agreed in the desktop app'
 const autoWhy = (k) => AUTO_WHY[k] || 'Done';
 
 // ---------- what is waiting on HR (HR's home) ----------
+// the top of People and pay: what is waiting, what is coming, the month's pay and the people
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function hrBento(list, o, { noPay, noBank }) {
+  const first = (n) => String(n || '').split(' ')[0];
+  const byCur = new Map();
+  for (const p of list) if (p.pay) byCur.set(p.pay.currency, (byCur.get(p.pay.currency) || 0) + p.pay.base + (p.pay.allowances || []).reduce((n, a) => n + a.amount, 0));
+  const cur = [...byCur].sort((a, b) => b[1] - a[1]);
+  const paid = list.filter((p) => p.pay).length;
+  const nameIs = (names) => list.filter((p) => names.includes(p.name));
+  const face = (p) => html`<span class="avatar sm" style="background:${avColor(p.id)}" title="${p.name}">${initials(p.name)}</span>`;
+  const bankless = list.filter((p) => p.flags.no_bank);
+  return html`<section class="kpis bento hr-bento" aria-label="People and pay at a glance">
+    <div class="kpi bt-wt"><div class="l">${icon('bell')}Waiting on you${o.items.length ? html`<span class="bt-chip">${o.items.length}</span>` : ''}</div>
+      ${o.items.length ? html`<ul class="hr-wl">${o.items.slice(0, 4).map((i) => { const [ic, tone] = KIND_IC[i.kind] || ['file', 'idle']; return html`<li><a href="${i.link}"><span class="w-ic ${tone}">${icon(ic)}</span><span><b>${i.title}</b><small>${i.sub}</small></span>${icon('right')}</a></li>`; })}</ul>${o.items.length > 4 ? html`<details class="hr-more"><summary>Show ${o.items.length - 4} more</summary><ul class="hr-wl">${o.items.slice(4).map((i) => { const [ic, tone] = KIND_IC[i.kind] || ['file', 'idle']; return html`<li><a href="${i.link}"><span class="w-ic ${tone}">${icon(ic)}</span><span><b>${i.title}</b><small>${i.sub}</small></span>${icon('right')}</a></li>`; })}</ul></details>` : ''}`
+        : html`<div class="bt-noshot">${icon('check')}<span>Nothing is waiting. Expense claims, advances, joining and leaving, and payroll show here when they need you.</span></div>`}</div>
+    <div class="kpi bt-cu"><div class="l">${icon('cal')}Coming up</div>
+      ${o.soon.length ? html`<ul class="hr-soon">${o.soon.slice(0, 5).map((x) => html`<li><span class="hr-d"><b>${Number(x.day.slice(8))}</b><small>${MON[Number(x.day.slice(5, 7)) - 1]}</small></span><span><b>${x.title}</b><small>${x.sub}</small></span></li>`)}</ul>` : html`<div class="f">Nothing in the next 90 days</div>`}</div>
+    <div class="kpi bt-pr"><div class="l">${icon('wallet')}Monthly pay</div>
+      <div class="v">${cur.length ? money(cur[0][1], cur[0][0]) : '–'}</div>
+      <div class="f">${cur.length > 1 ? `plus ${cur.slice(1).map(([c, v]) => money(v, c)).join(', ')}, ` : ''}base and allowances for ${plural(paid, 'person', 'people')}, before tax</div></div>
+    <div class="kpi bt-pe"><div class="l">${icon('users')}People</div><div class="bt-row"><div class="v">${o.stats.people}</div><span class="bt-say">${o.stats.joined_year} joined this year</span></div>
+      <span class="stack bt-faces">${list.slice(0, 6).map(face)}${list.length > 6 ? html`<span class="avatar sm more">+${list.length - 6}</span>` : ''}</span></div>
+    <div class="kpi bt-pb ${o.stats.probation.length ? 'warn' : ''}"><div class="l">${icon('clock')}On probation</div><div class="bt-row"><div class="v">${o.stats.probation.length}</div><span class="stack bt-faces">${nameIs(o.stats.probation).slice(0, 4).map(face)}</span></div><div class="f">${o.stats.probation.slice(0, 2).map(first).join(', ') || 'Nobody'}</div></div>
+    <div class="kpi bt-lv"><div class="l">${icon('left')}Leaving</div><div class="bt-row"><div class="v">${o.stats.leaving.length}</div><span class="stack bt-faces">${nameIs(o.stats.leaving).slice(0, 4).map(face)}</span></div><div class="f">${o.stats.leaving.slice(0, 2).map(first).join(', ') || 'Nobody'}</div></div>
+    <div class="kpi bt-bk ${noBank || noPay ? 'bad' : 'good'}"><div class="l">${icon('bank')}Bank details missing</div><div class="v">${noBank}</div>
+      <div class="f">${bankless.length ? bankless.slice(0, 3).map((p) => first(p.name)).join(', ') : 'Everyone with pay has a bank account'}${noPay ? `. ${plural(noPay, 'person has', 'people have')} no pay set` : ''}</div></div>
+  </section>`;
+}
+
 const KIND_IC = { payroll: ['wallet', 'good'], expenses: ['receipt', 'blue'], advance: ['bank', 'leave'], no_pay: ['wallet', 'bad'], no_bank: ['bank', 'bad'], joining: ['users', 'warn'], leaving: ['users', 'warn'], timeoff: ['sun', 'idle'] };
 export function hrPanel(o) {
   if (!o) return '';
@@ -135,7 +165,7 @@ export function hrPanel(o) {
   const line = (r) => (r.group ? group(r) : item(r));
   return html`<div class="hr-home" data-k="hrhome">
     <div class="hr-col-l"><section class="panel hr-wait"><header><h2>Waiting on you</h2><span class="muted small">${o.items.length ? `${plural(o.items.length, 'thing')}, most urgent first` : 'All caught up'}</span></header><div class="body">
-      ${rows.length ? html`<ul class="waiting">${rows.slice(0, SHOWN).map(line)}</ul>${rows.length > SHOWN ? html`<details class="w-more"><summary>Show ${plural(rows.length - SHOWN, 'more')}</summary><ul class="waiting">${rows.slice(SHOWN).map(line)}</ul></details>` : ''}` : empty('Nothing waiting', 'Expense claims, advances, people joining or leaving and payroll show here when they need you.')}</div></section>
+      ${rows.length ? html`<ul class="waiting">${rows.slice(0, SHOWN).map(line)}</ul>${rows.length > SHOWN ? html`<details class="w-more"><summary>Show ${rows.length - SHOWN} more</summary><ul class="waiting">${rows.slice(SHOWN).map(line)}</ul></details>` : ''}` : empty('Nothing waiting', 'Expense claims, advances, people joining or leaving and payroll show here when they need you.')}</div></section>
       <section class="panel"><header><h2>People</h2><a href="#/hr">Everyone</a></header><div class="body"><div class="mini-stats">
         <div><span>People</span><b class="num">${o.stats.people}</b><small>${o.stats.monthly} with pay</small></div><div><span>On probation</span><b class="num">${o.stats.probation.length}</b><small>${o.stats.probation.slice(0, 2).map((n) => n.split(' ')[0]).join(', ') || 'Nobody'}</small></div>
         <div><span>Joined this year</span><b class="num">${o.stats.joined_year}</b><small>${o.stats.joined_month} this month</small></div><div><span>Leaving</span><b class="num">${o.stats.leaving.length}</b><small>${o.stats.leaving.slice(0, 2).map((n) => n.split(' ')[0]).join(', ') || 'Nobody'}</small></div></div></div></section>

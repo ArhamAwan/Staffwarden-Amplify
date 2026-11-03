@@ -1,7 +1,7 @@
 import { rel, relRange, nowMs, html, raw, dur, hoursText, pctText, dayLong, dayShort, plural, tod, minOfDayIn, todayIn, relTime, addDays, mondayOf, tzLabel, tzShort, reasonLabel, fmtMin, hhmmText, ATT } from '../util.js';
 import { get, qs } from '../api.js';
-import { S, actions, kpis, tag, attTag, liveTag, stateTags, person, ribbon, ribbonAxis, ribbonLegend, windowFor, bars, meter, toneFor, empty, setShots, shotTile, dial } from '../ui.js';
-import { initials, avColor } from '../util.js';
+import { S, actions, ring, kpis, tag, attTag, liveTag, stateTags, person, ribbon, ribbonAxis, ribbonLegend, windowFor, bars, meter, toneFor, empty, setShots, shotTile, dial } from '../ui.js';
+import { initials, avColor, icon } from '../util.js';
 import { hrPanel } from './hr.js';
 import { isMgr, companyToday, dayNav, teamSelect, breaksPanel, dayRibbonBlock, zoneBadge } from '../parts.js';
 import { dueChip, openTask } from './tasks.js';
@@ -53,9 +53,10 @@ function shiftBar(win, nowRel, brk, ds) {
 export const teamPage = {
   title: 'Dashboard',
   async load(q) {
-    const [d, teams, idle] = await Promise.all([get(`/api/dashboard/team${qs({ day: q.get('day'), team_id: q.get('team') })}`), get('/api/teams'), S.me.role === 'owner' || (S.me.role === 'manager' && S.settings.idle_tell_lead) ? get('/api/idle/board').catch(() => null) : null]);
+    const [d, teams, idle, boost] = await Promise.all([get(`/api/dashboard/team${qs({ day: q.get('day'), team_id: q.get('team') })}`), get('/api/teams'), S.me.role === 'owner' || (S.me.role === 'manager' && S.settings.idle_tell_lead) ? get('/api/idle/board').catch(() => null) : null,
+      S.me.role === 'owner' && !q.get('day') ? get('/api/boost').catch(() => null) : null]);
     S.teams = teams;
-    return { ...d, idle };
+    return { ...d, idle, boost };
   },
   render(d, q) {
     const k = d.kpis, today = companyToday(), isToday = d.day === today;
@@ -64,19 +65,6 @@ export const teamPage = {
     const onAxis = (m) => { const off = (m.day_start_min || 0) - ds; return off ? m.segs.map(([s, e, t]) => [s + off, e + off, t]) : m.segs; };
     const win = windowFor(d.members.map(onAxis), relRange(S.settings.shift_start, S.settings.shift_end, ds) || undefined);
     const shiftWin = relRange(S.settings.shift_start, S.settings.shift_end, ds) || win;   // equals win when no shift is set
-    const cells = [
-      { label: 'Worked today', value: dur(k.worked_secs), foot: isToday ? `${plural(k.working, 'person', 'people')} working now` : `${plural(k.members, 'person', 'people')} tracked` },
-      { label: 'Attendance', value: pctText(k.attendance_rate), tone: toneFor(k.attendance_rate, 70, 90), foot: k.late_count ? `${k.late_count} started late` : 'Nobody late', meter: k.attendance_rate },
-      { label: 'On time', value: pctText(k.punctuality_rate), tone: toneFor(k.punctuality_rate, 70, 90), foot: 'Of those who started' },
-      { label: 'Activity', value: pctText(k.activity_pct), tone: toneFor(k.activity_pct, 35, 50), foot: 'Keyboard and mouse use', meter: k.activity_pct },
-      { label: 'Average break', value: dur(k.avg_break_secs), foot: 'Per person who worked' },
-      { label: 'Idle time', value: dur(k.idle_secs), foot: 'No input, still counted as work' },
-      { label: 'Week pace', value: pctText(k.week_pace_pct), tone: toneFor(k.week_pace_pct, 60, 85), foot: `${dur(k.week_secs)} of ${dur(k.week_expected_secs)} expected`, meter: k.week_pace_pct },
-      { label: 'Task completion', value: pctText(k.tasks.completion_pct), tone: toneFor(k.tasks.completion_pct, 60, 85), meter: k.tasks.completion_pct, foot: `Tasks due in 30 days that were done (${k.tasks.done_30} done)` },
-      { label: 'Tasks', value: String(k.tasks.open), unit: 'open', tone: k.tasks.overdue ? 'bad' : '', foot: `${k.tasks.overdue} overdue · ${k.tasks.in_review} in review` },
-      { label: 'Task accuracy', value: pctText(k.tasks.accuracy_pct), tone: toneFor(k.tasks.accuracy_pct, 60, 85), meter: k.tasks.accuracy_pct, foot: 'Approved first time, last 30 days' },
-      { label: 'Screenshots', value: String(k.shots), foot: S.settings.shots_per_10 === 0 ? 'Off by default' : `${S.settings.shots_per_10} per 10 min by default` },
-    ];
     const nowMsg = [];
     // a break is "long" after 45 minutes, or 15 minutes past the scheduled break if that is longer
     const sb = relRange(S.settings.break_start, S.settings.break_end);
@@ -109,7 +97,7 @@ export const teamPage = {
     }
     return html`
       <div class="page-h"><div><h1>Team activity</h1><p class="sub">${dayLong(d.day)}${isToday ? ' · live' : ''} · ${plural(k.members, 'person', 'people')}</p></div>
-        <div class="tools">${S.me.fun_mode && isToday ? html`<a class="btn gm-go" href="#/">Back to god mode</a>` : ''}${S.me.role === 'owner' && isToday ? html`<button class="btn primary" data-act="boost-open">Boost the team</button>` : ''}${teamSelect(q.get('team'))}${dayNav(d.day, today)}</div>
+        <div class="tools">${S.me.fun_mode && isToday ? html`<a class="btn gm-go" href="#/">Back to god mode</a>` : ''}${teamSelect(q.get('team'))}${dayNav(d.day, today)}</div>
         <div class="hero hero-team">
           <div class="ht-top">
             <div class="ht-say"><b>${headline}</b><span>${subline}</span></div>
@@ -123,7 +111,7 @@ export const teamPage = {
       ${k.pending_timeoff ? html`<div class="banner info"><span><b>${plural(k.pending_timeoff, 'time-off request')}</b> waiting for a decision.</span><a class="btn sm" href="#/timeoff">Review</a></div>` : ''}
       ${k.pending_requests ? html`<div class="banner info"><span><b>${plural(k.pending_requests, 'request')}</b> to add missing time waiting for a decision.</span><a class="btn sm" href="#/requests">Review</a></div>` : ''}
       ${isToday && d.idle ? nudgeBoard(d.idle) : ''}
-      ${kpis(cells)}
+      ${dashBento(k, d, isToday, shiftWin, d.members.map(onAxis), nowRel)}
       <section class="panel flush roster"><header><h2>Everyone</h2><div class="legend"><span><i class="sw s-working"></i>Working</span><span><i class="sw s-break"></i>Break</span><span><i class="sw s-idle"></i>Idle</span></div></header>
         <div class="body">${d.members.length ? html`<div class="tbl-wrap"><table class="t">${anyFull ? html`<thead><tr><th>Person</th><th class="th-rib" style="min-width:230px"><span class="sr">${isToday ? 'Today' : 'That day'}, by hour</span>${ribbonAxis(win, { maxLabels: 5, ds })}</th><th>Started</th><th class="r">Worked</th><th class="r">Breaks</th><th class="r">Activity</th><th>This week</th><th class="r">Last screenshot</th></tr></thead>` : ''}
           ${groups.filter(([, , , list]) => list.length).map(([g, label, full, list]) => html`<tbody class="lane" id="lane-${g}" data-k="l${g}">
@@ -151,6 +139,45 @@ export const teamPage = {
       </div>`;
   },
 };
+
+// The numbers as a bento: the day's hours, attendance as a ring, the latest screenshots, the boost.
+const ATT_DOT = { present: 'ok', late: 'late', not_started: 'wait', absent: 'bad', leave: 'leave', holiday: 'leave', upcoming: 'off', off: 'off' };
+function dashBento(k, d, isToday, win, segsList, nowRel) {
+  const tile = (area, label, ic, body, tone = '', extra = '') => html`<div class="kpi ${tone} bt-${area}" data-k="${label}"${raw(extra)}><div class="l">${icon(ic)}${label}</div>${body}</div>`;
+  const v = (val, unit) => html`<div class="v">${val}${unit ? html` <small>${unit}</small>` : ''}</div>`;
+  const f = (t) => (t ? html`<div class="f">${t}</div>` : '');
+  const m = (pct, tone) => (pct == null ? '' : html`<div class="meter ${tone || ''}"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></div>`);
+  // the team's worked minutes in each hour of the shift; hours still to come stay as faint stubs
+  const [lo, hi] = win || [0, 1440], hours = Math.max(1, Math.min(24, Math.round((hi - lo) / 60)));
+  const worked = Array.from({ length: hours }, (_, i) => { const a = lo + i * 60, z = a + 60; let n = 0; for (const segs of segsList) for (const [s0, e0, t] of segs) if (t === 'w') n += Math.max(0, Math.min(z, e0) - Math.max(a, s0)); return n; });
+  const wmax = Math.max(1, ...worked), later = (i) => isToday && nowRel != null && lo + i * 60 > nowRel;
+  const started = d.members.filter((x) => x.first_start).length;
+  const owner = S.me.role === 'owner', boostTile = owner && isToday && d.boost;
+  const b = d.boost && d.boost.last, bDay = b && nowMs() - Date.parse(b.created_at) < 14 * 3600000;   // this shift
+  const shots = d.recent_shots || [];
+  const tAtt = toneFor(k.attendance_rate, 70, 90);
+  return html`<section class="kpis bento dash-bento${boostTile ? '' : ' no-boost'}" aria-label="Key numbers">
+    ${tile('wk', 'Worked today', 'clock', html`<div class="bt-row">${v(dur(k.worked_secs))}<span class="bt-say">${isToday ? `${plural(k.working, 'person', 'people')} working now` : `${plural(k.members, 'person', 'people')} tracked`}</span></div>
+      <div class="bt-bars" aria-hidden="true">${worked.map((x, i) => html`<i class="${later(i) ? 'later' : x ? '' : 'zero'}" style="height:${x ? Math.max(10, Math.round((100 * x) / wmax)) : 8}%"></i>`)}</div>`)}
+    ${tile('at', 'Attendance', 'cal', html`<div class="bt-ringw">${ring(k.attendance_rate, tAtt)}<span class="bt-rv ${tAtt}"><b class="num">${pctText(k.attendance_rate)}</b><small>${started} of ${k.members}</small></span></div>
+      ${f(k.late_count ? `${k.late_count} started late` : 'Nobody late')}
+      <div class="bt-dots" role="img" aria-label="${started} of ${k.members} started">${d.members.slice(0, 18).map((x) => html`<i class="d-${ATT_DOT[x.attendance] || 'off'}" title="${x.name}"></i>`)}</div>`, tAtt)}
+    ${tile('ac', 'Activity', 'pulse', html`${v(pctText(k.activity_pct))}${m(k.activity_pct, toneFor(k.activity_pct, 35, 50))}${f('Keyboard and mouse')}`, toneFor(k.activity_pct, 35, 50))}
+    ${tile('sh', isToday ? 'Screenshots today' : 'Screenshots', 'camera', html`<a class="bt-more" href="#/screenshots${isToday ? '' : `?day=${d.day}`}">See all</a>
+      <div class="bt-row">${v(String(k.shots))}<span class="bt-say">${S.settings.shots_per_10 === 0 ? 'Off by default' : `${S.settings.shots_per_10} per 10 min, private windows hidden`}</span></div>
+      <div class="bt-shots">${shots.length ? shots.map((s) => html`<a class="bt-shot" href="#/screenshots?user=${s.user_id}${isToday ? '' : `&day=${d.day}`}" title="${s.user_name}, ${relTime(s.taken_at)}">${s.privacy === 'full' ? html`<span class="bt-priv">${icon('lock')}</span>` : html`<img data-shot="${s.id}" alt="Screenshot by ${s.user_name}" decoding="async">`}<span class="bt-who">${s.user_name.split(' ')[0]}</span></a>`)
+        : html`<span class="bt-noshot">${icon('camera')}<span>The latest screenshots show here once someone is working.</span></span>`}</div>`)}
+    ${tile('wp', 'Week pace', 'chart', html`<div class="bt-row">${v(pctText(k.week_pace_pct))}<span class="bt-say">${dur(k.week_secs)} of ${dur(k.week_expected_secs)} expected by now</span></div>${m(k.week_pace_pct, toneFor(k.week_pace_pct, 60, 85))}`, toneFor(k.week_pace_pct, 60, 85))}
+    ${tile('ot', 'On time', 'check', html`${v(pctText(k.punctuality_rate))}${f('Of those who started')}`, toneFor(k.punctuality_rate, 70, 90))}
+    ${tile('ab', 'Average break', 'pause', html`${v(dur(k.avg_break_secs))}${f('Per person who worked')}`)}
+    ${tile('id', 'Idle time', 'sun', html`${v(dur(k.idle_secs))}${f('Still counted as work')}`)}
+    ${tile('tk', 'Tasks', 'tasks', html`${v(String(k.tasks.open), 'open')}${f(`${k.tasks.overdue} overdue · ${k.tasks.in_review} in review${boostTile && k.tasks.completion_pct != null ? ` · ${k.tasks.completion_pct}% done on time` : ''}`)}`, k.tasks.overdue ? 'bad' : '')}
+    ${tile('ta', 'Task accuracy', 'check', html`${v(pctText(k.tasks.accuracy_pct))}${m(k.tasks.accuracy_pct, toneFor(k.tasks.accuracy_pct, 60, 85))}${f('Approved first time')}`, toneFor(k.tasks.accuracy_pct, 60, 85))}
+    ${boostTile ? tile('bo', 'Boost', 'rocket', html`<div class="bt-boost"><div>${v(b && bDay ? 'Sent this shift' : 'Not sent yet')}${f(b && bDay ? `Last one ${relTime(b.created_at)} · ${plural(b.boosted.length, 'person', 'people')} boosted` : `${plural(d.boost.working_now, 'person', 'people')} working could get one`)}</div>
+        <button class="btn go" data-act="boost-open">${icon('rocket')}Boost the team</button></div>`, '', ' style="--tint:1"')
+      : tile('tc', 'Task completion', 'tasks', html`<div class="bt-row">${v(pctText(k.tasks.completion_pct))}<span class="bt-say">Tasks due in 30 days that were done (${k.tasks.done_30} done)</span></div>${m(k.tasks.completion_pct, toneFor(k.tasks.completion_pct, 60, 85))}`, toneFor(k.tasks.completion_pct, 60, 85))}
+  </section>`;
+}
 
 function myTasks(sum) {
   if (!sum.next.length) return empty('Nothing assigned to you', html`<a href="#/tasks">Add a task</a> to keep track of your own work.`);
