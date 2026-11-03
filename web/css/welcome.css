@@ -133,7 +133,7 @@ h3 { font: 650 18px/1.3 var(--sans); letter-spacing: -.005em; }
 .rise-stage { position: sticky; top: 0; height: 100svh; display: grid; place-items: center; align-content: center; gap: 34px; perspective: 1600px; overflow: hidden; padding-top: 70px; }
 .app { --p: 0; width: min(1080px, 100% - 2 * var(--pad)); border-radius: 22px; overflow: hidden; background: linear-gradient(160deg, rgba(36,26,80,.82), rgba(14,10,34,.82)); border: 1px solid rgba(195,179,255,.2);
   -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 60px 120px -40px rgba(0,0,0,.95), 0 0 120px -20px rgba(140,108,255,.35);
-  transform: rotateX(calc((1 - var(--p)) * 42deg)) translateY(calc((1 - var(--p)) * 18vh)) scale(calc(.78 + var(--p) * .22)); transform-origin: 50% 100%; opacity: calc(.25 + var(--p) * 1.2); will-change: transform; }
+  transform: rotateX(calc((1 - var(--p)) * 42deg)) translateY(calc((1 - var(--p)) * 18vh)) scale(calc((.78 + var(--p) * .22) * var(--fit, 1))); transform-origin: 50% 100%; opacity: calc(.25 + var(--p) * 1.2); will-change: transform; }
 .app-bar { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; border-bottom: 1px solid rgba(255,255,255,.08); }
 .app-bar i { width: 12px; height: 12px; border-radius: 99px; background: #FF5F57; } .app-bar i:nth-child(2) { background: #FEBC2E; } .app-bar i:nth-child(3) { background: #28C840; }
 .app-bar span { margin: 0 auto; color: var(--muted); font-size: 13.5px; transform: translateX(-30px); }
@@ -326,3 +326,13 @@ details[open]::details-content { block-size: auto; }
 .contract { display: flex; flex-wrap: wrap; } .contract span { white-space: nowrap; } .contract b { margin-left: auto; white-space: nowrap; }
 @media (max-width: 980px) { .hero { min-height: auto; } .hero-art { height: 64vw; min-height: 340px; max-height: 520px; } }
 @media (max-width: 980px) { .scroll-cue { display: none; } .c-b { top: 2%; } }
+
+/* sticky stages sit below the bar on top, and always fit the screen's height */
+.rise-stage { padding: 92px 0 20px !important; gap: clamp(14px, 3svh, 30px) !important; }
+.app { width: min(1080px, 100% - 2 * var(--pad)) !important; margin-top: calc(var(--lift, 0px) * -1); }
+.shift-stage { padding: 92px 0 24px !important; align-items: center; }
+.events { gap: 4px; }
+.events li { padding: 10px 16px; transition: opacity .5s var(--ease), transform .6s var(--ease), background .5s, border-color .5s, padding .4s var(--ease); }
+.events li > div > p, .events li > div > q { display: none; }
+.events li.now { padding: 16px 18px; } .events li.now > div > p { display: block; } .events li.now > div > q { display: inline-block; }
+@media (max-height: 700px) { .events li:not(.now) h3 { font-size: 15px; } .big-clock { margin-top: 20px; } .big-clock b { font-size: clamp(56px, 8vw, 110px); } }

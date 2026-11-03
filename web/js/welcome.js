@@ -55,15 +55,24 @@
   const desk = $('[data-wipe] .desk');
   const fmt = (min) => { const m = ((Math.round(min) % 1440) + 1440) % 1440, h = Math.floor(m / 60), mm = m % 60; return `${(h % 12) || 12}:${String(mm).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
   const prog = (el) => { const r = el.getBoundingClientRect(); return { r, sp: clamp(-r.top / Math.max(1, r.height - innerHeight)) }; };
+  // the clock in the top bar is the visitor's own time
+  const tick = () => { const d = new Date(), t = fmt(d.getHours() * 60 + d.getMinutes()); for (const c of clockEls) if (c.textContent !== t) c.textContent = t; };
+  tick(); setInterval(tick, 15000);
   let lastNow = -1;
   // the clock keeps pace with the story: it reads each event's time as that event comes up
-  const KEYS = [[0, 1080], [.12, 1085], [.26, 1140], [.42, 1320], [.56, 1400], [.74, 1632], [.86, 1650]];
-  const shiftAt = (x) => { for (let i = 1; i < KEYS.length; i++) { const [a, ma] = KEYS[i - 1], [b, mb] = KEYS[i]; if (x <= b) return ma + ((x - a) / (b - a)) * (mb - ma); } return 1650; };
+  const KEYS = [[0, 540], [.12, 542], [.26, 600], [.42, 780], [.56, 920], [.74, 1075], [.86, 1080]];
+  const shiftAt = (x) => { for (let i = 1; i < KEYS.length; i++) { const [a, ma] = KEYS[i - 1], [b, mb] = KEYS[i]; if (x <= b) return ma + ((x - a) / (b - a)) * (mb - ma); } return 1080; };
+  // the dashboard is shrunk to fit short screens: the bar on top, the dashboard and its sentence all in view
+  function fitApp() {
+    if (!app) return;
+    app.style.setProperty('--fit', 1); app.style.setProperty('--lift', '0px');
+    const say = $('[data-rise-say]'), room = innerHeight - 92 - 20 - (say ? say.offsetHeight : 0) - 24, h = app.offsetHeight;
+    const f = Math.min(1, room / h);
+    app.style.setProperty('--fit', f.toFixed(3)); app.style.setProperty('--lift', `${Math.round(h * (1 - f))}px`);
+  }
   function onScroll() {
     const vh = innerHeight, max = Math.max(1, root.scrollHeight - vh), page = clamp(scrollY / max);
     root.style.setProperty('--page', page.toFixed(4));
-    const t = fmt(18 * 60 + page * 570);   // 6:00 PM at the top, 3:30 AM at the bottom
-    for (const c of clockEls) if (c.textContent !== t) c.textContent = t;
     if (heroArt) heroArt.style.setProperty('--hy', clamp(scrollY / vh).toFixed(3));
     if (rise) {
       const { r, sp } = prog(rise);
@@ -101,8 +110,9 @@
   let ticking = false;
   const kick = () => { if (!ticking) { ticking = true; requestAnimationFrame(() => { ticking = false; onScroll(); if (still && ctx) drawStars(0); }); } };
   addEventListener('scroll', kick, { passive: true });
-  addEventListener('resize', () => { if (ctx) seed(); kick(); });
+  addEventListener('resize', () => { if (ctx) seed(); fitApp(); kick(); });
   if (ctx) seed();
+  fitApp(); if (document.fonts) document.fonts.ready.then(fitApp);
   onScroll();
   if (ctx) {
     if (still) drawStars(0);
