@@ -1842,3 +1842,26 @@ body > #sysban.portal > b { flex: 0 1 auto; }
 .roster thead .rib-axis { height: 16px; font-size: 12px; font-weight: 600; color: var(--faint); font-variant-numeric: tabular-nums; }
 .roster thead .rib-axis span::before { content: ""; position: absolute; left: 50%; top: 19px; width: 1px; height: 6px; background: var(--line); }
 .roster thead .rib-axis span.first::before { left: 0; } .roster thead .rib-axis span.last::before { left: auto; right: 0; }
+
+/* check-in cards: each part under a small label, line breaks kept; long parts cut to a few lines.
+   "Read all" opens the whole check-in in a reading window, so the cards beside it never move. */
+.cic-body { display: grid; gap: 10px; }
+.cic-s { display: grid; gap: 2px; min-width: 0; }
+.cic-lb { font: 650 12px var(--body); color: var(--muted); }
+.cic-tx { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); overflow-wrap: anywhere; white-space: pre-line; }
+.cic-s.cic-blk { padding: 8px 11px; }
+.cic-s.cic-blk .cic-lb { color: #FFD578; }
+.cic-grid .cic-tx { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; -webkit-line-clamp: 6; line-clamp: 6; }
+.cic-grid .cic-s.next .cic-tx { -webkit-line-clamp: 3; line-clamp: 3; }
+.cic-grid .cic-s.cic-blk .cic-tx { -webkit-line-clamp: 4; line-clamp: 4; }
+.cic-more { align-self: flex-start; margin-top: -2px; font-size: 13px; font-weight: 600; }
+.cic-more[hidden] { display: none; }
+.ci-read { display: grid; gap: 18px; }
+.ci-read .cic-tx { font-size: 15px; line-height: 1.65; color: var(--ink); }
+.ci-read .cic-lb { font-size: 12.5px; }
+.ci-read-side { display: grid; gap: 14px; align-content: start; }
+.ci-read-side:empty { display: none; }
+@media (min-width: 820px) { .ci-read:has(.ci-read-side > *) { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); column-gap: 30px; } .ci-read .did .cic-tx { max-width: 70ch; } }
+.ci-read-f { display: flex; align-items: center; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.cic-a { align-items: center; }
+.cic-a > .linkbtn { display: inline-flex; align-items: center; line-height: 1.3; }

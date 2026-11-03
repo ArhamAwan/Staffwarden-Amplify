@@ -215,8 +215,13 @@ test('HR asks someone to update their details; they can change only those, once'
     const rec = (await e.ok('GET', `/api/hr/people/${p.id}`, { token: e.tokens.owner }));
     assert.equal(rec.name, 'Nia Shah Khan'); assert.equal(rec.record.dob, '1998-04-12'); assert.equal(rec.record.iban, 'PK36 MEZN 0000 0011 2233 4455');
     assert.equal(rec.update_request, null);
-    assert.ok(e.app.db.prepare("SELECT 1 FROM notifications WHERE user_id = 1 AND title = 'Nia Shah Khan updated their details'").get());
+    const nt = e.app.db.prepare("SELECT body FROM notifications WHERE user_id = 1 AND title = 'Nia Shah Khan updated their details'").get();
+    assert.equal(nt.body, 'Changed their name, date of birth and bank details.');
     // done once: closed again
     assert.equal((await e.api('PUT', '/api/me/details', { token: e.tokens.nia, body: { name: 'X' } })).status, 403);
+    // asked again, nothing changed: HR is told just that
+    await e.ok('POST', `/api/hr/people/${p.id}/update-request`, { token: e.tokens.owner, body: { fields: ['name', 'bank'] } });
+    await e.ok('PUT', '/api/me/details', { token: e.tokens.nia, body: { name: 'Nia Shah Khan', bank_name: 'Meezan Bank', account_title: 'Nia Shah Khan', iban: 'PK36 MEZN 0000 0011 2233 4455' } });
+    assert.equal(e.app.db.prepare("SELECT body FROM notifications WHERE user_id = 1 AND title = 'Nia Shah Khan checked their details'").get().body, 'Nothing needed changing.');
   } finally { await e.close(); }
 });

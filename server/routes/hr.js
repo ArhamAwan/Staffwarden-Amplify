@@ -158,11 +158,17 @@ module.exports = (ctx) => {
     }
     if (Object.keys(recBody).length) saveRecord(user, user, recBody);
     else audit(user, 'hr.record', user.id, 'name');
+    // what actually changed, so HR knows what to look at (not just what was asked for)
+    const after = P().recordOf(user.id) || {};
+    const norm = (v) => (v == null ? '' : String(v).replace(/\s+/g, '').toLowerCase());
+    const changed = fields.filter((f) => (f === 'name' ? 'name' in body && str(body.name, 'name', 100) !== user.name : UPDATABLE[f].some((k) => norm(rec[k]) !== norm(after[k]))));
     const asker = rec.upd_by;
     setReq(user.id, null);
-    audit(user, 'hr.update_done', user.id, listOf(fields));
+    audit(user, 'hr.update_done', user.id, changed.length ? `changed ${listOf(changed)}` : 'no changes');
     const fresh = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
-    ctx.notify.notify([...new Set([asker, ...hrPeople()])].filter((id) => id && id !== user.id), { kind: 'hr_step', title: `${fresh.name} updated their details`, body: `Their ${listOf(fields)}. Check them on their record.`, link: `#/hr?id=${user.id}`, actor: fresh, dedupe: `upddone:${user.id}:${nowIso().slice(0, 16)}` });
+    const title = changed.length ? `${fresh.name} updated their details` : `${fresh.name} checked their details`;
+    const msg = !changed.length ? 'Nothing needed changing.' : `Changed their ${listOf(changed)}.`;
+    ctx.notify.notify([...new Set([asker, ...hrPeople()])].filter((id) => id && id !== user.id), { kind: 'hr_step', title, body: msg, link: `#/hr?id=${user.id}`, actor: fresh, dedupe: `upddone:${user.id}:${changed.length ? "c" : "n"}:${nowIso().slice(0, 16)}` });
     emit('hr', user.id);
     return personOut(fresh, { ...fresh, hr: 0, role: 'employee' }, { full: true });
   });

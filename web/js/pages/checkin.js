@@ -2,7 +2,7 @@
 // timer, so nobody types them. It posts in #check-ins, and managers see everyone's on one page.
 import { html, raw, esc, dur, plural, dayLong, initials, avColor, hhmmText, dayShort } from '../util.js';
 import { get, post, put, qs } from '../api.js';
-import { S, actions, toast, errMsg } from '../ui.js';
+import { S, actions, toast, errMsg, openModal } from '../ui.js';
 import { dayNav, companyToday } from '../parts.js';
 import { gameSaved } from '../v4.js';
 
@@ -52,10 +52,13 @@ export const checkinPage = {
 };
 function cardInner(c, preview = false, foot = null) {
   const t = (s, n = 90) => (preview && s && s.length > n ? `${s.slice(0, n)}…` : s);
+  // each part under its own small label; long ones are cut to a few lines with "Read all" (see clampCards)
+  const sec = (label, txt, cls = '') => html`<div class="cic-s${cls}"><span class="cic-lb">${label}</span><p class="cic-tx">${txt}</p></div>`;
   return html`<div class="cic-h">${av(c.user)}<span class="cic-w"><b>${c.user.name}</b><span>${c.user.title ? `${c.user.title} · ` : ''}${t12(c.created_at)}</span></span><span class="cic-hr"><b class="num">${hm(c.tracked_secs)}</b><span>tracked</span></span></div>
-    <p><b>Did</b> · ${t(c.did) || html`<span class="faint">What you did shows here</span>`}</p>
-    ${c.next ? html`<p><b>Next</b> · ${t(c.next)}</p>` : ''}
-    ${c.blockers ? html`<p class="cic-blk"><b>Blocked</b> · ${t(c.blockers)}</p>` : ''}
+    <div class="cic-body">${sec('Did', t(c.did) || html`<span class="faint">What you did shows here</span>`, ' did')}
+    ${c.next ? sec('Next', t(c.next), ' next') : ''}
+    ${c.blockers ? sec('Blocked', t(c.blockers), ' cic-blk') : ''}</div>
+    ${preview ? '' : html`<button type="button" class="linkbtn cic-more" data-act="ci-more" data-id="${c.id}" aria-haspopup="dialog" hidden>Read all</button>`}
     ${c.mood || foot ? html`<div class="cic-f">${moodTag(c.mood)}${foot || ''}</div>` : ''}`;
 }
 function wirePreview() {
@@ -100,13 +103,36 @@ actions['ci-post'] = async (el) => {
 };
 
 // ---------- everyone's check-ins ----------
+// a long check-in opens whole in a reading window, so the cards beside it keep their places
+let ciItems = new Map(), ciDay = null;
+actions['ci-more'] = (el) => {
+  const c = ciItems.get(Number(el.dataset.id)); if (!c) return;
+  const sec = (label, txt, cls = '') => (txt ? html`<div class="cic-s${cls}"><span class="cic-lb">${label}</span><p class="cic-tx">${txt}</p></div>` : '');
+  const md = openModal({ title: c.user.name, wide: true, footer: false, sub: `${c.user.title ? `${c.user.title} · ` : ''}Checked in at ${t12(c.created_at)} · ${hm(c.tracked_secs)} tracked`,
+    body: html`<div class="ci-read">${sec('Did', c.did, ' did')}<div class="ci-read-side">${sec('Next', c.next, ' next')}${sec('Blocked', c.blockers, ' cic-blk')}</div></div>
+      <div class="ci-read-f">${moodTag(c.mood)}<span class="cic-a">${c.user.id !== S.me.id ? html`<button type="button" class="linkbtn" data-act="ci-reply" data-id="${c.user.id}">Reply</button>` : html`<a class="linkbtn" href="#/checkin">Change it</a>`}<a class="linkbtn" href="#/timeline?user=${c.user.id}&day=${ciDay}">See the day</a><button type="button" class="btn sm" data-close>Close</button></span></div>` });
+  md.form.addEventListener('click', (ev) => { if (ev.target.closest('a, [data-act]')) md.close(); });
+};
+// a card shows "Read all" only when something in it is actually cut off
+function clampCards() {
+  for (const card of document.querySelectorAll('.cic-grid .cic')) {
+    const btn = card.querySelector('.cic-more'); if (!btn) continue;
+    let cut = false;
+    for (const p of card.querySelectorAll('.cic-tx')) { const c = p.scrollHeight > p.clientHeight + 2; p.classList.toggle('cut', c); cut = cut || c; }
+    btn.hidden = !cut;
+  }
+}
+let ciResize = null;
+window.addEventListener('resize', () => { clearTimeout(ciResize); ciResize = setTimeout(clampCards, 120); });
 export const checkinsPage = {
   title: 'Check-ins',
+  after() { clampCards(); },
   async load(q) { return get(`/api/checkins${qs({ day: q.get('day') })}`); },
   render(d, q) {
     const f = q.get('f') || '';
     const today = companyToday();
     const c = d.counts;
+    ciItems = new Map(d.items.map((x) => [x.id, x])); ciDay = d.day;
     const list = d.items.filter((x) => (f === 'blocked' ? x.blockers : f === 'rough' ? x.mood === 'rough' : true));
     const st = (l, v, foot, cls = '') => html`<div class="ibx-st"><span>${l}</span><b class="${cls}">${v}</b><small>${foot}</small></div>`;
     const moodsTxt = [c.moods.busy ? `${c.moods.busy} busy` : '', c.moods.rough ? `${c.moods.rough} rough` : ''].filter(Boolean).join(' · ') || 'nobody had a rough one';
