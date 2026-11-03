@@ -63,9 +63,9 @@ function createPayroll(ctx) {
     const rec = recordOf(u.id);
     const days = monthDays(period);
     const from = days[0], to = days[days.length - 1];
-    // a raise counts from the month it starts in: the salary in force on the 1st of this month (a change
-    // dated mid-month starts the month after). Before any dated change, the first salary they were given.
-    const hist = db.prepare('SELECT base, currency FROM salary_history WHERE user_id = ? AND effective_from <= ? ORDER BY effective_from DESC, id DESC LIMIT 1').get(u.id, from)
+    // a raise counts for the month it's dated in (paid the month after, like the rest of that month's pay):
+    // the latest salary dated on or before the last day of this month. Before any, the first one they had.
+    const hist = db.prepare('SELECT base, currency FROM salary_history WHERE user_id = ? AND effective_from <= ? ORDER BY effective_from DESC, id DESC LIMIT 1').get(u.id, to)
       || db.prepare('SELECT base, currency FROM salary_history WHERE user_id = ? ORDER BY effective_from, id LIMIT 1').get(u.id);
     if (hist) { setup.base = hist.base; setup.currency = hist.currency; }
     const cur = setup.currency;

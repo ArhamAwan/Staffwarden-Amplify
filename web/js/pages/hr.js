@@ -204,7 +204,6 @@ actions['hr-edit'] = async (el) => {
     },
   });
 };
-const nextMonth1 = (day) => { const [y, m] = day.split('-').map(Number); return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`; };
 actions['hr-pay'] = async (el) => {
   let p; try { p = await get(`/api/hr/people/${el.dataset.id}`); } catch (e) { toast(errMsg(e), true); return; }
   const pay = p.pay || { base: '', currency: 'PKR', tax_mode: 'pk', allowances: [], deductions: [] };
@@ -214,7 +213,7 @@ actions['hr-pay'] = async (el) => {
     body: html`<div class="grid3"><div class="field"><label class="f" for="pb">Base salary, a month</label><input id="pb" class="num" name="base" type="number" min="0" step="1" value="${pay.base}" required inputmode="numeric"></div>
         <div class="field"><label class="f" for="pc">Currency</label><select id="pc" name="currency"><option value="PKR" ${pay.currency === 'PKR' ? raw('selected') : ''}>Rupees (Rs)</option><option value="USD" ${pay.currency === 'USD' ? raw('selected') : ''}>Dollars ($)</option></select></div>
         <div class="field"><label class="f" for="pt">Income tax</label><select id="pt" name="tax_mode"><option value="pk" ${pay.tax_mode === 'pk' ? raw('selected') : ''}>Pakistan brackets</option><option value="none" ${pay.tax_mode === 'none' ? raw('selected') : ''}>None (contractor, or taxed elsewhere)</option></select></div></div>
-      <div class="grid2"><div class="field"><label class="f" for="pe">From</label><input id="pe" type="date" name="effective_from" value="${p.pay ? nextMonth1(companyToday()) : companyToday()}"><p class="hint">Payroll uses the new amount from this month on. A date after the 1st starts the month after.</p></div><div class="field"><label class="f" for="pn">Reason (${p.name.split(' ')[0]} sees this)</label><input id="pn" name="note" maxlength="200" placeholder="Yearly review"></div></div>
+      <div class="grid2"><div class="field"><label class="f" for="pe">From</label><input id="pe" type="date" name="effective_from" value="${companyToday()}"><p class="hint">It counts for the payroll of the month this date is in, paid the month after. A raise today is in the pay they get next month.</p></div><div class="field"><label class="f" for="pn">Reason (${p.name.split(' ')[0]} sees this)</label><input id="pn" name="note" maxlength="200" placeholder="Yearly review"></div></div>
       <div class="pay-list"><div class="pay-h"><b>Every month: allowances</b><button type="button" class="linkbtn" data-act="pay-row-add" data-kind="alw">+ Add</button></div><div data-rows="alw">${pay.allowances.map((a) => row('alw', a))}</div></div>
       <div class="pay-list"><div class="pay-h"><b>Every month: deductions</b><button type="button" class="linkbtn" data-act="pay-row-add" data-kind="ded">+ Add</button></div><div data-rows="ded">${pay.deductions.map((x) => row('ded', x))}</div></div>`,
     onSubmit: async (fd) => {

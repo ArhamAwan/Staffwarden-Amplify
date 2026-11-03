@@ -137,9 +137,9 @@ module.exports = (ctx) => {
   }
 
   route('PUT', '/api/hr/people/:id/pay', ({ user, params, body }) => { needHR(user); return savePay(user, userOf(params.id), body); });
-  // a change to someone's pay starts with next month's payroll unless HR picks another date
   const nextMonthStart = (day) => { const [y, m] = day.split('-').map(Number); return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`; };
-  const startLabel = (d) => { const s0 = d.endsWith('-01') ? d : nextMonthStart(d); return new Date(`${s0}T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }) + '’s pay'; };
+  // "November 2026's pay (paid in December)": the month it's dated in, paid the month after
+  const startLabel = (d) => { const m = (x) => new Date(`${x}T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }); return `${m(d.slice(0, 7) + '-01')}’s pay (paid in ${m(nextMonthStart(d)).split(' ')[0]})`; };
   function savePay(user, u, body) {
     need(u.id !== user.id || user.role === 'owner' || P().rules().hr_own_pay, 403, 'Your own pay is changed by the owner');
     const cur = P().setupOf(u.id);
@@ -160,8 +160,8 @@ module.exports = (ctx) => {
     const fmt = (n, c) => P().fmtMoney(n, c);
     if (!cur || cur.base !== base || cur.currency !== currency) {
       db.prepare('INSERT INTO salary_history (user_id, base, currency, effective_from, note, by_id, created_at) VALUES (?,?,?,?,?,?,?)')
-        .run(u.id, base, currency, body.effective_from ? isoDate(body.effective_from, 'effective_from') : (cur ? nextMonthStart(calc.companyToday()) : calc.companyToday()), optStr(body.note, 'note', 200) || (cur ? 'Changed' : 'Pay set'), user.id, nowIso());
-      ctx.changes.log(u.id, user, { area: 'pay', title: cur ? 'Your pay was changed' : 'Your pay was set', lines: [cur ? `Base salary: ${fmt(cur.base, cur.currency)} → ${fmt(base, currency)} a month, from ${startLabel(body.effective_from ? isoDate(body.effective_from, 'effective_from') : nextMonthStart(calc.companyToday()))}` : `Base salary: ${fmt(base, currency)} a month`], reason: optStr(body.note, 'note', 200), link: '#/pay' });
+        .run(u.id, base, currency, body.effective_from ? isoDate(body.effective_from, 'effective_from') : calc.companyToday(), optStr(body.note, 'note', 200) || (cur ? 'Changed' : 'Pay set'), user.id, nowIso());
+      ctx.changes.log(u.id, user, { area: 'pay', title: cur ? 'Your pay was changed' : 'Your pay was set', lines: [cur ? `Base salary: ${fmt(cur.base, cur.currency)} → ${fmt(base, currency)} a month, from ${startLabel(body.effective_from ? isoDate(body.effective_from, 'effective_from') : calc.companyToday())}` : `Base salary: ${fmt(base, currency)} a month`], reason: optStr(body.note, 'note', 200), link: '#/pay' });
     }
     audit(user, 'hr.pay', u.id, `${fmt(base, currency)}${cur ? ` (was ${fmt(cur.base, cur.currency)})` : ''}, tax ${tax}`);
     emit('hr', u.id);
