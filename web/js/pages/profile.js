@@ -2,7 +2,8 @@ import { html, raw, esc, icon, hhmmText, hoursText, tzLabel, plural, tzPlace, br
 import { get, post, put, del } from '../api.js';
 import { pushState, enablePush, isPhone as onPhone } from '../push.js';
 import { browserPopups, askBrowser } from '../notify.js';
-import { S, actions, toast, errMsg, kpis } from '../ui.js';
+import { S, actions, toast, errMsg, kpis, openModal } from '../ui.js';
+import { UPD, updList } from './hr.js';
 import { changesPanel, agreedPanel } from './explain.js';
 
 const DL = [['windows', 'Windows'], ['mac-arm', 'Mac with Apple chip (M1 and later)'], ['mac-intel', 'Mac with Intel chip']];
@@ -12,6 +13,44 @@ function dlLinks(list) {
   return html`<ul style="margin:0">${opts.map(([d, n]) => html`<li><a href="/downloads/${encodeURIComponent(d.file)}" download>${n}</a> <span>${Math.round(d.size / 1048576)} MB</span></li>`)}</ul>`;
 }
 
+// your HR details: what HR holds about you. You can change them only when HR asks, and only what they ask for.
+function detailsPanel(hr) {
+  if (!hr) return '';
+  const r = hr.record, q = hr.update_request;
+  const fmtDay = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const v = (x) => x || html`<span class="muted">Not given</span>`;
+  return html`<section class="panel det${q ? ' asked' : ''}" id="details"><header><h2>Your details</h2><span class="muted small">What HR has on record</span></header><div class="body">
+    ${q ? html`<div class="det-ask"><div><b>${q.by || 'HR'} asked you to update your ${updList(q.fields)}</b>${q.note ? html`<span>“${q.note}”</span>` : ''}</div><button type="button" class="btn primary" data-act="det-upd">Update your details</button></div>` : ''}
+    <dl class="kv two"><dt>Name</dt><dd>${hr.name}</dd><dt>Date of birth</dt><dd>${v(r.dob && fmtDay(r.dob))}</dd><dt>Phone</dt><dd>${v(r.phone)}</dd><dt>CNIC</dt><dd>${v(r.cnic)}</dd>
+      <dt>Address</dt><dd>${v(r.address)}</dd><dt>Emergency contact</dt><dd>${v(r.emergency_name && `${r.emergency_name}${r.emergency_phone ? ' · ' + r.emergency_phone : ''}`)}</dd>
+      <dt>Bank</dt><dd>${v(r.bank_name && `${r.bank_name}${r.iban ? ' · ' + r.iban : ''}`)}</dd></dl>
+    ${q ? '' : html`<p class="hint mt">Something wrong or out of date? Tell HR. They can send you a request to update it here.</p>`}</div></section>`;
+}
+let detHr = null;
+actions['det-upd'] = () => {
+  const hr = detHr; if (!hr || !hr.update_request) return;
+  const r = hr.record, f = new Set(hr.update_request.fields);
+  const fld = (id, label, name, val, attrs = '') => html`<div class="field"><label class="f" for="${id}">${label}</label><input id="${id}" name="${name}" value="${val || ''}" ${raw(attrs)}></div>`;
+  openModal({
+    title: 'Update your details', submit: 'Send to HR', sub: `Only what HR asked for. HR is told when you send it.${hr.update_request.note ? ` They said: “${hr.update_request.note}”` : ''}`,
+    body: html`${f.has('name') ? fld('dn', 'Full name', 'name', hr.name, 'maxlength="100" required autocomplete="name"') : ''}
+      ${f.has('dob') ? fld('dd', 'Date of birth', 'dob', r.dob, 'type="date" required') : ''}
+      ${f.has('phone') ? fld('dp', 'Phone', 'phone', r.phone, 'maxlength="40" inputmode="tel" placeholder="0301 2345678"') : ''}
+      ${f.has('cnic') ? fld('dc', 'CNIC', 'cnic', '', 'maxlength="15" inputmode="numeric" placeholder="61101-1234567-1" autocomplete="off"') : ''}
+      ${f.has('address') ? fld('da', 'Address', 'address', r.address, 'maxlength="300"') : ''}
+      ${f.has('emergency') ? html`<div class="grid2">${fld('den', 'Emergency contact name', 'emergency_name', r.emergency_name, 'maxlength="100"')}${fld('dep', 'Their phone', 'emergency_phone', r.emergency_phone, 'maxlength="40" inputmode="tel"')}</div>` : ''}
+      ${f.has('bank') ? html`<div class="grid2">${fld('db', 'Bank', 'bank_name', r.bank_name, 'maxlength="80" placeholder="Meezan Bank"')}${fld('dt', 'Account title', 'account_title', r.account_title, 'maxlength="100"')}</div>
+        ${fld('di', 'IBAN', 'iban', '', 'maxlength="40" placeholder="PK36 MEZN 0000 0011 2233 4455" autocomplete="off"')}<p class="hint">Your full IBAN, starting with PK. Only HR and the owner see it in full.</p>` : ''}`,
+    onSubmit: async (fd) => {
+      const b = {};
+      for (const [k, val] of fd.entries()) b[k] = String(val).trim() === '' ? null : String(val).trim();
+      if (f.has('bank') && !b.iban) throw new Error('Type your IBAN');
+      if (f.has('cnic') && !b.cnic) throw new Error('Type your CNIC');
+      await put('/api/me/details', b); toast('Sent. HR has been told.'); S.refresh();
+    },
+  });
+};
+
 export default {
   title: 'Profile',
   async load(q) {
@@ -19,10 +58,18 @@ export default {
       const [prefs, chats, push] = await Promise.all([get('/api/me/notify-prefs'), get('/api/team/threads').catch(() => ({ threads: [] })), pushState().catch(() => 'unsupported')]);
       return { tab: 'notifications', prefs, chats, push };
     }
-    const [u, prefs, sessions, downloads, changes, me, devs] = await Promise.all([get(`/api/users/${S.me.id}`), get('/api/me/notify-prefs'), get('/api/me/sessions'), get('/api/downloads').catch(() => []), get('/api/me/changes').catch(() => []), get('/api/me'), get('/api/developers').catch(() => [])]); S.me = me; return { ...u, prefs, sessions, downloads, changes, devs };
+    const [u, prefs, sessions, downloads, changes, me, devs] = await Promise.all([get(`/api/users/${S.me.id}`), get('/api/me/notify-prefs'), get('/api/me/sessions'), get('/api/downloads').catch(() => []), get('/api/me/changes').catch(() => []), get('/api/me'), get('/api/developers').catch(() => [])]); S.me = me; const hr = await get('/api/me/hr').catch(() => null); return { ...u, prefs, sessions, downloads, changes, devs, hr, openUpd: q && q.get('details') === '1' };
+  },
+  // opened from the "please update your details" notification: straight to the form, once
+  after(view, u) {
+    if (!u || !u.openUpd || !u.hr || !u.hr.update_request || view.dataset.updOpened) return;
+    view.dataset.updOpened = '1';
+    const el = document.getElementById('details'); if (el) el.scrollIntoView({ block: 'start' });
+    actions['det-upd']();
   },
   render(u) {
     if (u.tab === 'notifications') return notifyTab(u);
+    detHr = u.hr;
     const pop = browserPopups();
     const sw = (name, on, label, sub) => html`<li><label for="np-${name}"><b>${label}</b>${sub ? html`<span class="sub2">${sub}</span>` : ''}</label><span class="switch"><input type="checkbox" id="np-${name}" data-pref="${name}" ${on ? raw('checked') : ''}><span></span></span></li>`;
     void pop; void sw;
@@ -49,6 +96,7 @@ export default {
           <div class="signedin"><div><b>Signed in on ${u.sessions.length === 1 ? 'this device only' : `${u.sessions.length} devices and browsers`}</b><span class="sub2">Including the desktop app. Sign-ins end after 14 days without use.</span></div>
             ${u.sessions.length > 1 ? html`<button class="btn" data-act="logout-others">Sign out everywhere else</button>` : ''}</div></div></section>
       </div>
+      ${detailsPanel(u.hr)}
       ${notifPanel}
       <section class="panel"><header><h2>Desktop app</h2><span class="muted small">Install it on each computer you work on</span></header><div class="body"><div class="dl light">${dlLinks(u.downloads)}</div></div></section>
       <section class="panel"><header><h2>What is tracked</h2></header><div class="body"><ul class="policy" style="margin:0;padding-left:18px">

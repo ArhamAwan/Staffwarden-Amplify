@@ -196,3 +196,27 @@ test('"All good" to a quiet hour isn’t asked again a minute later', async () =
     assert.equal(await e.ok('GET', '/api/idle/mine', { token: e.tokens.kai }), null);
   } finally { await e.close(); }
 });
+
+test('HR asks someone to update their details; they can change only those, once', async () => {
+  const e = await makeEnv();
+  try {
+    const p = await e.person('nia', 'Nia Shah');
+    // nothing asked: they can't change anything
+    assert.equal((await e.api('PUT', '/api/me/details', { token: e.tokens.nia, body: { phone: '0300' } })).status, 403);
+    assert.equal((await e.api('POST', `/api/hr/people/${p.id}/update-request`, { token: e.tokens.nia, body: { fields: ['bank'] } })).status, 403);
+    await e.ok('POST', `/api/hr/people/${p.id}/update-request`, { token: e.tokens.owner, body: { fields: ['name', 'dob', 'bank'], note: 'For the new bank sheet' } });
+    const mine = await e.ok('GET', '/api/me/hr', { token: e.tokens.nia });
+    assert.deepEqual(mine.update_request.fields, ['name', 'dob', 'bank']);
+    assert.ok(e.app.db.prepare("SELECT 1 FROM notifications WHERE user_id = ? AND title = 'Please update your details'").get(p.id));
+    // not asked for the phone
+    assert.equal((await e.api('PUT', '/api/me/details', { token: e.tokens.nia, body: { phone: '0300' } })).status, 403);
+    assert.equal((await e.api('PUT', '/api/me/details', { token: e.tokens.nia, body: { iban: 'nope' } })).status, 400);
+    await e.ok('PUT', '/api/me/details', { token: e.tokens.nia, body: { name: 'Nia Shah Khan', dob: '1998-04-12', bank_name: 'Meezan Bank', account_title: 'Nia Shah Khan', iban: 'PK36MEZN0000001122334455' } });
+    const rec = (await e.ok('GET', `/api/hr/people/${p.id}`, { token: e.tokens.owner }));
+    assert.equal(rec.name, 'Nia Shah Khan'); assert.equal(rec.record.dob, '1998-04-12'); assert.equal(rec.record.iban, 'PK36 MEZN 0000 0011 2233 4455');
+    assert.equal(rec.update_request, null);
+    assert.ok(e.app.db.prepare("SELECT 1 FROM notifications WHERE user_id = 1 AND title = 'Nia Shah Khan updated their details'").get());
+    // done once: closed again
+    assert.equal((await e.api('PUT', '/api/me/details', { token: e.tokens.nia, body: { name: 'X' } })).status, 403);
+  } finally { await e.close(); }
+});

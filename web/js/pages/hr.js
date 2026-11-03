@@ -62,14 +62,14 @@ function personView(p, tab) {
   const count = (n) => (n ? raw(` <span class="tab-n num">${n}</span>`) : '');
   const tabs = [['overview', 'Overview'], ['documents', html`Documents${count(p.docs.length)}`], ['joining', html`Joining${count(p.join_steps.filter((x) => !x.done).length)}`], ...(p.leave_steps ? [['leaving', 'Leaving']] : [])];
   const head = html`<div class="page-h"><div class="hr-who">${av(p, 'lg')}<div><h1>${p.name}</h1><p class="sub">${[p.title, p.team, CONTRACT[r.contract], p.active ? null : 'Deactivated'].filter(Boolean).join(' · ')}</p></div></div>
-    <div class="tools"><a class="btn" href="#/hr">${icon('left')} Everyone</a>${!r.leaving_on && p.active ? html`<button class="btn" data-act="hr-leave" data-id="${p.id}" data-name="${p.name}">Leaving</button>` : ''}${p.employed === false ? html`<button class="btn" data-act="hr-employed" data-id="${p.id}" data-name="${p.name}" data-v="1">Make an employee</button>` : html`<button class="btn" data-act="hr-employed" data-id="${p.id}" data-name="${p.name}" data-v="0">Not an employee</button>`}<a class="btn" href="#/hr-import?for=${p.id}${(() => { const c = p.docs.find((d) => d.kind === 'contract' && d.type === 'application/pdf'); return c ? `&doc=${c.id}` : ''; })()}">${icon('file')} Update from contract</a><button class="btn primary" data-act="hr-edit" data-id="${p.id}">Edit record</button></div>
+    <div class="tools"><a class="btn" href="#/hr">${icon('left')} Everyone</a>${!r.leaving_on && p.active ? html`<button class="btn" data-act="hr-leave" data-id="${p.id}" data-name="${p.name}">Leaving</button>` : ''}${p.employed === false ? html`<button class="btn" data-act="hr-employed" data-id="${p.id}" data-name="${p.name}" data-v="1">Make an employee</button>` : html`<button class="btn" data-act="hr-employed" data-id="${p.id}" data-name="${p.name}" data-v="0">Not an employee</button>`}<a class="btn" href="#/hr-import?for=${p.id}${(() => { const c = p.docs.find((d) => d.kind === 'contract' && d.type === 'application/pdf'); return c ? `&doc=${c.id}` : ''; })()}">${icon('file')} Update from contract</a>${p.active && p.id !== S.me.id && !p.update_request ? html`<button class="btn" data-act="hr-askupd" data-id="${p.id}" data-name="${p.name}">Ask to update details</button>` : ''}<button class="btn primary" data-act="hr-edit" data-id="${p.id}">Edit record</button></div>
     <nav class="tabs" aria-label="Their record">${tabs.map(([v, n]) => html`<button type="button" class="tab" data-act="q" ${raw(qAttr('tab', v === 'overview' ? '' : v))} aria-current="${tab === v ? 'page' : 'false'}">${n}</button>`)}<span class="tab locked" title="HR never sees screenshots or activity">${icon('lock')} Screenshots and activity</span></nav></div>`;
   let body;
   if (tab === 'documents') body = docsView(p);
   else if (tab === 'joining') body = stepsView(p, 'join');
   else if (tab === 'leaving' && p.leave_steps) body = stepsView(p, 'leave');
   else body = overview(p);
-  return html`${head}${p.employed === false ? html`<div class="banner"><span><b>Not an employee.</b> ${p.name.split(' ')[0]} is a developer or test account, so they are kept off payroll and out of HR’s reminders.</span></div>` : ''}${r.leaving_on ? html`<div class="banner"><span><b>${p.name.split(' ')[0]} leaves on ${dayShort(r.leaving_on)}.</b> ${r.leaving_reason ? r.leaving_reason + '. ' : ''}Their last month on payroll is cut at that day.</span><a class="btn sm" href="#/hr?id=${p.id}&tab=leaving">Leaving steps</a></div>` : ''}${body}
+  return html`${head}${p.update_request ? html`<div class="banner info upd-ban"><span><b>Waiting for ${p.name.split(' ')[0]} to update ${updList(p.update_request.fields)}.</b> Asked by ${p.update_request.by || 'HR'} ${relTime(p.update_request.at)}${p.update_request.note ? html` · “${p.update_request.note}”` : ''}</span><button class="btn sm" data-act="hr-askupd-x" data-id="${p.id}">Cancel the request</button></div>` : ''}${p.employed === false ? html`<div class="banner"><span><b>Not an employee.</b> ${p.name.split(' ')[0]} is a developer or test account, so they are kept off payroll and out of HR’s reminders.</span></div>` : ''}${r.leaving_on ? html`<div class="banner"><span><b>${p.name.split(' ')[0]} leaves on ${dayShort(r.leaving_on)}.</b> ${r.leaving_reason ? r.leaving_reason + '. ' : ''}Their last month on payroll is cut at that day.</span><a class="btn sm" href="#/hr?id=${p.id}&tab=leaving">Leaving steps</a></div>` : ''}${body}
     <p class="small muted">${icon('eye')} ${p.name.split(' ')[0]} can see this record too, except HR’s notes. Every time HR opens it is kept in the audit log.</p>`;
 }
 function overview(p) {
@@ -77,7 +77,7 @@ function overview(p) {
   const kv = (rows) => html`<dl class="kv">${rows.filter(Boolean).map(([a, b]) => html`<dt>${a}</dt><dd>${b ?? html`<span class="muted">Not set</span>`}</dd>`)}</dl>`;
   const details = html`<section class="panel"><header><h2>Details</h2><button class="btn sm" data-act="hr-edit" data-id="${p.id}">Edit</button></header><div class="body">${kv([
     ['Contract', CONTRACT[r.contract]], ['Joined', r.joined_on ? dateY(r.joined_on) : null], ['Probation ends', r.probation_end ? dateY(r.probation_end) : null], ['Notice period', r.notice_days != null ? plural(r.notice_days, 'day') : null],
-    ['Work email', html`${p.email.split('@')[0]}@<wbr>${p.email.split('@').slice(1).join('@')}`], ['Phone', r.phone || null], ['CNIC', r.cnic || null], ['Address', r.address || null], ['Emergency contact', r.emergency_name ? `${r.emergency_name}${r.emergency_phone ? ' · ' + r.emergency_phone : ''}` : null],
+    ['Work email', html`${p.email.split('@')[0]}@<wbr>${p.email.split('@').slice(1).join('@')}`], ['Date of birth', r.dob ? dateY(r.dob) : null], ['Phone', r.phone || null], ['CNIC', r.cnic || null], ['Address', r.address || null], ['Emergency contact', r.emergency_name ? `${r.emergency_name}${r.emergency_phone ? ' · ' + r.emergency_phone : ''}` : null],
     r.notes ? ['HR notes', r.notes] : null])}</div></section>`;
   const payCard = html`<section class="panel"><header><h2>Pay</h2>${p.can_edit_pay ? html`<button class="btn sm ${pay ? '' : 'primary'}" data-act="hr-pay" data-id="${p.id}">${pay ? 'Change pay' : 'Set pay'}</button>` : html`<span class="muted small">The owner changes this</span>`}</header><div class="body">
     ${pay ? kv([['Base salary', `${money(pay.base, pay.currency)} a month`], ['Income tax', pay.tax_mode === 'pk' && pay.currency === 'PKR' ? 'Pakistan brackets' : 'None'], ...pay.allowances.map((a) => [a.label, `+ ${money(a.amount, pay.currency)} every month`]), ...pay.deductions.map((x) => [x.label, `− ${money(x.amount, pay.currency)} every month`]),
@@ -175,6 +175,24 @@ export function hrPanel(o) {
 }
 
 // ---------- actions ----------
+// asking someone to update their own details
+export const UPD = [['name', 'Name'], ['dob', 'Date of birth'], ['phone', 'Phone'], ['address', 'Address'], ['cnic', 'CNIC'], ['emergency', 'Emergency contact'], ['bank', 'Bank details']];
+export const updList = (fields) => { const l = fields.map((f) => (UPD.find((x) => x[0] === f) || [0, f])[1].toLowerCase().replace('cnic', 'CNIC')); return l.length > 1 ? `${l.slice(0, -1).join(', ')} and ${l[l.length - 1]}` : l[0]; };
+actions['hr-askupd'] = (el) => {
+  const first = el.dataset.name.split(' ')[0];
+  openModal({
+    title: `Ask ${first} to update their details`, submit: 'Send the request', sub: `${first} is told straight away and can change only what you tick, once. You’re told when it’s done.`,
+    body: html`<fieldset class="upd-pick"><legend class="f">What should they update?</legend>${UPD.map(([k, n]) => html`<label class="upd-c"><input type="checkbox" name="f" value="${k}" ${k === 'bank' ? raw('checked') : ''}><span>${n}</span></label>`)}</fieldset>
+      <div class="field"><label class="f" for="updn">Note for ${first} (optional)</label><input id="updn" name="note" maxlength="300" placeholder="Your bank changed, so we need the new IBAN"></div>`,
+    onSubmit: async (fd) => {
+      const fields = fd.getAll('f');
+      if (!fields.length) throw new Error('Tick at least one thing to update');
+      await post(`/api/hr/people/${el.dataset.id}/update-request`, { fields, note: fd.get('note') || null });
+      toast(`Sent. ${first} can now update their ${updList(fields)}`); S.refresh();
+    },
+  });
+};
+actions['hr-askupd-x'] = async (el) => { try { await del(`/api/hr/people/${el.dataset.id}/update-request`); toast('Request cancelled'); S.refresh(); } catch (e) { toast(errMsg(e), true); } };
 actions['hr-edit'] = async (el) => {
   let p; try { p = await get(`/api/hr/people/${el.dataset.id}`); } catch (e) { toast(errMsg(e), true); return; }
   const r = p.record;
@@ -186,6 +204,7 @@ actions['hr-edit'] = async (el) => {
         <div class="field"><label class="f" for="hp">Probation ends</label><input id="hp" type="date" name="probation_end" value="${r.probation_end || ''}"></div></div>
       <div class="field" style="max-width:220px"><label class="f" for="hn">Notice period (days)</label><input id="hn" type="number" min="0" max="365" name="notice_days" value="${r.notice_days ?? ''}"></div>
       <h3 class="mh">Personal</h3>
+      <div class="field" style="max-width:220px"><label class="f" for="hdob">Date of birth</label><input id="hdob" type="date" name="dob" value="${r.dob || ''}"></div>
       <div class="grid2"><div class="field"><label class="f" for="hph">Phone</label><input id="hph" name="phone" value="${r.phone || ''}" maxlength="40" placeholder="0301 2345678"></div>
         <div class="field"><label class="f" for="hcn">CNIC</label><input id="hcn" name="cnic" value="${r.cnic || ''}" maxlength="15" placeholder="61101-1234567-1" autocomplete="off"></div></div>
       <div class="field"><label class="f" for="had">Address</label><input id="had" name="address" value="${r.address || ''}" maxlength="300"></div>
@@ -198,7 +217,7 @@ actions['hr-edit'] = async (el) => {
         <div class="field"><label class="f" for="hf">Phone</label><input id="hf" name="emergency_phone" value="${r.emergency_phone || ''}" maxlength="40"></div></div>
       <div class="field"><label class="f" for="hnotes">HR notes (${p.name.split(' ')[0]} does not see these)</label><textarea id="hnotes" name="notes" maxlength="2000">${r.notes || ''}</textarea></div>`,
     onSubmit: async (fd) => {
-      const b = {}; for (const k of ['contract', 'joined_on', 'probation_end', 'notice_days', 'phone', 'cnic', 'address', 'bank_name', 'account_title', 'iban', 'emergency_name', 'emergency_phone', 'notes']) b[k] = fd.get(k) === '' ? null : fd.get(k);
+      const b = {}; for (const k of ['contract', 'joined_on', 'probation_end', 'notice_days', 'dob', 'phone', 'cnic', 'address', 'bank_name', 'account_title', 'iban', 'emergency_name', 'emergency_phone', 'notes']) b[k] = fd.get(k) === '' ? null : fd.get(k);
       if (b.notice_days != null) b.notice_days = Number(b.notice_days);
       await put(`/api/hr/people/${p.id}/record`, b); toast('Saved'); S.refresh();
     },

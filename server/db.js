@@ -3,7 +3,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 // Schema v2. Fresh installs and v1 databases go through the same path: the v1 tables are created
 // if missing, then migrate() adds everything v2 needs without touching existing rows.
-const SCHEMA_VERSION = 25;
+const SCHEMA_VERSION = 26;
 
 function hasColumn(db, table, col) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
@@ -83,6 +83,7 @@ function openDb(file = ':memory:') {
 function migrate(db) {
   const version = db.prepare('PRAGMA user_version').get().user_version;
   if (version >= SCHEMA_VERSION) return;
+  if (version === 25) return migrateV26(db);
   if (version === 24) return migrateV25(db);
   if (version === 23) return migrateV24(db);
   if (version === 22) return migrateV23(db);
@@ -1001,6 +1002,25 @@ function migrateV25(db) {
     addColumn(db, 'payslips', 'paid_ref', 'TEXT');
     addColumn(db, 'payslips', 'paid_by', 'INTEGER');
     db.exec("UPDATE payslips SET paid_on = (SELECT substr(paid_at, 1, 10) FROM pay_runs r WHERE r.id = payslips.run_id), paid_ref = (SELECT paid_ref FROM pay_runs r WHERE r.id = payslips.run_id) WHERE paid_on IS NULL AND run_id IN (SELECT id FROM pay_runs WHERE status = 'paid')");
+    db.exec('PRAGMA user_version = 25');
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  migrateV26(db);
+}
+
+// v26: date of birth on the HR record, and HR asking someone to update their own details (which ones,
+// why, who asked, when). Until HR asks, people can't change their record themselves.
+function migrateV26(db) {
+  db.exec('BEGIN');
+  try {
+    addColumn(db, 'hr_records', 'dob', 'TEXT');
+    addColumn(db, 'hr_records', 'upd_fields', 'TEXT');
+    addColumn(db, 'hr_records', 'upd_note', 'TEXT');
+    addColumn(db, 'hr_records', 'upd_by', 'INTEGER');
+    addColumn(db, 'hr_records', 'upd_at', 'TEXT');
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {

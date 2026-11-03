@@ -60,11 +60,12 @@ module.exports = (ctx) => {
     const out = {
       id: u.id, name: u.name, title: u.title || null, email: u.email, role: u.role, hr: !!u.hr, active: !!u.active, team: u.team_id ? (db.prepare('SELECT name FROM teams WHERE id = ?').get(u.team_id) || {}).name || null : null,
       record: {
-        contract: rec.contract || 'full_time', joined_on: P().localJoin(u, rec), probation_end: rec.probation_end || null, notice_days: rec.notice_days ?? null,
+        dob: rec.dob || null, contract: rec.contract || 'full_time', joined_on: P().localJoin(u, rec), probation_end: rec.probation_end || null, notice_days: rec.notice_days ?? null,
         bank_name: rec.bank_name || null, account_title: rec.account_title || null, iban: me ? mask(rec.iban) : rec.iban || null, iban_masked: mask(rec.iban),
         emergency_name: rec.emergency_name || null, emergency_phone: rec.emergency_phone || null, phone: rec.phone || null, cnic: me ? (rec.cnic ? `•••••-•••••••-${String(rec.cnic).slice(-1)}` : null) : rec.cnic || null, address: rec.address || null, leaving_on: rec.leaving_on || null, leaving_reason: rec.leaving_reason || null,
         notes: me ? undefined : rec.notes || null,
       },
+      update_request: rec.upd_fields ? { fields: JSON.parse(rec.upd_fields), note: rec.upd_note || null, by: nameOf(rec.upd_by), at: rec.upd_at } : null,
       pay: setup ? { base: setup.base, currency: setup.currency, tax_mode: setup.tax_mode, allowances: setup.allowances, deductions: setup.deductions } : null,
     };
     if (full) {
@@ -76,7 +77,7 @@ module.exports = (ctx) => {
       out.leave = { allowance: cfg.leaveDaysPerYear, taken: calc.approvedLeaveDays(u, year), unpaid: db.prepare("SELECT COUNT(*) n FROM leave_requests WHERE user_id = ? AND kind = 'unpaid' AND status = 'approved' AND start_day LIKE ?").get(u.id, `${year}-%`).n };
       out.slips = db.prepare("SELECT p.id, p.net, p.currency, r.period, r.status FROM payslips p JOIN pay_runs r ON r.id = p.run_id WHERE p.user_id = ? AND r.status != 'draft' ORDER BY r.period DESC LIMIT 6").all(u.id).map((s) => ({ ...s, name: P().periodName(s.period) }));
       out.advances = db.prepare('SELECT * FROM advances WHERE user_id = ? ORDER BY id DESC LIMIT 5').all(u.id);
-      out.can_edit_pay = !me && (viewer.role === 'owner' || viewer.id !== u.id || P().rules().hr_own_pay);
+      out.can_edit_pay = !me && ((viewer.role === 'owner' && !viewer.dev_owner) || viewer.id !== u.id || P().rules().hr_own_pay);
       out.employed = employedOf(u);
     }
     return out;
@@ -103,6 +104,62 @@ module.exports = (ctx) => {
   });
   route('GET', '/api/me/hr', ({ user }) => personOut(user, { ...user, hr: 0, role: 'employee' }, { full: true }));
 
+  // ---- HR asks someone to update their own details ----
+  // Nobody edits their HR record themselves until HR asks. HR picks what to update (and says why); the
+  // person is told, fills in just those, and HR hears it's done. One request at a time.
+  const UPDATABLE = { name: ['name'], dob: ['dob'], phone: ['phone'], address: ['address'], cnic: ['cnic'], emergency: ['emergency_name', 'emergency_phone'], bank: ['bank_name', 'account_title', 'iban'] };
+  const UPD_LABEL = { name: 'name', dob: 'date of birth', phone: 'phone', address: 'address', cnic: 'CNIC', emergency: 'emergency contact', bank: 'bank details' };
+  const listOf = (keys) => { const l = keys.map((k) => UPD_LABEL[k]); return l.length > 1 ? `${l.slice(0, -1).join(', ')} and ${l[l.length - 1]}` : l[0]; };
+  const hrPeople = () => db.prepare("SELECT id FROM users WHERE active = 1 AND (role = 'owner' OR hr = 1)").all().map((r) => r.id);
+  const setReq = (uid, v) => {
+    if (!P().recordOf(uid)) db.prepare('INSERT INTO hr_records (user_id, updated_at) VALUES (?, ?)').run(uid, nowIso());
+    db.prepare('UPDATE hr_records SET upd_fields = ?, upd_note = ?, upd_by = ?, upd_at = ? WHERE user_id = ?').run(v ? JSON.stringify(v.fields) : null, v ? v.note : null, v ? v.by : null, v ? nowIso() : null, uid);
+  };
+  route('POST', '/api/hr/people/:id/update-request', ({ user, params, body }) => {
+    needHR(user);
+    const u = userOf(params.id);
+    need(u.active, 400, 'Their account is deactivated');
+    need(u.id !== user.id, 400, 'You can change your own record from Edit');
+    const fields = [...new Set(Array.isArray(body.fields) ? body.fields : [])];
+    need(fields.length && fields.every((f) => f in UPDATABLE), 400, `Choose what to update: ${Object.keys(UPDATABLE).join(', ')}`);
+    const note = optStr(body.note, 'note', 300);
+    setReq(u.id, { fields, note, by: user.id });
+    audit(user, 'hr.update_requested', u.id, listOf(fields));
+    ctx.notify.notify(u.id, { kind: 'changed', title: 'Please update your details', body: `${String(user.name).split(" ")[0]} asked you to update your ${listOf(fields)}.${note ? ` “${note}”` : ''}`, link: '#/profile?details=1', actor: user, dedupe: `updreq:${u.id}:${nowIso().slice(0, 16)}` });
+    emit('hr', u.id); ctx.emitTo(u.id, 'hr');
+    return personOut(u, user, { full: true });
+  });
+  route('DELETE', '/api/hr/people/:id/update-request', ({ user, params }) => {
+    needHR(user);
+    const u = userOf(params.id);
+    setReq(u.id, null);
+    audit(user, 'hr.update_cancelled', u.id, '');
+    emit('hr', u.id); ctx.emitTo(u.id, 'hr');
+    return personOut(u, user, { full: true });
+  });
+  route('PUT', '/api/me/details', ({ user, body }) => {
+    const rec = P().recordOf(user.id);
+    need(rec && rec.upd_fields, 403, 'HR hasn’t asked you to update your details. Ask HR if something is wrong.');
+    const fields = JSON.parse(rec.upd_fields);
+    const allowed = new Set(fields.flatMap((f) => UPDATABLE[f]));
+    const extra = Object.keys(body).filter((k) => !allowed.has(k));
+    need(!extra.length, 403, `HR didn’t ask you to change ${extra.join(', ')}`);
+    const recBody = { ...body }; delete recBody.name;
+    if ('name' in body) {
+      const name = str(body.name, 'name', 100);
+      if (name !== user.name) db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name, user.id);
+    }
+    if (Object.keys(recBody).length) saveRecord(user, user, recBody);
+    else audit(user, 'hr.record', user.id, 'name');
+    const asker = rec.upd_by;
+    setReq(user.id, null);
+    audit(user, 'hr.update_done', user.id, listOf(fields));
+    const fresh = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+    ctx.notify.notify([...new Set([asker, ...hrPeople()])].filter((id) => id && id !== user.id), { kind: 'hr_step', title: `${fresh.name} updated their details`, body: `Their ${listOf(fields)}. Check them on their record.`, link: `#/hr?id=${user.id}`, actor: fresh, dedupe: `upddone:${user.id}:${nowIso().slice(0, 16)}` });
+    emit('hr', user.id);
+    return personOut(fresh, { ...fresh, hr: 0, role: 'employee' }, { full: true });
+  });
+
   // a developer or test account is not an employee: HR says so, or a developer account whose time is not
   // tracked is one (managers' time may not be tracked either, and they are paid)
   const employedOf = (u) => { const r = P().recordOf(u.id); return r && r.employed != null ? !!r.employed : !(u.is_dev && !u.tracks_time); };
@@ -113,7 +170,7 @@ module.exports = (ctx) => {
     const text = (k, max) => { if (k in body) next[k] = optStr(body[k], k, max); };
     const day = (k) => { if (k in body) next[k] = body[k] ? isoDate(body[k], k) : null; };
     if ('contract' in body) { need(CONTRACTS.includes(body.contract), 400, `contract must be one of ${CONTRACTS.join(', ')}`); next.contract = body.contract; }
-    day('joined_on'); day('probation_end'); day('leaving_on');
+    day('joined_on'); day('probation_end'); day('leaving_on'); day('dob');
     if ('notice_days' in body) next.notice_days = body.notice_days === null || body.notice_days === '' ? null : int(body.notice_days, 'notice_days', 0, 365);
     for (const [k, m] of [['bank_name', 80], ['account_title', 100], ['emergency_name', 100], ['emergency_phone', 40], ['phone', 40], ['address', 300], ['leaving_reason', 200], ['notes', 2000]]) text(k, m);
     if ('employed' in body) next.employed = body.employed === null ? null : body.employed ? 1 : 0;
@@ -123,11 +180,11 @@ module.exports = (ctx) => {
       need(v === null || /^[A-Z]{2}\d{2}[A-Z0-9]{8,30}$/.test(v), 400, 'That IBAN does not look right. It starts with two letters, like PK36MEZN…');
       next.iban = v ? v.replace(/(.{4})/g, '$1 ').trim() : null;
     }
-    db.prepare(`INSERT INTO hr_records (user_id, contract, joined_on, probation_end, notice_days, bank_name, account_title, iban, emergency_name, emergency_phone, phone, cnic, address, leaving_on, leaving_reason, notes, employed, updated_at)
-      VALUES (@user_id, @contract, @joined_on, @probation_end, @notice_days, @bank_name, @account_title, @iban, @emergency_name, @emergency_phone, @phone, @cnic, @address, @leaving_on, @leaving_reason, @notes, @employed, @updated_at)
-      ON CONFLICT(user_id) DO UPDATE SET contract = excluded.contract, joined_on = excluded.joined_on, probation_end = excluded.probation_end, notice_days = excluded.notice_days, bank_name = excluded.bank_name,
+    db.prepare(`INSERT INTO hr_records (user_id, dob, contract, joined_on, probation_end, notice_days, bank_name, account_title, iban, emergency_name, emergency_phone, phone, cnic, address, leaving_on, leaving_reason, notes, employed, updated_at)
+      VALUES (@user_id, @dob, @contract, @joined_on, @probation_end, @notice_days, @bank_name, @account_title, @iban, @emergency_name, @emergency_phone, @phone, @cnic, @address, @leaving_on, @leaving_reason, @notes, @employed, @updated_at)
+      ON CONFLICT(user_id) DO UPDATE SET dob = excluded.dob, contract = excluded.contract, joined_on = excluded.joined_on, probation_end = excluded.probation_end, notice_days = excluded.notice_days, bank_name = excluded.bank_name,
         account_title = excluded.account_title, iban = excluded.iban, emergency_name = excluded.emergency_name, emergency_phone = excluded.emergency_phone, phone = excluded.phone, cnic = excluded.cnic, address = excluded.address, leaving_on = excluded.leaving_on, leaving_reason = excluded.leaving_reason, notes = excluded.notes, employed = excluded.employed, updated_at = excluded.updated_at`)
-      .run({ user_id: u.id, contract: next.contract || 'full_time', joined_on: next.joined_on || null, probation_end: next.probation_end || null, notice_days: next.notice_days ?? null, bank_name: next.bank_name || null, account_title: next.account_title || null, iban: next.iban || null, emergency_name: next.emergency_name || null, emergency_phone: next.emergency_phone || null, phone: next.phone || null, cnic: next.cnic || null, address: next.address || null, leaving_on: next.leaving_on || null, leaving_reason: next.leaving_reason || null, notes: next.notes || null, employed: next.employed ?? null, updated_at: nowIso() });
+      .run({ user_id: u.id, dob: next.dob || null, contract: next.contract || 'full_time', joined_on: next.joined_on || null, probation_end: next.probation_end || null, notice_days: next.notice_days ?? null, bank_name: next.bank_name || null, account_title: next.account_title || null, iban: next.iban || null, emergency_name: next.emergency_name || null, emergency_phone: next.emergency_phone || null, phone: next.phone || null, cnic: next.cnic || null, address: next.address || null, leaving_on: next.leaving_on || null, leaving_reason: next.leaving_reason || null, notes: next.notes || null, employed: next.employed ?? null, updated_at: nowIso() });
     const changed = Object.keys(body).filter((k) => k !== 'notes');
     audit(user, 'hr.record', u.id, changed.join(', '));
     if ('leaving_on' in body && body.leaving_on && body.leaving_on !== cur.leaving_on) ctx.changes.log(u.id, user, { area: 'hr', title: 'Your last working day was recorded', lines: [`Last working day: ${T.human(next.leaving_on)}`], link: '#/pay' });
@@ -141,7 +198,7 @@ module.exports = (ctx) => {
   // "November 2026's pay (paid in December)": the month it's dated in, paid the month after
   const startLabel = (d) => { const m = (x) => new Date(`${x}T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }); return `${m(d.slice(0, 7) + '-01')}’s pay (paid in ${m(nextMonthStart(d)).split(' ')[0]})`; };
   function savePay(user, u, body) {
-    need(u.id !== user.id || user.role === 'owner' || P().rules().hr_own_pay, 403, 'Your own pay is changed by the owner');
+    need(u.id !== user.id || (user.role === 'owner' && !user.dev_owner) || P().rules().hr_own_pay, 403, 'Your own pay is changed by the owner');
     const cur = P().setupOf(u.id);
     const base = int(body.base ?? (cur && cur.base), 'base', 0, 100000000);
     const currency = body.currency || (cur && cur.currency) || 'PKR';

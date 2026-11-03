@@ -71,7 +71,7 @@ const HR_PAGES = { payroll, hr: hrPage, expenses, 'hr-import': importPage };
 const god = () => !!(S.me && S.me.fun_mode && S.me.kind !== 'client');
 const routes = () => {
   const base = isMgr()
-    ? { ...MGR, team: teamPage, expenses, ...(S.me.role === 'owner' ? { settings: settingsPage } : { pay }), ...(isHR() ? HR_PAGES : {}) }
+    ? { ...MGR, team: teamPage, expenses, ...(S.me.role === 'owner' ? { settings: settingsPage } : {}), ...(S.me.role !== 'owner' || S.me.dev_owner ? { pay } : {}), ...(isHR() ? HR_PAGES : {}) }
     : { ...EMP, pay, ...(isHR() ? HR_PAGES : {}) };
   const lb = S.me.leaderboard ? { leaderboard } : {};
   const dev = S.me.is_dev ? { dev: devHome, 'dev-apps': devApps, 'dev-errors': devErrors, 'dev-tools': devTools } : {};
@@ -230,7 +230,7 @@ function navHtml() {
   if (isMgr()) {
     const money = isHR() ? HR_NAV : [HR_NAV[2]];
     return grp('Today', [...(god() ? [['', 'Home', 'dash'], ['team', 'Team', 'users']] : pick(MGR_NAV, [''])), ...(S.me.tracks_time || S.me.fun_mode ? [['me', 'Your day', 'user']] : []), CHAT_NAV, ['checkins', 'Check-ins', 'checkin'], ...LB_NAV(), ...pick(MGR_NAV, ['timeline', 'screenshots'])]) + grp('Work', [...pick(MGR_NAV, ['projects']), ['clients', 'Clients', 'client'], ['inbox', 'Client inbox', 'chat'], ...pick(MGR_NAV, ['tasks', 'performance'])])
-      + grp('Time', pick(MGR_NAV, ['timesheets', 'attendance', 'timeoff', 'requests', 'reports', 'shift-report'])) + grp(isHR() ? 'HR' : 'Money', [...money, ...(S.me.role === 'owner' ? [] : [payNav])])
+      + grp('Time', pick(MGR_NAV, ['timesheets', 'attendance', 'timeoff', 'requests', 'reports', 'shift-report'])) + grp(isHR() ? 'HR' : 'Money', [...money, ...(S.me.role === 'owner' && !S.me.dev_owner ? [] : [payNav])])
       + grp('Manage', [['announcements', 'Announcements', 'mega'], ...MGR_NAV2.filter((n) => n[0] !== 'settings' || S.me.role === 'owner'), ...DEV_NAV()]);
   }
   return grp('Today', [...(god() ? [['', 'Home', 'dash'], ['me', 'Your day', 'user']] : pick(EMP_NAV, [''])), CHAT_NAV, ...(S.me.tracks_time ? [['checkin', 'Check-in', 'checkin']] : []), ...LB_NAV(), ...pick(EMP_NAV, ['timeline', 'screenshots'])]) + grp('Work', [...pick(EMP_NAV, ['projects']), ...(hasClients ? [['inbox', 'Client inbox', 'chat']] : []), ...pick(EMP_NAV, ['tasks', 'performance'])])

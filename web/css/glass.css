@@ -1257,3 +1257,18 @@ table.t.grid tr:hover td.nm { background: #221A4E !important; }
 .wq > header { background: #1D1544 !important; z-index: 3; }
 .ch-pin { position: relative; z-index: 30; background: #1F1648 !important; }
 .ppanel { background: linear-gradient(170deg, #221849, #150F34) !important; }
+
+/* your details (Profile) and HR asking for an update */
+.det .kv.two { display: grid; grid-template-columns: minmax(120px, max-content) minmax(0, 1fr) minmax(120px, max-content) minmax(0, 1fr); gap: 10px 18px; }
+@media (max-width: 760px) { .det .kv.two { grid-template-columns: minmax(110px, max-content) minmax(0, 1fr); } }
+.det .kv.two dd { overflow-wrap: anywhere; }
+.det.asked { border-color: rgba(247,181,68,.4) !important; }
+.det-ask { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 14px 16px; margin-bottom: 16px; border-radius: 14px; background: rgba(247,181,68,.1); border: 1px solid rgba(247,181,68,.3); }
+.det-ask > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.det-ask b { color: #F7C46A; font-weight: 650; }
+.det-ask span { color: var(--muted); font-size: 13.5px; }
+.upd-pick { border: 0; margin: 0 0 14px; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.upd-pick legend { margin-bottom: 8px; grid-column: 1 / -1; }
+.upd-c { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.04); cursor: pointer; font-size: 14px; }
+.upd-c:has(input:checked) { border-color: rgba(195,179,255,.5); background: rgba(132,112,238,.18); }
+.upd-ban { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }

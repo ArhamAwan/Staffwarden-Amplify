@@ -114,7 +114,7 @@ module.exports = (ctx) => {
     const r = runOf(params.id); editable(r);
     const uid = Number(body.user_id);
     need(db.prepare('SELECT id FROM payslips WHERE run_id = ? AND user_id = ?').get(r.id, uid), 400, 'That person is not on this month');
-    need(uid !== user.id || user.role === 'owner' || P().rules().hr_own_pay, 403, 'Your own pay is changed by the owner');
+    need(uid !== user.id || (user.role === 'owner' && !user.dev_owner) || P().rules().hr_own_pay, 403, 'Your own pay is changed by the owner');
     const kind = String(body.kind || '');
     need(kind in P().ITEM_KINDS && kind !== 'expense', 400, 'kind must be commission, bonus, allowance, deduction or correction');
     const amount = int(body.amount, 'amount', -100000000, 100000000);
