@@ -191,14 +191,7 @@ setUnauthorizedHandler(() => { setToken(null); S.me = null; showLogin('Your sess
 
 // ---------------- shell
 let navOpen = {}, navGroup = null, navGroupNow = null;
-// the sidebar folds to an icon rail (it opens over the page while the pointer is on it); remembered here
-try { if (localStorage.getItem('sw-rail') === 'min') document.documentElement.classList.add('rail-min'); } catch { /* private window */ }
-actions['rail-fold'] = (el) => {
-  const min = document.documentElement.classList.toggle('rail-min');
-  try { localStorage.setItem('sw-rail', min ? 'min' : 'open'); } catch { /* private window */ }
-  el.setAttribute('aria-label', min ? 'Keep the sidebar open' : 'Fold the sidebar'); el.title = el.getAttribute('aria-label');
-  if (min) el.blur();
-};
+try { localStorage.removeItem('sw-rail'); } catch { /* private window */ }
 try { navOpen = JSON.parse(localStorage.getItem('sw-nav-open') || '{}') || {}; } catch { navOpen = {}; }
 actions['nav-g'] = (el) => {
   const g = el.dataset.g, box = el.closest('.nav-g'), open = box.classList.contains('shut');
@@ -244,7 +237,7 @@ function navHtml() {
 function buildShell() {
   const u = S.me;
   app.innerHTML = `<a class="skip" href="#view">Skip to content</a><div class="shell">
-    <nav class="rail" aria-label="Main"><div class="brand"><span class="mark">${owl('watch', 'Staffwarden')}</span><div><b class="wordmark">Staffwarden</b><span>${esc(S.settings.org_name)}</span></div><button type="button" class="rail-fold" data-act="rail-fold" aria-label="Fold the sidebar" title="Fold the sidebar"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16M15.5 10l-2 2 2 2"/></svg></button></div>
+    <nav class="rail" aria-label="Main"><div class="brand"><span class="mark">${owl('watch', 'Staffwarden')}</span><div><b class="wordmark">Staffwarden</b><span>${esc(S.settings.org_name)}</span></div></div>
       <button type="button" class="rail-search" data-act="jump" aria-label="Search or jump to a page (Ctrl+K)">${icon('search')}<span>Search or jump to</span><kbd>${/Mac|iP/.test(navigator.platform) ? '⌘K' : 'Ctrl K'}</kbd></button>
       <div id="nav" style="display:flex;flex-direction:column;gap:2px"></div>
       <p class="credit rail-credit">${CREDIT}</p>

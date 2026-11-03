@@ -91,10 +91,8 @@ a { color: #C9BBFF; }
 .rail .nav-h { color: #A69ECB !important; }
 .rail .brand b.wordmark { font-family: var(--serif); font-style: italic; text-transform: none; }
 
-@media (min-width: 1100px) { html:not(.rail-min) { --rail-w: 268px; } html:not(.rail-min) .shell { grid-template-columns: calc(var(--rail-w) + 28px) minmax(0, 1fr) !important; } html:not(.rail-min) .rail, html:not(.rail-min) .rail:hover, html:not(.rail-min) .rail:has(:focus-visible) { position: sticky !important; top: 14px !important; margin: 14px 0 14px 14px; width: var(--rail-w) !important; height: calc(100vh - 28px) !important; height: calc(100dvh - 28px) !important;
-    border-radius: 22px; padding: 14px 12px 12px !important; overflow: hidden; transition: none !important; } html:not(.rail-min) .rail:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 30px 70px -28px rgba(0,0,0,.8) !important; } html:not(.rail-min) .rail > .brand > div, html:not(.rail-min) .rail .nav > span:not(.badge), html:not(.rail-min) .rail .who .me-link .me-txt { opacity: 1 !important; visibility: visible !important; } html:not(.rail-min) .rail .nav-h { color: #A69ECB !important; height: auto !important; padding: 11px 10px 5px !important; font-size: 11.5px !important; } html:not(.rail-min) .rail .nav-h::before { display: none !important; } html:not(.rail-min) .rail .nav { height: 36px !important; padding: 0 10px !important; gap: 11px !important; border-radius: 11px !important; } html:not(.rail-min) .rail .nav .ic { width: 18px !important; height: 18px !important; } html:not(.rail-min) .rail .nav .badge { position: static !important; margin-left: auto !important; } html:not(.rail-min) .rail #nav { margin: 6px -12px 0 !important; padding: 0 12px 8px !important; } html:not(.rail-min) .rail .who { flex-direction: row !important; align-items: center !important; padding: 12px 4px 2px !important; } html:not(.rail-min) .rail .who .me-link .me-txt .me-cta { display: block; }
-}
-@media (min-width: 901px) and (max-width: 1099px) {
+
+@media (min-width: 901px) and (max-width: 0px) {
   .rail { margin: 14px 0 14px 14px; height: calc(100vh - 28px) !important; top: 14px !important; border-radius: 22px; }
   .shell { grid-template-columns: calc(var(--rail-w) + 14px) minmax(0, 1fr); }
 }
@@ -146,7 +144,7 @@ a { color: #C9BBFF; }
 @keyframes clockPulse { 50% { box-shadow: 0 0 0 7px rgba(61,190,131,0); } }
 @media (prefers-reduced-motion: reduce) { .rail-clock i { animation: none; } }
 .rail .rail-credit { display: none; }
-@media (max-width: 1099px) { .rail-search span, .rail-search kbd, .rail-clock .rc-t { display: none; } .rail-search { justify-content: center; padding: 0; } .rail-clock { justify-content: center; padding: 9px 0; } .rail-clock .rc-v { display: none; } }
+
 @media (max-width: 900px) { .rail-search, .rail-clock { display: none; } .nav-gi, .nav-gi > div { display: contents; } .nav-g.shut > .nav-gi { opacity: 1; visibility: visible; } .rail .nav-ht { display: none !important; } }
 /* the jump palette */
 .jump { align-items: start; padding-top: 14vh; }
@@ -711,14 +709,7 @@ a { color: #C9BBFF; }
 @media (prefers-reduced-motion: reduce) { #view.enter > :not(.page-h) { animation: none !important; } }
 :is(.panel, .tch-q, .tch-c, .tch-rp, .modal, .tpanel, .wz, .kpi, .cic, .card, .cl-card, .hero, .rail, .jump-p) :is(.panel, .card, .cl-card, .tcard, .qr, .cic, .nb-c, .kpi, .lb-tile, .pay-tile, .banner, .bt-who, .btn, .np-list, .ws, .plist > li.prow) {
   -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
-/* the narrow icon rail (it opens over the page on hover): a group heading is its icon until then */
-@media (min-width: 901px) and (max-width: 1099px) {
-  .rail .nav-ht { padding: 0 10px 0 18px !important; gap: 14px !important; height: 40px !important; position: relative; white-space: nowrap; }
-  .rail .nav-ht .ic { width: 20px; height: 20px; }
-  .rail .nav-ht .nav-ht-t, .rail .nav-ht .nav-ht-n, .rail .nav-ht .nav-chev { transition: opacity .15s; }
-  .rail:not(:hover):not(:has(:focus-visible)) .nav-ht .nav-ht-t, .rail:not(:hover):not(:has(:focus-visible)) .nav-ht .nav-ht-n, .rail:not(:hover):not(:has(:focus-visible)) .nav-ht .nav-chev { opacity: 0; }
-  .rail:not(:hover):not(:has(:focus-visible)) .nav-ht .badge { position: absolute; top: 2px; left: 32px; min-width: 18px; height: 18px; font-size: 10.5px; }
-}
+
 .nav-g { min-width: 0; } .nav-gi > div { min-width: 0; }
 
 /* ---------- list rows are rows, not cards: no glass slab per row ---------- */
@@ -745,7 +736,7 @@ a { color: #C9BBFF; }
 .boost-card .bc-go:hover { background: #FFD27A !important; }
 .boost-card .bc-alt { border-radius: 10px; }
 .tch-chips { gap: 5px !important; } .tch-chips button { padding: 0 10px !important; font-size: 12.5px !important; }
-@media (min-width: 901px) and (max-width: 1099px) { .rail #nav { -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent); } }
+
 
 /* ---------- second pass: readable banners, rows not slabs, no lonely tiles ---------- */
 .banner { color: var(--ink-2) !important; }
@@ -772,21 +763,6 @@ a { color: #C9BBFF; }
 }
 .tch-chips { gap: 4px !important; padding: 10px 12px 2px !important; } .tch-chips button { padding: 0 9px !important; font-size: 12px !important; }
 
-/* ---------- the sidebar can be folded to an icon rail that opens over the page on hover ---------- */
-@media (min-width: 1100px) {
- html.rail-min .rail { margin: 14px 0 14px 14px; height: calc(100vh - 28px) !important; top: 14px !important; border-radius: 22px; } html.rail-min .shell { grid-template-columns: calc(var(--rail-w) + 14px) minmax(0, 1fr); }
-
- html.rail-min .rail .nav-ht { padding: 0 10px 0 18px !important; gap: 14px !important; height: 40px !important; position: relative; white-space: nowrap; } html.rail-min .rail .nav-ht .ic { width: 20px; height: 20px; } html.rail-min .rail .nav-ht .nav-ht-t, html.rail-min .rail .nav-ht .nav-ht-n, html.rail-min .rail .nav-ht .nav-chev { transition: opacity .15s; } html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .nav-ht .nav-ht-t, html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .nav-ht .nav-ht-n, html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .nav-ht .nav-chev { opacity: 0; } html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .nav-ht .badge { position: absolute; top: 2px; left: 32px; min-width: 18px; height: 18px; font-size: 10.5px; }
-
- html.rail-min .rail #nav { -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent); } 
- html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .rail-search span, html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .rail-search kbd, html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .rail-clock .rc-t { display: none; } html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .rail-search { justify-content: center; padding: 0; } html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .rail-clock { justify-content: center; padding: 9px 0; } html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .rail-clock .rc-v { display: none; } 
-}
-.rail-fold { margin-left: auto; width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 10px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); color: #CFC8EC; cursor: pointer; transition: background .15s, opacity .15s; }
-.rail-fold:hover { background: rgba(255,255,255,.12); color: #fff; }
-.rail-fold .ic { width: 16px; height: 16px; }
-@media (max-width: 1099px) { .rail-fold { display: none; } }
-html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .rail-fold { opacity: 0; pointer-events: none; }
-html.rail-min .rail-fold .ic { transform: scaleX(-1); }
 .rail > .brand { display: flex; align-items: center; gap: 10px; }
 
 /* ---------- someone's card from the team strip: a solid night popover, readable over anything ---------- */
@@ -819,9 +795,7 @@ html.rail-min .rail-fold .ic { transform: scaleX(-1); }
 .rail .who .me-chev { display: none !important; }
 .rail .who > .btn.icon { width: 36px !important; height: 36px !important; flex: none; border-radius: 11px !important; background: transparent !important; border-color: transparent !important; color: var(--muted) !important; }
 .rail .who > .btn.icon:hover { background: rgba(224,96,47,.16) !important; color: #FFB59A !important; }
-@media (max-width: 1099px) { .rail .who { background: transparent; border: 0 !important; flex-direction: column !important; padding: 8px 0 0 !important; } }
-html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .who { background: transparent; border-color: transparent !important; flex-direction: column !important; padding: 8px 0 0 !important; }
-html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .who .me-txt { display: none; }
+
 
 /* ---------- the desktop app downloads on the sign-in page ---------- */
 .dl { padding: 18px !important; border-radius: 18px !important; background: var(--glass) !important; border: 1px solid rgba(255,255,255,.1) !important; display: flex; flex-direction: column; gap: 4px; }
@@ -890,12 +864,63 @@ html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .who .me-txt { display
 }
 @media (max-height: 640px) and (min-width: 861px) { .si-foot { display: none; } .si-sub { margin-bottom: 10px; } }
 @media (prefers-reduced-motion: reduce) { .si-stars, .si-moon, .si-owl, .si-card { animation: none; } }
-/* you-card, pinned down against the older rail rules */
-@media (min-width: 1100px) {
-  html:not(.rail-min) .rail .who, html.rail-min .rail:hover .who, html.rail-min .rail:has(:focus-visible) .who { flex-direction: row !important; align-items: center !important; padding: 6px !important; gap: 4px !important; background: rgba(255,255,255,.05) !important; border: 1px solid rgba(255,255,255,.09) !important; }
-}
+
 .rail .who .me-link { justify-content: flex-start !important; }
 .rail .who > .btn.icon { box-shadow: none !important; border: 0 !important; margin: 0 !important; padding: 0 !important; display: grid !important; place-items: center; }
 
 .si-owl .ow-shut { opacity: 0; transition: opacity .2s; } .si-owl .owl.shut .ow-shut { opacity: 1; }
 .si-owl .ow-look { transition: transform .15s ease-out; }
+
+/* ================= the sidebar on computers: a slim icon rail that opens over the page on hover =================
+   Nothing moves when it opens: every row keeps the same height and the icons stay exactly where they are; the
+   panel widens and the words fade in beside them. */
+@media (min-width: 901px) {
+  :root { --rail-w: 76px; --rail-open: 272px; }
+  .shell { grid-template-columns: calc(var(--rail-w) + 14px) minmax(0, 1fr) !important; }
+  .rail { position: sticky !important; top: 14px !important; z-index: 60; margin: 14px 0 14px 14px !important; height: calc(100dvh - 28px) !important; width: var(--rail-w) !important;
+    padding: 14px 12px 12px !important; border-radius: 22px !important; overflow: hidden !important; display: flex !important; flex-direction: column !important; align-items: stretch !important; gap: 0 !important;
+    transition: width .32s cubic-bezier(.2,.7,.15,1), box-shadow .32s ease !important; transition-delay: .06s !important; }
+  .rail:hover, .rail:has(:focus-visible) { width: var(--rail-open) !important; transition-delay: .12s !important; box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 30px 0 70px -20px rgba(0,0,0,.75) !important; }
+  /* everything is a fixed-height row with its icon 16px from the edge, so the icons sit in a centred column */
+  .rail > .brand { display: flex !important; align-items: center !important; justify-content: flex-start !important; gap: 12px !important; height: 46px; padding: 0 0 0 5px !important; flex: none; white-space: nowrap; }
+  .rail > .brand .mark { width: 42px !important; height: 42px !important; flex: none; margin: 0 !important; }
+  .rail .rail-search { height: 40px !important; padding: 0 10px 0 15px !important; margin: 10px 0 6px !important; gap: 14px !important; justify-content: flex-start !important; white-space: nowrap; overflow: hidden; }
+  .rail .rail-search .ic { width: 18px !important; height: 18px !important; }
+  .rail #nav { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; margin: 0 -12px !important; padding: 0 12px 10px !important; display: flex !important; flex-direction: column !important; gap: 2px !important; width: auto !important; align-items: stretch !important;
+    -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 22px), transparent); }
+  .rail #nav::-webkit-scrollbar { display: none; }
+  .nav-g { display: flex !important; flex-direction: column !important; gap: 2px !important; align-items: stretch !important; width: auto !important; }
+  .rail .nav-h:not(.nav-ht) { display: flex !important; align-items: center; height: 26px !important; padding: 0 0 0 16px !important; margin: 6px 0 0; font-size: 11.5px !important; font-weight: 600; color: #A69ECB !important; white-space: nowrap; }
+  .rail .nav-h::before { display: none !important; }
+  .rail .nav, .rail .nav-ht { position: relative; display: flex !important; flex-direction: row !important; align-items: center !important; justify-content: flex-start !important; gap: 14px !important; width: auto !important; height: 40px !important;
+    padding: 0 10px 0 16px !important; margin: 0 !important; border-radius: 12px !important; font-size: 13.5px !important; font-weight: 550 !important; line-height: 1 !important; text-align: left !important; white-space: nowrap; }
+  .rail .nav-ht { margin-top: 4px !important; }
+  .rail .nav .ic, .rail .nav-ht > .ic:first-child { width: 20px !important; height: 20px !important; flex: none; transform: none !important; }
+  .rail .nav-ht .nav-ht-t { flex: 1; }
+  /* badges ride on the icon's corner, open or closed */
+  .rail .nav .badge, .rail .nav-ht .badge { position: absolute !important; left: 30px !important; top: 3px !important; right: auto !important; margin: 0 !important; min-width: 18px !important; height: 18px !important; padding: 0 5px !important; font-size: 10.5px !important; line-height: 18px !important; box-shadow: 0 0 0 2px #1D1545 !important; }
+  .rail .nav[aria-current="page"]::before { display: none !important; }
+  /* the words: there all along, faded in while the rail is open */
+  .rail > .brand > div, .rail .nav > span:not(.badge), .rail .nav-ht .nav-ht-t, .rail .nav-ht .nav-ht-n, .rail .nav-ht .nav-chev, .rail .nav-h:not(.nav-ht),
+  .rail .rail-search span, .rail .rail-search kbd, .rail .rail-clock .rc-t, .rail .rail-clock .rc-v, .rail .who .me-txt, .rail .who > .btn.icon {
+    opacity: 0 !important; visibility: visible !important; display: revert; transition: opacity .16s ease !important; }
+  .rail .who .me-txt { display: flex !important; }
+  .rail:hover > .brand > div, .rail:hover .nav > span:not(.badge), .rail:hover .nav-ht .nav-ht-t, .rail:hover .nav-ht .nav-ht-n, .rail:hover .nav-ht .nav-chev, .rail:hover .nav-h:not(.nav-ht),
+  .rail:hover .rail-search span, .rail:hover .rail-search kbd, .rail:hover .rail-clock .rc-t, .rail:hover .rail-clock .rc-v, .rail:hover .who .me-txt, .rail:hover .who > .btn.icon,
+  .rail:has(:focus-visible) > .brand > div, .rail:has(:focus-visible) .nav > span:not(.badge), .rail:has(:focus-visible) .nav-ht .nav-ht-t, .rail:has(:focus-visible) .nav-ht .nav-ht-n, .rail:has(:focus-visible) .nav-ht .nav-chev, .rail:has(:focus-visible) .nav-h:not(.nav-ht),
+  .rail:has(:focus-visible) .rail-search span, .rail:has(:focus-visible) .rail-search kbd, .rail:has(:focus-visible) .rail-clock .rc-t, .rail:has(:focus-visible) .rail-clock .rc-v, .rail:has(:focus-visible) .who .me-txt, .rail:has(:focus-visible) .who > .btn.icon {
+    opacity: 1 !important; transition: opacity .2s ease .14s !important; }
+  .rail .rail-search span { display: block !important; } .rail .rail-search kbd { display: inline-block !important; }
+  .rail .rail-clock { display: flex !important; justify-content: flex-start !important; gap: 12px !important; padding: 9px 10px 9px 22px !important; margin: 8px 0 0 !important; white-space: nowrap; overflow: hidden; }
+  .rail .rail-clock[hidden] { display: none !important; }
+  .rail .rail-clock .rc-t, .rail .rail-clock .rc-v { display: block !important; }
+  /* you, at the foot */
+  .rail .who { flex: none; display: flex !important; flex-direction: row !important; align-items: center !important; gap: 4px !important; margin: 8px 0 0 !important; padding: 4px !important; width: auto !important;
+    border-radius: 16px !important; background: rgba(255,255,255,.05) !important; border: 1px solid rgba(255,255,255,.09) !important; border-top: 1px solid rgba(255,255,255,.09) !important; white-space: nowrap; overflow: hidden; }
+  .rail .who .me-link { flex: 1 1 auto !important; min-width: 0; display: flex !important; justify-content: flex-start !important; align-items: center !important; gap: 12px !important; padding: 3px !important; }
+  .rail .who .me-link .avatar { width: 36px !important; height: 36px !important; }
+  .rail .who > .btn.icon { flex: none !important; width: 36px !important; height: 36px !important; }
+  .rail .rail-credit { display: none !important; }
+}
+@media (prefers-reduced-motion: reduce) { .rail { transition: none !important; } }
+@media (max-width: 900px) { .rail .who { background: transparent !important; border: 0 !important; padding: 0 !important; margin: 0 0 0 auto !important; } }
