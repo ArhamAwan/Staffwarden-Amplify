@@ -976,3 +976,31 @@ a { color: #C9BBFF; }
 .pt-r1 { display: flex; align-items: center; gap: 8px; min-width: 0; } .pt-r1 b { flex: 1; min-width: 0; }
 .pt-tag { padding: 2px 8px; font-size: 11px; }
 @media (max-width: 900px) { .roster .lane-chips td { position: sticky; left: 0; } .pgrid2 { width: calc(100vw - 72px); } }
+
+/* ---------- notifications are required: the screen that asks for them ---------- */
+.ngate { position: fixed; inset: 0; z-index: 900; display: grid; place-items: center; padding: 20px; background: rgba(6,4,18,.72); -webkit-backdrop-filter: blur(14px) saturate(140%); backdrop-filter: blur(14px) saturate(140%); animation: ngIn .25s ease both; }
+.ngate.out { animation: ngOut .2s ease forwards; }
+@keyframes ngIn { from { opacity: 0; } } @keyframes ngOut { to { opacity: 0; } }
+html.ng-on body { overflow: hidden; }
+.ng-card { width: min(460px, 100%); max-height: calc(100dvh - 40px); overflow-y: auto; padding: 30px 30px 26px; border-radius: 26px; text-align: left; color: var(--ink);
+  background: linear-gradient(165deg, #2C2063, #150F36); border: 1px solid rgba(195,179,255,.24); box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 40px 90px -30px rgba(0,0,0,.95); animation: ngUp .4s cubic-bezier(.2,.7,.15,1) both; }
+@keyframes ngUp { from { transform: translateY(16px) scale(.98); opacity: 0; } }
+.ng-owl { position: relative; width: 76px; height: 76px; margin-bottom: 18px; border-radius: 22px; display: grid; place-items: center; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1); }
+.ng-owl > svg { width: 52px; height: 52px; }
+.ng-bell { position: absolute; right: -8px; top: -8px; width: 30px; height: 30px; border-radius: 99px; display: grid; place-items: center; background: #F7B544; color: #1A1238; box-shadow: 0 0 0 4px #251B57; animation: ngRing 2.4s ease-in-out infinite; transform-origin: 50% 20%; }
+.ng-bell svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+@keyframes ngRing { 0%, 60%, 100% { transform: rotate(0); } 66% { transform: rotate(14deg); } 72% { transform: rotate(-12deg); } 78% { transform: rotate(8deg); } 84% { transform: rotate(-4deg); } }
+.ng-card h2 { font: 400 32px/1.05 var(--serif); letter-spacing: -.01em; margin: 0 0 10px; color: #fff; }
+.ng-card p { margin: 0; color: var(--ink-2); font-size: 14.5px; line-height: 1.5; }
+.ng-why { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 8px; }
+.ng-why li { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink); }
+.ng-why li::before { content: ""; width: 20px; height: 20px; flex: none; border-radius: 99px; background: rgba(61,190,131,.2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237BE3B0' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / 12px no-repeat; }
+.ng-steps { margin: 14px 0 0; padding: 0; list-style: none; counter-reset: ng; display: grid; gap: 10px; }
+.ng-steps li { counter-increment: ng; display: flex; gap: 12px; font-size: 14px; line-height: 1.45; color: var(--ink-2); }
+.ng-steps li::before { content: counter(ng); flex: none; width: 24px; height: 24px; border-radius: 99px; display: grid; place-items: center; background: rgba(124,100,240,.3); color: #fff; font-size: 12.5px; font-weight: 700; }
+.ng-steps b { color: #fff; font-weight: 650; }
+.ng-a { margin-top: 22px; }
+.ng-go { width: 100%; height: 50px; border: 0; border-radius: 14px; font: 650 15.5px/1 inherit; color: #fff; cursor: pointer; background: linear-gradient(180deg, #8470EE, #5D47CC); box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 16px 34px -14px rgba(107,85,214,1); }
+.ng-go:hover:not(:disabled) { filter: brightness(1.08); } .ng-go:disabled { opacity: .75; cursor: default; }
+.ng-small { margin-top: 12px !important; font-size: 12.5px !important; color: var(--muted) !important; text-align: center; }
+@media (prefers-reduced-motion: reduce) { .ngate, .ng-card, .ng-bell { animation: none !important; } }

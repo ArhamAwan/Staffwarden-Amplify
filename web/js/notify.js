@@ -52,12 +52,15 @@ export async function onNotify() {
   } catch { /* try again on the next event */ } finally { busy = false; }
 }
 
-function pop(fresh) {
+async function pop(fresh) {
   const shown = Number(store.get(shownKey()) || 0);
   const list = fresh.filter((n) => n.id > shown).sort((a, b) => a.id - b.id);
   if (!list.length) return;
   store.set(shownKey(), String(list[list.length - 1].id));   // other open tabs skip these
   const away = document.hidden || !document.hasFocus();
+  // a browser signed up for push gets these from the service worker (with the person's choices applied), so
+  // the page doesn't show them a second time
+  if (away && browserPopups() === 'granted' && (await pushState().catch(() => 'off')) === 'on') return;
   if (away && browserPopups() === 'granted') {
     const show = list.length > 3 ? [{ title: `${list.length} new notifications`, body: list.slice(-3).map((n) => n.title).join('\n'), link: '#/' }] : list;
     for (const n of show) {

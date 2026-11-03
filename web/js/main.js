@@ -1,5 +1,6 @@
 import { get, post, getToken, setToken, setUnauthorizedHandler, setNewBuildHandler, startLive, clearImages, setViewAs } from './api.js';
 import { registerSW } from './push.js';
+import { requireNotifications, resetGate } from './notifygate.js';
 import { html, esc, icon, ago, initials, avColor, HELM, CREDIT, owl } from './util.js';
 import { S, actions, toast, errMsg, tickClocks, hydrateImages, openViewer, dial } from './ui.js';
 import { morph } from './morph.js';
@@ -498,12 +499,13 @@ function start() {
   if (!location.hash || location.hash === '#') history.replaceState(null, '', '#/');
   run({ navigated: true }).then(maybeTour);
   initNotify();
+  requireNotifications();
   setTimeout(() => { checkNudge(); refreshAnnBar(); }, 1200);
 }
 function onHash() { updateNav(); run({ navigated: true }); }
 function onVisible() { if (document.hidden) return; if (hiddenStale || Date.now() - lastOk > 20000) { hiddenStale = false; schedule(); } }
 function teardown() {
-  pageCache.clear(); invalidatePeople();
+  pageCache.clear(); invalidatePeople(); resetGate();
   if (stopLive) stopLive(); stopLive = null;
   timers.forEach(clearInterval); timers = [];
   window.removeEventListener('hashchange', onHash);
