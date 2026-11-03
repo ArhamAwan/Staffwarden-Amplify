@@ -1238,3 +1238,22 @@ img[data-shot]:not([src]) { color: transparent; font-size: 0; background: rgba(2
 .pb.me > div { background: linear-gradient(180deg, #7A64E6, #5D47CC) !important; border-color: transparent !important; color: #fff !important; }
 .tch-g.co { background: #1A1238 !important; color: var(--brass-light) !important; box-shadow: inset 0 0 0 1px rgba(195,179,255,.18); }
 .bars .col.today { background: linear-gradient(180deg, #B9A8FF, #8470EE) !important; }
+
+/* every floating surface (pickers, menus, action bars, suggestion lists, panels over the page) is solid:
+   what's behind never shows through it */
+.ch-pop, .ch-mention, .msg-acts, .pnb, .psearch-r, .sc-drop, .ch-jump {
+  background: linear-gradient(170deg, #2A1F5C, #17113A) !important;
+  border: 1px solid rgba(195,179,255,.2) !important;
+  box-shadow: 0 22px 50px -12px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.08) !important;
+}
+.msg-acts { background: #241A4D !important; }
+.pnb, .ch-pop, .ch-mention { z-index: 72 !important; }
+@media (max-width: 1180px) { .tch.with-r .tch-rp { background: linear-gradient(170deg, #221849, #130E31) !important; } }
+.msg:hover, .msg:focus-within { z-index: 6; }
+.msg-acts { z-index: 25 !important; }
+/* things that stay put while the rest scrolls under them are solid too */
+table.t.grid th.nm, table.t.grid td.nm { background: #1B1440 !important; }
+table.t.grid tr:hover td.nm { background: #221A4E !important; }
+.wq > header { background: #1D1544 !important; z-index: 3; }
+.ch-pin { position: relative; z-index: 30; background: #1F1648 !important; }
+.ppanel { background: linear-gradient(170deg, #221849, #150F34) !important; }
