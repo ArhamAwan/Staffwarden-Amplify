@@ -1276,3 +1276,22 @@ table.t.grid tr:hover td.nm { background: #221A4E !important; }
 .scrim.top { z-index: 76 !important; }
 #toasts { z-index: 90 !important; }
 .scrim { z-index: 74 !important; } .scrim.top { z-index: 76 !important; }
+
+/* a person's HR record: two actions in view, the rest under "more" */
+.hr-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.hr-more { position: relative; }
+.hr-more > summary { list-style: none; width: 40px; height: 40px; padding: 0; display: grid; place-items: center; cursor: pointer; }
+.hr-more > summary::-webkit-details-marker { display: none; }
+.hr-more > summary .ic { width: 18px; height: 18px; fill: currentColor; stroke: none; }
+.hr-more[open] > summary { background: rgba(255,255,255,.12); }
+.hr-menu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 40; width: 300px; padding: 6px; border-radius: 16px;
+  background: linear-gradient(170deg, #2A1F5C, #17113A); border: 1px solid rgba(195,179,255,.2); box-shadow: 0 22px 50px -12px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.08);
+  display: flex; flex-direction: column; gap: 2px; animation: viewIn .14s ease-out; }
+.hr-menu > a, .hr-menu > button { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 10px 12px; border: 0; border-radius: 11px; background: none; color: var(--ink); text-align: left; text-decoration: none; font: inherit; cursor: pointer; }
+.hr-menu > a:hover, .hr-menu > button:hover, .hr-menu > a:focus-visible, .hr-menu > button:focus-visible { background: rgba(255,255,255,.08); outline: none; }
+.hr-menu .ic { width: 18px; height: 18px; flex: none; margin-top: 2px; color: #C3B3FF; stroke: currentColor; fill: none; stroke-width: 2; }
+.hr-menu span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hr-menu b { font-size: 14px; font-weight: 600; }
+.hr-menu small { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+@media (max-width: 640px) { .hr-tools { width: 100%; } .hr-tools > .btn { flex: 1 1 auto; } .hr-menu { right: 0; width: min(300px, calc(100vw - 40px)); } }
+.page-h:has(.hr-more[open]) { position: relative; z-index: 30; }

@@ -61,8 +61,12 @@ function personView(p, tab) {
   const r = p.record, pay = p.pay, me = S.me.id === p.id;
   const count = (n) => (n ? raw(` <span class="tab-n num">${n}</span>`) : '');
   const tabs = [['overview', 'Overview'], ['documents', html`Documents${count(p.docs.length)}`], ['joining', html`Joining${count(p.join_steps.filter((x) => !x.done).length)}`], ...(p.leave_steps ? [['leaving', 'Leaving']] : [])];
-  const head = html`<div class="page-h"><div class="hr-who">${av(p, 'lg')}<div><h1>${p.name}</h1><p class="sub">${[p.title, p.team, CONTRACT[r.contract], p.active ? null : 'Deactivated'].filter(Boolean).join(' · ')}</p></div></div>
-    <div class="tools"><a class="btn" href="#/hr">${icon('left')} Everyone</a>${!r.leaving_on && p.active ? html`<button class="btn" data-act="hr-leave" data-id="${p.id}" data-name="${p.name}">Leaving</button>` : ''}${p.employed === false ? html`<button class="btn" data-act="hr-employed" data-id="${p.id}" data-name="${p.name}" data-v="1">Make an employee</button>` : html`<button class="btn" data-act="hr-employed" data-id="${p.id}" data-name="${p.name}" data-v="0">Not an employee</button>`}<a class="btn" href="#/hr-import?for=${p.id}${(() => { const c = p.docs.find((d) => d.kind === 'contract' && d.type === 'application/pdf'); return c ? `&doc=${c.id}` : ''; })()}">${icon('file')} Update from contract</a>${p.active && p.id !== S.me.id && !p.update_request ? html`<button class="btn" data-act="hr-askupd" data-id="${p.id}" data-name="${p.name}">Ask to update details</button>` : ''}<button class="btn primary" data-act="hr-edit" data-id="${p.id}">Edit record</button></div>
+  const head = html`<div class="page-h"><a class="crumb" href="#/hr">${icon('left')}People and pay</a><div class="hr-who">${av(p, 'lg')}<div><h1>${p.name}</h1><p class="sub">${[p.title, p.team, CONTRACT[r.contract], p.active ? null : 'Deactivated'].filter(Boolean).join(' · ')}</p></div></div>
+    <div class="tools hr-tools">${p.active && p.id !== S.me.id && !p.update_request ? html`<button class="btn" data-act="hr-askupd" data-id="${p.id}" data-name="${p.name}">Ask to update details</button>` : ''}<button class="btn primary" data-act="hr-edit" data-id="${p.id}">Edit record</button>
+      <details class="hr-more" data-k="hr-more-${p.id}"><summary class="btn icon" aria-label="More actions" title="More actions"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></summary>
+        <div class="hr-menu" role="menu"><a role="menuitem" href="#/hr-import?for=${p.id}${(() => { const c = p.docs.find((d) => d.kind === 'contract' && d.type === 'application/pdf'); return c ? `&doc=${c.id}` : ''; })()}">${icon('file')}<span><b>Update from contract</b><small>Read their contract again and fill in the record</small></span></a>
+          ${!r.leaving_on && p.active ? html`<button type="button" role="menuitem" data-act="hr-leave" data-id="${p.id}" data-name="${p.name}">${icon('out')}<span><b>Leaving</b><small>Record their last day and start the leaving steps</small></span></button>` : ''}
+          ${p.employed === false ? html`<button type="button" role="menuitem" data-act="hr-employed" data-id="${p.id}" data-name="${p.name}" data-v="1">${icon('user')}<span><b>Make an employee</b><small>Put them back on payroll and HR reminders</small></span></button>` : html`<button type="button" role="menuitem" data-act="hr-employed" data-id="${p.id}" data-name="${p.name}" data-v="0">${icon('user')}<span><b>Not an employee</b><small>A developer or test account: off payroll and reminders</small></span></button>`}</div></details></div>
     <nav class="tabs" aria-label="Their record">${tabs.map(([v, n]) => html`<button type="button" class="tab" data-act="q" ${raw(qAttr('tab', v === 'overview' ? '' : v))} aria-current="${tab === v ? 'page' : 'false'}">${n}</button>`)}<span class="tab locked" title="HR never sees screenshots or activity">${icon('lock')} Screenshots and activity</span></nav></div>`;
   let body;
   if (tab === 'documents') body = docsView(p);
@@ -276,3 +280,11 @@ actions['hr-doc-del'] = async (el) => {
   if (!(await confirmBox({ title: `Remove “${el.dataset.name}”?`, message: 'The file is deleted for good. The audit log keeps a record that it was removed.', confirm: 'Remove', danger: true }))) return;
   try { await del(`/api/hr/docs/${el.dataset.id}`); toast('Removed'); S.refresh(); } catch (e) { toast(errMsg(e), true); }
 };
+
+// the "more actions" menu on a person's record closes when something in it is chosen or you click elsewhere
+document.addEventListener('click', (e) => {
+  for (const d of document.querySelectorAll('details.hr-more[open]')) {
+    if (!d.contains(e.target) || e.target.closest('.hr-menu [role="menuitem"]')) d.open = false;
+  }
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') for (const d of document.querySelectorAll('details.hr-more[open]')) d.open = false; });
