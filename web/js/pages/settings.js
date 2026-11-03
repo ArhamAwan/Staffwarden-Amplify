@@ -11,7 +11,7 @@ const bytes = (n) => (n > 1e9 ? (n / 1e9).toFixed(2) + ' GB' : n > 1e6 ? (n / 1e
 // The settings page: a list of sections on the left (each with what it is set to now), the sections on
 // the right as plain rows (what it is, then the control), a picture of the shift that follows the times
 // as they are typed, and a save bar that only appears once something has changed.
-const SECTIONS = [['company', 'Company'], ['hours', 'Working hours'], ['shots', 'Screenshots'], ['privacy', 'Private windows'], ['tasks', 'Tasks'], ['open', 'Transparency'], ['live', 'Live status'], ['reports', 'Shift report email'], ['storage', 'Storage'], ['chat', 'Chat']];
+const SECTIONS = [['company', 'Company'], ['hours', 'Working hours'], ['shots', 'Screenshots'], ['privacy', 'Private windows'], ['tasks', 'Tasks'], ['open', 'Transparency'], ['live', 'Live status'], ['reports', 'Report email'], ['storage', 'Storage'], ['chat', 'Chat']];
 const ALWAYS = ['Messaging apps (WhatsApp, Telegram, Signal…)', 'Password managers', 'Private and incognito windows', 'Banking and payments', 'Social media', 'Notification pop-ups'];
 const SHOTS = [[0, 'Off'], [1, '1'], [2, '2'], [3, '3']];
 const short = (t) => (t ? hhmmText(t).replace(':00', '') : '');
@@ -23,17 +23,22 @@ const dayRun = (wd) => {
   return run ? `${on[0]}–${on[on.length - 1]}` : on.join(', ') || 'No days';
 };
 
-function summaries(s) {
+const SEC_ICON = { company: 'bank', hours: 'clock', shots: 'camera', privacy: 'lock', tasks: 'tasks', open: 'eye', live: 'pulse', reports: 'file', storage: 'db', chat: 'chats' };
+// one short line under each section's name in the strip: what it's set to now
+function summaries(s, { storage, gifs, mail } = {}) {
   const wd = new Set(String(s.work_days).split(',').map(Number));
   const extra = (s.blackout_apps || []).filter((a) => a.toLowerCase() !== 'whatsapp').length;
   return {
     company: s.org_name,
-    hours: `${short(s.shift_start)} – ${short(s.shift_end)} · ${dayRun(wd)}`,
-    shots: s.shots_per_10 ? `${s.shots_per_10} per 10 min · kept ${s.retention_days} days` : 'Off',
-    privacy: extra ? `Always on, plus ${plural(extra, 'more')}` : 'Always on',
-    tasks: s.task_review_required !== false ? 'Reviewed before done' : 'Done when ticked',
-    open: { everyone: 'Everyone sees status', team: 'Own team sees status', off: 'Only managers' }[s.team_visibility || 'everyone'],
-    live: `No signal after ${s.no_signal_min} min`,
+    hours: `${short(s.shift_start)}–${short(s.shift_end)}, ${dayRun(wd)}`,
+    shots: s.shots_per_10 ? `${s.shots_per_10} per 10 min` : 'Off',
+    privacy: extra ? `Always on, +${extra}` : 'Always on',
+    tasks: s.task_review_required !== false ? 'Review first' : 'Done when ticked',
+    open: { everyone: 'Everyone sees status', team: 'Own team only', off: 'Managers only' }[s.team_visibility || 'everyone'],
+    live: `No signal: ${s.no_signal_min} min`,
+    reports: mail ? (mail.on ? `To ${plural(mail.to.length, 'address', 'addresses')}` : 'Off') : '',
+    storage: storage ? plural(storage.screenshots, 'screenshot') : '',
+    chat: gifs ? (gifs.has_key ? 'GIFs on' : 'GIFs off') : '',
   };
 }
 
@@ -74,7 +79,7 @@ export const settingsPage = {
   },
   render({ s, storage, gifs, mail }) {
     const wd = new Set(String(s.work_days).split(',').map(Number));
-    const sum = summaries(s);
+    const sum = summaries(s, { storage, gifs, mail });
     const row = (label, hint, control, { id, wide, tog } = {}) => html`<div class="srow ${wide ? 'wide' : ''} ${tog ? 'tog' : ''}"><div class="srow-t">${id ? html`<label for="${id}">${label}</label>` : html`<span class="srow-l">${label}</span>`}${hint ? html`<p>${hint}</p>` : ''}</div><div class="srow-c">${control}</div></div>`;
     const sw = (name, on, id) => html`<label class="switch"><input type="checkbox" id="${id}" name="${name}" ${on ? raw('checked') : ''}><span></span></label>`;
     const num = (id, name, v, min, max, unit, step = 1) => html`<span class="unit-in"><input id="${id}" name="${name}" type="number" inputmode="decimal" min="${min}" max="${max}" step="${step}" value="${v}" required><em>${unit}</em></span>`;
@@ -84,7 +89,7 @@ export const settingsPage = {
     return html`
       <div class="page-h"><div><h1>Settings</h1><p class="sub">Rules for the whole company. Teams and people can have their own schedule and screenshots on the People page.</p></div></div>
       <div class="set-wrap">
-        <nav class="set-nav" aria-label="Settings sections">${SECTIONS.filter(([k]) => k !== 'chat' || gifs).map(([k, t]) => html`<button type="button" data-act="set-jump" data-to="${k}" data-k="nav-${k}"><b>${t}</b>${sum[k] ? html`<span data-sum="${k}">${sum[k]}</span>` : ''}</button>`)}</nav>
+        <nav class="set-nav" aria-label="Settings sections">${SECTIONS.filter(([k]) => (k !== 'chat' || gifs) && (k !== 'reports' || mail)).map(([k, t]) => html`<button type="button" data-act="set-jump" data-to="${k}" data-k="nav-${k}" title="${sum[k] ? `${t}: ${sum[k]}` : t}"><i class="sn-ic" aria-hidden="true">${icon(SEC_ICON[k] || 'gear')}</i><span class="sn-t"><b>${t}</b>${sum[k] ? html`<span data-sum="${k}">${sum[k]}</span>` : ''}</span></button>`)}</nav>
         <div class="set-main">
         <form data-submit="save-settings" data-setform novalidate>
           <div class="set-cols"><div class="set-col">
@@ -151,7 +156,7 @@ export const settingsPage = {
         </div>
       </div>`;
   },
-  after(view) { setupForm(view); },
+  after(view) { setupForm(view); spy(view); },
 };
 
 // ---- emailing the shift report ----
@@ -252,7 +257,24 @@ function addTag(input) {
   setTags(f, list);
 }
 actions['set-tag-rm'] = (el) => { const f = formOf(); setTags(f, tagValues(f).filter((x) => x !== el.dataset.tag)); };
-actions['set-jump'] = (el) => { el.parentElement.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === el)); const t = document.getElementById(`set-${el.dataset.to}`); if (t) t.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); };
+// the strip follows the page: the section in view is the one lit up
+let spyObs = null;
+function spy(view) {
+  if (spyObs) spyObs.disconnect();
+  const nav = view.querySelector('.set-nav'); if (!nav || !('IntersectionObserver' in window)) return;
+  const seen = new Map();
+  spyObs = new IntersectionObserver((list) => {
+    for (const e of list) seen.set(e.target.id, e.isIntersecting ? e.intersectionRect.top : null);
+    let best = null, top = Infinity;
+    for (const [id, t] of seen) if (t != null && t < top) { top = t; best = id; }
+    if (!best || nav.dataset.jumping) return;
+    for (const b of nav.querySelectorAll('button')) { const on = `set-${b.dataset.to}` === best; b.classList.toggle('on', on); if (on) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current'); }
+    const cur = nav.querySelector('button.on'); if (cur && nav.scrollWidth > nav.clientWidth) cur.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, { rootMargin: `-${Math.round(nav.offsetHeight + 30)}px 0px -50% 0px` });   // below the strip, which stays at the top
+  for (const sec of view.querySelectorAll('.sset[id^="set-"]')) spyObs.observe(sec);
+}
+actions['set-jump'] = (el) => {
+  el.parentElement.dataset.jumping = '1'; setTimeout(() => { delete el.parentElement.dataset.jumping; }, 700); el.parentElement.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === el)); const t = document.getElementById(`set-${el.dataset.to}`); if (t) t.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); };
 actions['set-nobreak'] = () => { const f = formOf(); for (const n of ['break_start', 'break_end']) { const i = f.querySelector(`[name=${n}]`); i.value = ''; i.dataset.dirty = '1'; } refreshForm(f); };
 actions['set-discard'] = () => {
   const f = formOf(); f.reset();
