@@ -191,7 +191,7 @@ function navHtml() {
   // grouped like the work: what is happening today, the work itself, time, and running the company
   // groups fold away so the menu fits on one screen: Today and the group you are in stay open, the rest
   // show as one row with their count and any badges; you can open or close any of them
-  const GI = { Today: 'dash', Work: 'folder', Time: 'clock', HR: 'wallet', Money: 'wallet', Manage: 'gear', You: 'user', Build: 'code' };
+  const GI = { Today: 'dash', Work: 'client', Time: 'clock', HR: 'wallet', Money: 'wallet', Manage: 'gear', You: 'user', Build: 'code' };
   const routeOf = (n) => (n[0] === '' ? '' : n[0]);
   const here = name === 'hr-import' ? 'hr' : name || '';
   const grp = (t, list) => {

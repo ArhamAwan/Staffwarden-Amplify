@@ -89,7 +89,7 @@ export const teamChatPage = {
     const chip = (label, v, n) => html`<button type="button" data-act="q" data-q="f" data-v="${v}" aria-pressed="${f === v ? 'true' : 'false'}">${label}${n ? html` <span>${n}</span>` : ''}</button>`;
     const unreadN = d.threads.filter((x) => x.unread && !x.muted).length;
     const list = html`<section class="tch-q" aria-label="Chats">
-      <div class="tch-top"><label class="tch-find">${raw(ic('search', 16))}<input type="search" id="tch-find" placeholder="Search chats and messages" aria-label="Search chats and messages" autocomplete="off" value="${search.q}"></label>
+      <div class="tch-top"><label class="tch-find">${raw(ic('search', 16))}<input type="search" id="tch-find" placeholder="Search" aria-label="Search chats and messages" autocomplete="off" value="${search.q}"></label>
         <button type="button" class="tch-new" data-act="tch-new" aria-label="New chat" aria-haspopup="menu">${raw(ic('plus', 18))}</button></div>
       <div class="tch-chips" role="group" aria-label="Show">${chip('All', '')}${chip('Unread', 'unread', unreadN)}${chip('Mentions', 'mentions', d.mentions)}${chip('Groups', 'groups')}</div>
       <div class="tch-list">${listHtml(d, sel, f)}</div></section>`;

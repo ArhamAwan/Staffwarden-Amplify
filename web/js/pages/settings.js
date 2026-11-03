@@ -277,6 +277,8 @@ const AUDIT_PAGE = 100;
 const AU_KINDS = [['money', 'Money'], ['privacy', 'Privacy'], ['settings', 'Settings'], ['time', 'Time'], ['people', 'People'], ['clients', 'Clients'], ['signin', 'Sign-ins']];
 const kindOf = (a) => (/^screenshot|hr\.(viewed|doc_opened)|payroll\.slip_viewed/.test(a) ? 'privacy' : /^(payroll|expense|advance)|hr\.pay/.test(a) ? 'money' : /^(settings|holiday|team\.screenshots|policy)/.test(a) ? 'settings'
   : /^(time|timer|timeoff)/.test(a) ? 'time' : /^client/.test(a) ? 'clients' : /^(login|logout|password)/.test(a) ? 'signin' : /^(user|team|hr|project|task)/.test(a) ? 'people' : 'other');
+// times stored in an entry's details read as "Sat, Oct 24, 3:00 PM", not as raw ISO stamps
+const tidyDetail = (d, tz) => String(d || '').replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z/g, (iso) => { const day = new Date(Date.parse(iso) + tz * 60000).toISOString().slice(0, 10); return `${dayShort(day)}, ${tod(iso, tz)}`; });
 const kindChip = (a) => { const k = kindOf(a), n = (AU_KINDS.find((x) => x[0] === k) || [k, 'Other'])[1]; return html`<span class="au-k k-${k}">${n}</span>`; };
 
 export const auditPage = {
@@ -311,7 +313,7 @@ export const auditPage = {
       <div class="page-h"><div><h1>Audit log</h1><p class="sub">Who changed what, newest first. Deleted and opened screenshots are recorded here too.</p></div>
         <div class="seg au-kinds" role="group" aria-label="Show">${[['', 'Everything', all.length], ...AU_KINDS.map(([k, n]) => [k, n, count(k)])].filter(([k, , n]) => !k || n).map(([k, n, c]) => html`<button type="button" data-act="q" ${raw(qAttr('kind', k))} aria-pressed="${String(kind === k)}">${n}<span class="au-n">${c}</span></button>`)}</div></div>
       <section class="panel flush"><div class="body">${rows.length ? html`<div class="tbl-wrap"><table class="t stack au-t"><thead><tr><th>When</th><th>Who</th><th>What</th><th>About</th><th>Details</th><th>Kind</th></tr></thead><tbody>
-        ${rows.map((r) => html`${dayRow(r)}<tr data-k="a${r.id}"><td class="num small nowrap">${tod(r.at, tz)}</td><td class="nowrap">${who(r)}</td><td><b>${LABEL[r.action] || words(r.action)}</b></td><td>${name(r.target_user_id)}</td><td class="au-d">${r.detail || ''}</td><td>${kindChip(r.action)}</td></tr>`)}</tbody></table></div>
+        ${rows.map((r) => html`${dayRow(r)}<tr data-k="a${r.id}"><td class="num small nowrap">${tod(r.at, tz)}</td><td class="nowrap">${who(r)}</td><td><b>${LABEL[r.action] || words(r.action)}</b></td><td>${name(r.target_user_id)}</td><td class="au-d">${tidyDetail(r.detail, tz)}</td><td>${kindChip(r.action)}</td></tr>`)}</tbody></table></div>
         <div class="au-more"><span class="muted small">${more ? `Showing the latest ${rows.length}` : `${plural(rows.length, 'entry', 'entries')}, all of them`}</span>${more ? html`<button type="button" class="btn sm" data-act="q" ${raw(qAttr('n', String(want + AUDIT_PAGE)))}>Show ${AUDIT_PAGE} older</button>` : ''}</div>` : empty('Nothing recorded yet', '')}</div></section>`;
   },
 };

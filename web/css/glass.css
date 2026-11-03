@@ -192,8 +192,8 @@ a { color: #C9BBFF; }
 
 /* ---------- chat: the list is its own deeper glass panel, the conversation gets the room ---------- */
 @media (min-width: 761px) {
-  .tch { grid-template-columns: 264px minmax(0, 1fr) !important; gap: 14px; background: transparent !important; border: 0 !important; box-shadow: none !important; overflow: visible !important; }
-  .tch.with-r { grid-template-columns: 264px minmax(0, 1fr) 320px !important; }
+  .tch { grid-template-columns: 288px minmax(0, 1fr) !important; gap: 14px; background: transparent !important; border: 0 !important; box-shadow: none !important; overflow: visible !important; }
+  .tch.with-r { grid-template-columns: 288px minmax(0, 1fr) 320px !important; }
   .tch > .tch-q { border: 1px solid rgba(195,179,255,.22) !important; border-radius: 22px; overflow: hidden; background: linear-gradient(170deg, rgba(48,34,104,.72), rgba(20,14,46,.66));
     -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 30px 60px -30px rgba(0,0,0,.8); }
   .tch > .tch-c, .tch > .tch-rp { border: 1px solid var(--glass-edge) !important; border-radius: 22px; overflow: hidden; background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
@@ -733,3 +733,54 @@ a { color: #C9BBFF; }
   .rail:not(:hover):not(:has(:focus-visible)) .nav-ht .badge { position: absolute; top: 2px; left: 32px; min-width: 18px; height: 18px; font-size: 10.5px; }
 }
 .nav-g { min-width: 0; } .nav-gi > div { min-width: 0; }
+
+/* ---------- list rows are rows, not cards: no glass slab per row ---------- */
+.wq-l .qr, .tch-l .qr, .ibx-l .qr { background: transparent !important; border: 0 !important; box-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+.tch-l { padding: 0 8px; display: flex; flex-direction: column; gap: 2px; }
+.tch-l .qr { border-radius: 13px !important; padding: 9px 10px !important; transition: background .15s; }
+.tch-l .qr:hover { background: rgba(255,255,255,.06) !important; }
+.tch-l .qr.on, .tch-l .qr[aria-current] { background: linear-gradient(100deg, rgba(140,120,232,.38), rgba(107,85,214,.14)) !important; box-shadow: inset 0 0 0 1px rgba(195,179,255,.3) !important; }
+.tch-sec { padding: 16px 18px 6px !important; background: transparent !important; border: 0 !important; letter-spacing: .01em; }
+.tch-list { background: transparent !important; }
+.tch-top { border-bottom: 1px solid rgba(255,255,255,.08) !important; }
+.tch-chips { flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none; padding: 10px 14px 2px !important; }
+.tch-chips::-webkit-scrollbar { display: none; }
+.tch-chips button { flex: none; height: 30px !important; background: rgba(255,255,255,.06) !important; color: var(--ink-2) !important; border: 1px solid rgba(255,255,255,.09) !important; }
+.tch-chips button:hover { background: rgba(255,255,255,.1) !important; }
+.tch-chips button[aria-pressed="true"] { background: rgba(124,100,240,.38) !important; color: #fff !important; border-color: rgba(195,179,255,.4) !important; }
+
+/* ---------- the boost card: brass on glass, no muddy glow ---------- */
+.boost-card { background: linear-gradient(165deg, rgba(60,44,120,.92), rgba(28,20,64,.92)) !important; border: 1px solid rgba(247,181,68,.28); box-shadow: 0 20px 40px -24px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.08) !important; }
+.boost-card .bc-top { background: radial-gradient(120% 120% at 100% 0%, rgba(247,181,68,.22), transparent 55%) !important; }
+.boost-card .bc-foot { background: rgba(0,0,0,.18); border-top-color: rgba(255,255,255,.07) !important; }
+.boost-card .bc-alt { background: rgba(255,255,255,.08) !important; color: var(--ink) !important; border: 1px solid rgba(255,255,255,.12) !important; }
+.boost-card .bc-go { background: linear-gradient(180deg, #FFCB66, #F2A92E) !important; color: #1A1238 !important; border-radius: 10px; }
+.boost-card .bc-go:hover { background: #FFD27A !important; }
+.boost-card .bc-alt { border-radius: 10px; }
+.tch-chips { gap: 5px !important; } .tch-chips button { padding: 0 10px !important; font-size: 12.5px !important; }
+@media (min-width: 901px) and (max-width: 1099px) { .rail #nav { -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent); } }
+
+/* ---------- second pass: readable banners, rows not slabs, no lonely tiles ---------- */
+.banner { color: var(--ink-2) !important; }
+.banner b, .banner strong { color: #fff !important; }
+.banner.info { background: linear-gradient(100deg, rgba(124,100,240,.22), rgba(124,100,240,.08)) !important; border-color: rgba(195,179,255,.22) !important; }
+.banner.bad { background: linear-gradient(100deg, rgba(224,70,50,.2), rgba(224,70,50,.07)) !important; border-color: rgba(255,140,110,.28) !important; }
+.banner:not(.info):not(.bad) { background: linear-gradient(100deg, rgba(247,170,60,.18), rgba(247,170,60,.06)) !important; border-color: rgba(247,181,68,.28) !important; }
+.banner .btn { flex: none; }
+/* People: one panel, rows divided by lines */
+.plist > li.prow { background: transparent !important; border: 0 !important; border-top: 1px solid var(--line) !important; border-radius: 0 !important; box-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+.plist > li.prow:first-child { border-top: 0 !important; }
+.plist > li.prow:hover { background: rgba(255,255,255,.03) !important; }
+/* the dashboard's status cards share the row evenly, the last ones stretch */
+.ht-groups { display: flex !important; flex-wrap: wrap; } .ht-groups > .ht-g { flex: 1 1 200px; min-width: 0; }
+/* payroll summary: heading on top, the bar and numbers at the foot */
+.pr-sum { justify-content: center !important; gap: 4px; }
+.pr-checks a, .pr-checks button { text-decoration: none !important; }
+.ibx-l .qr-m span, .wq-l .qr-m > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* settings strip on smaller screens scrolls sideways with a soft edge */
+@media (max-width: 1100px) { .set-nav { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 40px), transparent); } }
+/* attendance at medium widths: the ring tile beside two short ones, then the long ones */
+@media (max-width: 1100px) and (min-width: 641px) {
+  .kpis.bento.at-bento { grid-template-areas: "pr pr la ab" "pr pr of of" "ns ns ns ns"; }
+}
+.tch-chips { gap: 4px !important; padding: 10px 12px 2px !important; } .tch-chips button { padding: 0 9px !important; font-size: 12px !important; }
