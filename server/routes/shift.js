@@ -437,6 +437,10 @@ module.exports = (ctx) => {
       const a = activityLastHour(u.id);
       if (a.tracked < 50 * 60 || a.pct == null || a.pct >= r.low_pct) continue;
       const open = db.prepare("SELECT * FROM idle_flags WHERE user_id = ? AND kind = 'low' AND cleared_at IS NULL ORDER BY id DESC LIMIT 1").get(u.id);
+      // asked at most once an hour: the hour that was already asked about (and answered) still shows as quiet
+      // for a while after they answer, and must not ask again straight away
+      const lastAsk = db.prepare("SELECT asked_at FROM idle_flags WHERE user_id = ? AND kind = 'low' ORDER BY id DESC LIMIT 1").get(u.id);
+      if (!open && lastAsk && now - Date.parse(lastAsk.asked_at) < 3600000) continue;
       if (!open) {
         const id = Number(db.prepare("INSERT INTO idle_flags (user_id, kind, started_at, asked_at, detail) VALUES (?, 'low', ?, ?, ?)").run(u.id, T.iso(now - 3600000), nowIso(), JSON.stringify({ pct: a.pct })).lastInsertRowid);
         n += ctx.notify.notify(u.id, { kind: 'idle_nudge', title: 'Quiet hour on the keyboard', body: `${a.pct}% activity in the last hour. All good? Tap to say what you’re on.`, link: `#/?nudge=${id}`, dedupe: `low:${id}`, tag: 'nudge' });

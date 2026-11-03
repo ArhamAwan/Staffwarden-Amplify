@@ -177,3 +177,22 @@ test('a raise made this month is paid from next month', async () => {
     assert.equal(baseOf('2026-11'), 120000, 'November pays the new one');
   } finally { await e.close(); }
 });
+
+test('"All good" to a quiet hour isn’t asked again a minute later', async () => {
+  const e = await makeEnv();
+  try {
+    const p = await e.person('kai', 'Kai Lee');
+    await e.ok('POST', '/api/timer/start', { token: e.tokens.kai, body: {} });
+    const MIN = 60000;
+    for (let i = 0; i < 30; i++) await e.activity('kai', e.clock.t + i * 120000, 120, 10);   // an hour at ~8%
+    e.advance(61 * MIN);
+    e.app.sweepNotify();
+    const asks = () => e.app.db.prepare("SELECT COUNT(*) n FROM idle_flags WHERE user_id = ? AND kind = 'low'").get(p.id).n;
+    assert.equal(asks(), 1);
+    const f = await e.ok('GET', '/api/idle/mine', { token: e.tokens.kai });
+    await e.ok('POST', `/api/idle/flags/${f.id}/answer`, { token: e.tokens.kai, body: { answer: 'back' } });
+    for (let i = 0; i < 5; i++) { e.advance(MIN); e.app.sweepNotify(); }
+    assert.equal(asks(), 1, 'not asked again within the hour');
+    assert.equal(await e.ok('GET', '/api/idle/mine', { token: e.tokens.kai }), null);
+  } finally { await e.close(); }
+});
