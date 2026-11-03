@@ -1231,3 +1231,10 @@ img[data-shot]:not([src]) { color: transparent; font-size: 0; background: rgba(2
 .prole.manager { background: rgba(140,120,232,.18); color: #C3B3FF; }
 .prole.dev { background: rgba(110,130,255,.16); color: #A9B8FF; }
 .prole.hr { background: rgba(234,112,161,.16); color: #F29BBE; }
+/* "selected" painted with the text colour was dark on the old light theme; on night glass it is near-white */
+.nd-l button.on { background: linear-gradient(180deg, #8470EE, #5D47CC) !important; border-color: rgba(195,179,255,.5) !important; color: #fff !important; box-shadow: 0 10px 24px -12px rgba(107,85,214,.9); }
+.nd-l button.on span { color: #E4DCFF !important; }
+.nd-l button.on:hover { filter: brightness(1.06); }
+.pb.me > div { background: linear-gradient(180deg, #7A64E6, #5D47CC) !important; border-color: transparent !important; color: #fff !important; }
+.tch-g.co { background: #1A1238 !important; color: var(--brass-light) !important; box-shadow: inset 0 0 0 1px rgba(195,179,255,.18); }
+.bars .col.today { background: linear-gradient(180deg, #B9A8FF, #8470EE) !important; }
