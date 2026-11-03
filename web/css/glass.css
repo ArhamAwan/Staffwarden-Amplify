@@ -91,21 +91,8 @@ a { color: #C9BBFF; }
 .rail .nav-h { color: #A69ECB !important; }
 .rail .brand b.wordmark { font-family: var(--serif); font-style: italic; text-transform: none; }
 
-@media (min-width: 1100px) {
-  :root { --rail-w: 268px; }
-  .shell { grid-template-columns: calc(var(--rail-w) + 28px) minmax(0, 1fr) !important; }
-  .rail, .rail:hover, .rail:has(:focus-visible) { position: sticky !important; top: 14px !important; margin: 14px 0 14px 14px; width: var(--rail-w) !important; height: calc(100vh - 28px) !important; height: calc(100dvh - 28px) !important;
-    border-radius: 22px; padding: 14px 12px 12px !important; overflow: hidden; transition: none !important; }
-  .rail:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 30px 70px -28px rgba(0,0,0,.8) !important; }
-  .rail > .brand > div, .rail .nav > span:not(.badge), .rail .who .me-link .me-txt { opacity: 1 !important; visibility: visible !important; }
-  .rail .nav-h { color: #A69ECB !important; height: auto !important; padding: 11px 10px 5px !important; font-size: 11.5px !important; }
-  .rail .nav-h::before { display: none !important; }
-  .rail .nav { height: 36px !important; padding: 0 10px !important; gap: 11px !important; border-radius: 11px !important; }
-  .rail .nav .ic { width: 18px !important; height: 18px !important; }
-  .rail .nav .badge { position: static !important; margin-left: auto !important; }
-  .rail #nav { margin: 6px -12px 0 !important; padding: 0 12px 8px !important; }
-  .rail .who { flex-direction: row !important; align-items: center !important; padding: 12px 4px 2px !important; }
-  .rail .who .me-link .me-txt .me-cta { display: block; }
+@media (min-width: 1100px) { html:not(.rail-min) { --rail-w: 268px; } html:not(.rail-min) .shell { grid-template-columns: calc(var(--rail-w) + 28px) minmax(0, 1fr) !important; } html:not(.rail-min) .rail, html:not(.rail-min) .rail:hover, html:not(.rail-min) .rail:has(:focus-visible) { position: sticky !important; top: 14px !important; margin: 14px 0 14px 14px; width: var(--rail-w) !important; height: calc(100vh - 28px) !important; height: calc(100dvh - 28px) !important;
+    border-radius: 22px; padding: 14px 12px 12px !important; overflow: hidden; transition: none !important; } html:not(.rail-min) .rail:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 30px 70px -28px rgba(0,0,0,.8) !important; } html:not(.rail-min) .rail > .brand > div, html:not(.rail-min) .rail .nav > span:not(.badge), html:not(.rail-min) .rail .who .me-link .me-txt { opacity: 1 !important; visibility: visible !important; } html:not(.rail-min) .rail .nav-h { color: #A69ECB !important; height: auto !important; padding: 11px 10px 5px !important; font-size: 11.5px !important; } html:not(.rail-min) .rail .nav-h::before { display: none !important; } html:not(.rail-min) .rail .nav { height: 36px !important; padding: 0 10px !important; gap: 11px !important; border-radius: 11px !important; } html:not(.rail-min) .rail .nav .ic { width: 18px !important; height: 18px !important; } html:not(.rail-min) .rail .nav .badge { position: static !important; margin-left: auto !important; } html:not(.rail-min) .rail #nav { margin: 6px -12px 0 !important; padding: 0 12px 8px !important; } html:not(.rail-min) .rail .who { flex-direction: row !important; align-items: center !important; padding: 12px 4px 2px !important; } html:not(.rail-min) .rail .who .me-link .me-txt .me-cta { display: block; }
 }
 @media (min-width: 901px) and (max-width: 1099px) {
   .rail { margin: 14px 0 14px 14px; height: calc(100vh - 28px) !important; top: 14px !important; border-radius: 22px; }
@@ -784,3 +771,20 @@ a { color: #C9BBFF; }
   .kpis.bento.at-bento { grid-template-areas: "pr pr la ab" "pr pr of of" "ns ns ns ns"; }
 }
 .tch-chips { gap: 4px !important; padding: 10px 12px 2px !important; } .tch-chips button { padding: 0 9px !important; font-size: 12px !important; }
+
+/* ---------- the sidebar can be folded to an icon rail that opens over the page on hover ---------- */
+@media (min-width: 1100px) {
+ html.rail-min .rail { margin: 14px 0 14px 14px; height: calc(100vh - 28px) !important; top: 14px !important; border-radius: 22px; } html.rail-min .shell { grid-template-columns: calc(var(--rail-w) + 14px) minmax(0, 1fr); }
+
+ html.rail-min .rail .nav-ht { padding: 0 10px 0 18px !important; gap: 14px !important; height: 40px !important; position: relative; white-space: nowrap; } html.rail-min .rail .nav-ht .ic { width: 20px; height: 20px; } html.rail-min .rail .nav-ht .nav-ht-t, html.rail-min .rail .nav-ht .nav-ht-n, html.rail-min .rail .nav-ht .nav-chev { transition: opacity .15s; } html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .nav-ht .nav-ht-t, html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .nav-ht .nav-ht-n, html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .nav-ht .nav-chev { opacity: 0; } html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .nav-ht .badge { position: absolute; top: 2px; left: 32px; min-width: 18px; height: 18px; font-size: 10.5px; }
+
+ html.rail-min .rail #nav { -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent); } 
+ html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .rail-search span, html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .rail-search kbd, html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .rail-clock .rc-t { display: none; } html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .rail-search { justify-content: center; padding: 0; } html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .rail-clock { justify-content: center; padding: 9px 0; } html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .rail-clock .rc-v { display: none; } 
+}
+.rail-fold { margin-left: auto; width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 10px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); color: #CFC8EC; cursor: pointer; transition: background .15s, opacity .15s; }
+.rail-fold:hover { background: rgba(255,255,255,.12); color: #fff; }
+.rail-fold .ic { width: 16px; height: 16px; }
+@media (max-width: 1099px) { .rail-fold { display: none; } }
+html.rail-min .rail:not(:hover):not(:has(:focus-visible)) .rail-fold { opacity: 0; pointer-events: none; }
+html.rail-min .rail-fold .ic { transform: scaleX(-1); }
+.rail > .brand { display: flex; align-items: center; gap: 10px; }
