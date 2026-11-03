@@ -16,6 +16,7 @@ module.exports = (ctx) => {
 
   const teamName = (id) => (id ? (db.prepare('SELECT name FROM teams WHERE id = ?').get(id) || {}).name || null : null);
   const hm = (iso, tz) => { if (!iso) return null; const m = T.localMinOfDay(Date.parse(iso), tz); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
+  const dur = (s) => { const m = Math.round((s || 0) / 60); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`; };
   const isWorkDay = (u, day) => calc().workDaySet(u).has(T.dow(day));
   const companyDays = () => new Set(String(cfg.workDays).split(',').filter(Boolean).map(Number));
 
@@ -49,7 +50,7 @@ module.exports = (ctx) => {
     const ci = db.prepare('SELECT did, next, blockers, mood, created_at FROM checkins WHERE user_id = ? AND day = ?').get(u.id, day) || null;
     const reqs = db.prepare('SELECT start_at, end_at, reason, status FROM time_requests WHERE user_id = ? AND day = ? ORDER BY start_at').all(u.id, day)
       .map((r) => ({ from: hm(r.start_at, tz), to: hm(r.end_at, tz), secs: Math.round((Date.parse(r.end_at) - Date.parse(r.start_at)) / 1000), reason: r.reason, status: r.status }));
-    return {
+    const out = {
       id: u.id, name: u.name, title: u.title || null, team: teamName(u.team_id),
       status: att.status, late_by_min: att.late_by_min || 0, expected_secs: att.expected_secs || 0, expected_done_secs: att.expected_done_secs || 0,
       shift: `${h.shift_start}–${h.shift_end}`, tz_offset_min: tz,
@@ -68,6 +69,40 @@ module.exports = (ctx) => {
       checkin: ci ? { did: ci.did || '', next: ci.next || '', blockers: ci.blockers || '', mood: ci.mood || null } : null,
       time_requests: reqs,
     };
+    out.flags = flagsFor(u, day, m, att, out);
+    out.level = out.flags.some((f) => f.level === 'red') ? 'red' : out.flags.some((f) => f.level === 'amber') ? 'amber' : out.flags.length ? 'blue' : null;
+    return out;
+  }
+
+  // ---------- what's unusual ----------
+  // red: needs someone to act; amber: worth a look; blue: out of the ordinary but not a problem
+  const FLAG_ORDER = { red: 0, amber: 1, blue: 2 };
+  function flagsFor(u, day, m, att, p) {
+    const f = [];
+    const add = (level, key, label) => f.push({ level, key, label });
+    const now = clockNow(), endAt = shiftEndAt(u, day), over = now >= endAt;
+    const worked = p.worked_secs, planned = p.expected_secs;
+    const missing = ['absent', 'not_started'].includes(att.status);
+    if (missing) add('red', 'absent', att.status === 'absent' ? 'Absent: no work and no leave' : `Hasn’t started; the shift began at ${calc().hoursOn(u, day).shift_start}`);
+    if (att.status === 'late') add(att.late_by_min >= 30 ? 'red' : 'amber', 'late', `Late by ${dur(att.late_by_min * 60)}`);
+    if (worked > 0 && over && !m.running && m.last_end) {
+      const early = Math.round((endAt - Date.parse(m.last_end)) / 60000);
+      if (early >= 15) add(early >= 60 ? 'red' : 'amber', 'early', `Left ${dur(early * 60)} before the shift ended`);
+    }
+    if (planned && over && !missing && worked < planned * 0.9) add(worked < planned * 0.75 ? 'red' : 'amber', 'short', `Short by ${dur(planned - worked)}: worked ${dur(worked)} of ${dur(planned)}`);
+    if (planned && worked > planned + 3600) add('blue', 'overtime', `Overtime: ${dur(worked - planned)} more than planned`);
+    if (!planned && worked > 0) add('blue', 'dayoff', att.status === 'leave' ? `Worked ${dur(worked)} while on leave` : `Worked ${dur(worked)} on a day off`);
+    const b = calc().breakOf(u, day), allowed = b ? ((b[1] - b[0] + 1440) % 1440) * 60 : 3600;
+    if (p.break_secs > allowed + 15 * 60) add(p.break_secs > allowed * 1.5 ? 'red' : 'amber', 'breaks', `Breaks ${dur(p.break_secs)}, allowed ${dur(allowed)}`);
+    if (p.idle_secs >= 30 * 60) add(p.idle_secs >= 60 * 60 ? 'red' : 'amber', 'idle', `Idle ${dur(p.idle_secs)} with the timer on`);
+    if (p.activity_pct != null && worked >= 1800 && p.activity_pct < 40) add(p.activity_pct < 25 ? 'red' : 'amber', 'activity', `Low activity: ${p.activity_pct}%`);
+    if (p.away_secs >= 30 * 60) add(p.away_secs >= 60 * 60 ? 'red' : 'amber', 'away', `Computer away ${dur(p.away_secs)} while the timer was on`);
+    if (m.running && now - endAt > 30 * 60) add('amber', 'running', `Timer still on ${dur((now - endAt) / 1000)} after the shift ended`);
+    if (p.checkin && p.checkin.blockers.trim()) add('amber', 'blocked', `Blocked: ${p.checkin.blockers.trim()}`);
+    if (!p.checkin && worked >= 3600 && over) add('amber', 'checkin', 'No check-in written');
+    const pend = p.time_requests.filter((q) => q.status === 'pending');
+    if (pend.length) add('amber', 'request', `Asked for ${dur(pend.reduce((n, q) => n + q.secs, 0))} of missing time, waiting for a decision`);
+    return f.sort((a, c) => FLAG_ORDER[a.level] - FLAG_ORDER[c.level]);
   }
 
   const ORDER = { late: 0, present: 1, not_started: 2, absent: 2, leave: 3, holiday: 4, off: 5, upcoming: 6, before: 7 };
@@ -97,6 +132,9 @@ module.exports = (ctx) => {
       checked_in: people.filter((p) => p.checkin).length,
       blockers: people.filter((p) => p.checkin && p.checkin.blockers.trim()).length,
       still_running: people.filter((p) => p.running).length,
+      flags_red: people.reduce((n, p) => n + p.flags.filter((x) => x.level === 'red').length, 0),
+      flags_amber: people.reduce((n, p) => n + p.flags.filter((x) => x.level === 'amber').length, 0),
+      flagged_people: people.filter((p) => p.level === 'red' || p.level === 'amber').length,
     };
     return { day, org: cfg.orgName || 'Staffwarden', ready_at: ready ? T.iso(ready) : null, final: ready != null && clockNow() >= ready, generated_at: nowIso(), totals, people };
   }
@@ -127,82 +165,31 @@ module.exports = (ctx) => {
   });
 
   // ---------- the PDF ----------
-  const dur = (s) => { const m = Math.round((s || 0) / 60); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`; };
+  // Built to be read top down: what needs attention first, then everyone on one table with anything
+  // unusual coloured where it is, then the details person by person.
   const LABEL = { present: 'On time', late: 'Late', absent: 'Absent', leave: 'On leave', holiday: 'Holiday', off: 'Day off', upcoming: 'Not yet', not_started: 'Not started' };
-  const TONE = { present: '#1F8A5B', late: '#B7791F', absent: '#C0392B', not_started: '#C0392B', leave: '#5B6B78', holiday: '#5B6B78', off: '#5B6B78', upcoming: '#5B6B78' };
-  const INK = '#0B1D2A', SOFT = '#5B6B78', RULE = '#E2E7EC', BAND = '#F3F5F8', ACCENT = '#6A4BE0';
+  const INK = '#151A2D', SOFT = '#6B7280', FAINT = '#9CA3AF', RULE = '#E5E7EB', ZEBRA = '#F8F9FB', ACCENT = '#5B47D6';
+  const LV = { red: '#B91C1C', amber: '#B45309', blue: '#1D4ED8', green: '#15803D' };
+  const TINT = { red: '#FDECEC', amber: '#FEF4E6', blue: '#EBF2FE', green: '#E8F6EE' };
+  const STATUS_LV = { present: 'green', late: 'amber', absent: 'red', not_started: 'red' };
   const longDay = (day) => new Date(`${day}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  const lvOf = (p, ...keys) => { const f = p.flags.find((x) => keys.includes(x.key)); return f ? f.level : null; };
 
   function pdfOf(r) {
     const doc = new Pdf();
-    const L = 44, R = PAGE_W - 44, BOTTOM = PAGE_H - 56;
+    const L = 40, R = PAGE_W - 40, CW = R - L, BOTTOM = PAGE_H - 50;
     let y = 0, pageNo = 1;
-    const foot = () => {
-      doc.line(L, PAGE_H - 36, R, PAGE_H - 36, { color: RULE });
-      doc.text(L, PAGE_H - 22, `${r.org} · Shift report · ${longDay(r.day)}`, { size: 8, color: SOFT });
-      doc.text(R, PAGE_H - 22, `Page ${pageNo}`, { size: 8, color: SOFT, align: 'right' });
-    };
-    const newPage = () => { foot(); doc.page(); pageNo++; y = 52; };
-    const room = (h) => { if (y + h > BOTTOM) newPage(); };
-
-    // header band
-    doc.rect(0, 0, PAGE_W, 118, { fill: '#10162B' });
-    doc.rect(0, 118, PAGE_W, 3, { fill: ACCENT });
-    doc.text(L, 50, r.org, { size: 19, bold: true, color: '#FFFFFF' });
-    doc.text(L, 74, 'Shift report', { size: 11, color: '#B9C2E0' });
-    doc.text(R, 50, longDay(r.day), { size: 13, bold: true, color: '#E9C77B', align: 'right' });
-    const asOf = new Date(Date.parse(r.generated_at) + calc().companyTz() * 60000).toISOString().slice(11, 16);
-    doc.text(R, 74, r.final ? `Final · made ${asOf}` : `In progress · so far, as of ${asOf}`, { size: 10, color: '#B9C2E0', align: 'right' });
-    doc.text(L, 98, `${r.totals.people} ${r.totals.people === 1 ? 'person' : 'people'} · times are each person's local time`, { size: 9, color: '#8F9AC0' });
-    y = 150;
-
-    // summary tiles
     const t = r.totals;
-    const tiles = [
-      ['Hours worked', dur(t.worked_secs), t.expected_secs ? `of ${dur(t.expected_secs)} planned` : 'nothing planned'],
-      ['Attendance', `${t.present}/${t.people}`, [t.late ? `${t.late} late` : null, t.absent ? `${t.absent} absent` : null, t.on_leave ? `${t.on_leave} on leave` : null].filter(Boolean).join(', ') || 'everyone in on time'],
-      ['Breaks', dur(t.break_secs), `idle ${dur(t.idle_secs)}`],
-      ['Activity', t.activity_pct == null ? '-' : `${t.activity_pct}%`, 'average while working'],
-      ['Tasks', String(t.tasks_done), `done${t.tasks_review ? `, ${t.tasks_review} sent for review` : ''}`],
-      ['Check-ins', `${t.checked_in}/${t.present || t.people}`, t.blockers ? `${t.blockers} with blockers` : 'no blockers'],
-    ];
-    const gap = 10, tw = (R - L - gap * 2) / 3, th = 58;
-    tiles.forEach(([k, v, s], i) => {
-      const x = L + (i % 3) * (tw + gap), ty = y + Math.floor(i / 3) * (th + gap);
-      doc.rect(x, ty, tw, th, { fill: BAND });
-      doc.text(x + 12, ty + 17, k, { size: 8.5, color: SOFT });
-      doc.text(x + 12, ty + 38, v, { size: 17, bold: true, color: INK });
-      doc.text(x + 12, ty + 51, s, { size: 7.5, color: SOFT, maxW: tw - 24 });
-    });
-    y += th * 2 + gap + 30;
-
-    // the team at a glance
-    doc.text(L, y, 'The team at a glance', { size: 12, bold: true }); y += 16;
-    const cols = [
-      ['Name', L, 'left'], ['Status', L + 150, 'left'], ['In', L + 222, 'left'], ['Out', L + 262, 'left'],
-      ['Worked', L + 336, 'right'], ['Break', L + 384, 'right'], ['Idle', L + 426, 'right'], ['Active', L + 470, 'right'], ['Tasks', R, 'right'],
-    ];
-    const head = () => { doc.rect(L - 6, y - 2, R - L + 12, 18, { fill: '#E8EBF3' }); cols.forEach(([c, x, a]) => doc.text(x, y + 10, c, { size: 8, bold: true, color: SOFT, align: a })); y += 24; };
-    head();
-    r.people.forEach((p, i) => {
-      if (y + 18 > BOTTOM) { newPage(); head(); }
-      if (i % 2) doc.rect(L - 6, y - 11, R - L + 12, 18, { fill: '#FAFBFC' });
-      doc.text(L, y + 1, p.name, { size: 9, bold: true, maxW: 142 });
-      doc.text(L + 150, y + 1, p.status === 'late' ? `Late ${p.late_by_min}m` : LABEL[p.status] || p.status, { size: 8.5, bold: true, color: TONE[p.status] || SOFT, maxW: 68 });
-      doc.text(L + 222, y + 1, p.first_start || '-', { size: 9, color: INK });
-      doc.text(L + 262, y + 1, p.running ? 'working' : p.last_end || '-', { size: 9, color: p.running ? ACCENT : INK });
-      doc.text(L + 336, y + 1, p.worked_secs ? dur(p.worked_secs) : '-', { size: 9, bold: true, align: 'right' });
-      doc.text(L + 384, y + 1, p.break_secs ? dur(p.break_secs) : '-', { size: 9, align: 'right' });
-      doc.text(L + 426, y + 1, p.idle_secs ? dur(p.idle_secs) : '-', { size: 9, align: 'right' });
-      doc.text(L + 470, y + 1, p.activity_pct == null ? '-' : `${p.activity_pct}%`, { size: 9, align: 'right' });
-      doc.text(R, y + 1, String(p.tasks.filter((x) => x.done).length || '-'), { size: 9, align: 'right' });
-      y += 18;
-    });
-    if (!r.people.length) { doc.text(L, y, 'Nobody was scheduled or worked on this day.', { size: 10, color: SOFT }); y += 18; }
-    y += 22;
-
-    // one section per person who was meant to work or did
-    const wrapLines = (s, size, maxW, bold = false) => {
+    const made = new Date(Date.parse(r.generated_at) + calc().companyTz() * 60000).toISOString().slice(11, 16);
+    const foot = () => {
+      doc.line(L, PAGE_H - 34, R, PAGE_H - 34, { color: RULE });
+      doc.text(L, PAGE_H - 22, `${r.org}  ·  Shift report  ·  ${longDay(r.day)}`, { size: 7.5, color: FAINT });
+      doc.text(R, PAGE_H - 22, `Page ${pageNo}`, { size: 7.5, color: FAINT, align: 'right' });
+    };
+    const newPage = () => { foot(); doc.page(); pageNo++; y = 48; };
+    const room = (h) => { if (y + h > BOTTOM) { newPage(); return true; } return false; };
+    const dot = (x, yy, lv) => doc.rect(x, yy - 5.5, 5, 5, { fill: LV[lv] || FAINT });
+    const wrap = (s, size, maxW, bold = false) => {
       const out = [];
       for (const para of String(s || '').split(/\n+/)) {
         let line = '';
@@ -211,52 +198,177 @@ module.exports = (ctx) => {
       }
       return out;
     };
-    const block = (label, text, color = INK) => {
-      const lines = wrapLines(text, 9, R - L - 96);
-      if (!lines.length) return;
-      room(14 * Math.min(lines.length, 3) + 6);
-      doc.text(L + 8, y, label, { size: 8.5, bold: true, color: SOFT });
-      for (const ln of lines) { if (y + 12 > BOTTOM) { newPage(); } doc.text(L + 96, y, ln, { size: 9, color }); y += 12.5; }
-      y += 5;
-    };
-    for (const p of r.people) {
-      if (!p.worked_secs && !p.running && !p.checkin) continue;     // in the table above; nothing more to say
-      room(96);
-      doc.rect(L - 6, y - 4, 3, 30, { fill: TONE[p.status] || ACCENT });
-      doc.text(L + 4, y + 8, p.name, { size: 12.5, bold: true });
-      doc.text(L + 4, y + 22, [p.title, p.team, `shift ${p.shift}`].filter(Boolean).join(' · '), { size: 8.5, color: SOFT, maxW: 300 });
-      doc.text(R, y + 8, p.status === 'late' ? `Late by ${p.late_by_min} min` : LABEL[p.status] || p.status, { size: 9.5, bold: true, color: TONE[p.status] || SOFT, align: 'right' });
-      doc.text(R, y + 22, p.first_start ? `${p.first_start} – ${p.running ? 'still working' : p.last_end}` : 'Did not start', { size: 8.5, color: SOFT, align: 'right' });
-      y += 40;
-      // numbers row
-      const nums = [['Worked', dur(p.worked_secs)], ['Planned', p.expected_secs ? dur(p.expected_secs) : '-'], ['Breaks', p.break_secs >= 60 ? `${dur(p.break_secs)} (${p.break_count})` : '-'], ['Idle', p.idle_secs ? dur(p.idle_secs) : '-'], ['Away', p.away_secs ? dur(p.away_secs) : '-'], ['Activity', p.activity_pct == null ? '-' : `${p.activity_pct}%`], ['Screenshots', String(p.shots || 0)]];
-      const nw = (R - L) / nums.length;
-      doc.rect(L - 6, y - 4, R - L + 12, 34, { fill: BAND });
-      nums.forEach(([k, v], i) => { doc.text(L + 4 + i * nw, y + 8, k, { size: 7.5, color: SOFT }); doc.text(L + 4 + i * nw, y + 22, v, { size: 10, bold: true }); });
+
+    // ---- header ----
+    doc.rect(0, 0, PAGE_W, 4, { fill: ACCENT });
+    doc.text(L, 38, r.org, { size: 9, bold: true, color: SOFT });
+    doc.text(L, 64, 'Shift report', { size: 22, bold: true, color: INK });
+    doc.text(L, 84, longDay(r.day), { size: 11, color: SOFT });
+    const st = r.final ? ['Final', 'green'] : ['In progress', 'amber'];
+    const pw = width(st[0], 9, true) + 26;
+    doc.rect(R - pw, 46, pw, 20, { fill: TINT[st[1]] });
+    dot(R - pw + 10, 59, st[1]);
+    doc.text(R - pw + 19, 59.5, st[0], { size: 9, bold: true, color: LV[st[1]] });
+    doc.text(R, 84, r.final ? `Made at ${made}, after the last shift` : `Numbers so far, as of ${made}`, { size: 8.5, color: SOFT, align: 'right' });
+    doc.line(L, 100, R, 100, { color: INK, w: 1.2 });
+
+    // ---- the day in six numbers ----
+    y = 112;
+    const cells = [
+      ['Worked', dur(t.worked_secs), t.expected_secs ? `of ${dur(t.expected_secs)} planned` : 'nothing planned', t.expected_secs && r.final && t.worked_secs < t.expected_secs * 0.9 ? 'amber' : null],
+      ['In today', `${t.present} of ${t.people}`, t.on_leave ? `${t.on_leave} on leave` : 'scheduled', null],
+      ['Late', String(t.late), t.late ? 'after the grace period' : 'nobody', t.late ? 'amber' : null],
+      ['Absent', String(t.absent), t.absent ? 'no work, no leave' : 'nobody', t.absent ? 'red' : null],
+      ['Activity', t.activity_pct == null ? '-' : `${t.activity_pct}%`, 'average while working', t.activity_pct != null && t.activity_pct < 40 ? 'amber' : null],
+      ['Needs attention', String(t.flagged_people), t.flagged_people ? `${t.flagged_people === 1 ? 'person' : 'people'}, ${t.flags_red} serious` : 'nothing unusual', t.flags_red ? 'red' : t.flags_amber ? 'amber' : 'green'],
+    ];
+    const cw = CW / cells.length;
+    cells.forEach(([k, v, sub, lv], i) => {
+      const x = L + i * cw;
+      if (i) doc.line(x, y + 2, x, y + 46, { color: RULE });
+      const px = x + (i ? 10 : 0);
+      doc.text(px, y + 12, k, { size: 7.5, color: SOFT });
+      doc.text(px, y + 32, v, { size: 16, bold: true, color: lv ? LV[lv] : INK });
+      doc.text(px, y + 44, sub, { size: 7, color: FAINT, maxW: cw - 14 });
+    });
+    y += 58;
+    doc.line(L, y, R, y, { color: RULE });
+    y += 26;
+
+    // ---- needs attention ----
+    const flagged = r.people.filter((p) => p.flags.length).sort((a, b) => FLAG_ORDER[a.level] - FLAG_ORDER[b.level]);
+    doc.text(L, y, 'Needs attention', { size: 13, bold: true, color: INK });
+    const issues = flagged.reduce((n, p) => n + p.flags.filter((f) => f.level !== 'blue').length, 0);
+    doc.text(R, y, issues ? `${issues} ${issues === 1 ? 'thing' : 'things'} to look at` : '', { size: 8.5, color: SOFT, align: 'right' });
+    y += 14;
+    if (!flagged.length) {
+      doc.rect(L, y, CW, 30, { fill: TINT.green });
+      dot(L + 12, y + 19, 'green');
+      doc.text(L + 24, y + 19, 'Nothing unusual. Everyone kept to their hours.', { size: 10, bold: true, color: LV.green });
       y += 44;
-      if (p.projects.length) block('Time on', p.projects.map((x) => `${x.name} ${dur(x.secs)}`).join('   ·   '));
-      if (p.breaks.length) block('Breaks', p.breaks.map((b) => `${b.from}–${b.to || 'now'} ${dur(b.secs)}${b.reason ? ` (${b.reason})` : ''}`).join('   ·   '));
-      if (p.away_secs >= 60) block('Computer away', `${dur(p.away_secs)} in ${p.away_count || 1} ${p.away_count === 1 ? 'stretch' : 'stretches'}: asleep, restarting or off while the timer was on`, SOFT);
-      if (p.tasks.length) {
-        room(18);
-        doc.text(L + 8, y, 'Tasks', { size: 8.5, bold: true, color: SOFT });
-        for (const tk of p.tasks) {
-          if (y + 12 > BOTTOM) newPage();
-          doc.text(L + 96, y, `${tk.done ? 'Done' : 'For review'}`, { size: 8.5, bold: true, color: tk.done ? '#1F8A5B' : '#B7791F' });
-          doc.text(L + 152, y, `${tk.title}${tk.project ? ` (${tk.project})` : ''}`, { size: 9, maxW: R - L - 200 });
-          doc.text(R, y, tk.at || '', { size: 8.5, color: SOFT, align: 'right' });
-          y += 12.5;
+    } else {
+      for (const p of flagged) {
+        const lines = p.flags.map((f) => ({ f, ls: wrap(f.label, 9, CW - 170) }));
+        const h = lines.reduce((n, x) => n + x.ls.length * 12, 0) + 12;
+        room(h + 4);
+        doc.rect(L, y, CW, h, { fill: TINT[p.level] || ZEBRA });
+        doc.rect(L, y, 3, h, { fill: LV[p.level] || FAINT });
+        doc.text(L + 12, y + 15, p.name, { size: 9.5, bold: true, color: INK, maxW: 140 });
+        let yy = y + 15;
+        for (const { f, ls } of lines) {
+          dot(L + 160, yy, f.level);
+          ls.forEach((ln, i) => { doc.text(L + 170, yy, ln, { size: 9, bold: i === 0 && f.level === 'red', color: f.level === 'blue' ? LV.blue : f.level === 'red' ? LV.red : '#7C3E06' }); yy += 12; });
         }
-        y += 5;
+        y += h + 4;
       }
+      y += 8;
+      dot(L, y + 6, 'red'); doc.text(L + 8, y + 6, 'Act on it', { size: 7.5, color: SOFT });
+      dot(L + 62, y + 6, 'amber'); doc.text(L + 70, y + 6, 'Worth a look', { size: 7.5, color: SOFT });
+      dot(L + 136, y + 6, 'blue'); doc.text(L + 144, y + 6, 'Unusual but fine', { size: 7.5, color: SOFT });
+      y += 26;
+    }
+
+    // ---- everyone ----
+    room(80);
+    doc.text(L, y, 'Everyone', { size: 13, bold: true, color: INK });
+    doc.text(R, y, "Times are each person's local time", { size: 8.5, color: SOFT, align: 'right' });
+    y += 12;
+    const C = { name: L + 8, status: L + 136, in: L + 204, out: L + 240, worked: L + 316, planned: L + 360, breaks: L + 402, idle: L + 438, act: L + 474, flags: R - 6 };
+    const head = () => {
+      doc.rect(L, y, CW, 18, { fill: '#EEF0F4' });
+      [['Name', C.name, 'left'], ['Status', C.status, 'left'], ['In', C.in, 'left'], ['Out', C.out, 'left'], ['Worked', C.worked, 'right'], ['Planned', C.planned, 'right'], ['Breaks', C.breaks, 'right'], ['Idle', C.idle, 'right'], ['Active', C.act, 'right'], ['Flags', C.flags, 'right']]
+        .forEach(([c, x, a]) => doc.text(x, y + 12, c, { size: 7.5, bold: true, color: SOFT, align: a }));
+      y += 18;
+    };
+    head();
+    r.people.forEach((p, i) => {
+      if (y + 18 > BOTTOM) { newPage(); head(); }
+      const rowLv = p.level === 'red' || p.level === 'amber' ? p.level : null;
+      if (rowLv) doc.rect(L, y, CW, 18, { fill: TINT[rowLv] }); else if (i % 2) doc.rect(L, y, CW, 18, { fill: ZEBRA });
+      if (rowLv) doc.rect(L, y, 2.5, 18, { fill: LV[rowLv] });
+      const by = y + 12;
+      const c = (lv) => (lv ? LV[lv] : INK);
+      doc.text(C.name, by, p.name, { size: 8.5, bold: true, color: INK, maxW: 124 });
+      const sl = STATUS_LV[p.status];
+      doc.text(C.status, by, p.status === 'late' ? `Late ${p.late_by_min}m` : LABEL[p.status] || p.status, { size: 8, bold: true, color: sl ? LV[sl] : SOFT });
+      doc.text(C.in, by, p.first_start || '-', { size: 8.5, color: c(lvOf(p, 'late')) });
+      doc.text(C.out, by, p.running ? 'on' : p.last_end || '-', { size: 8.5, color: c(lvOf(p, 'early', 'running')) });
+      doc.text(C.worked, by, p.worked_secs ? dur(p.worked_secs) : '-', { size: 8.5, bold: true, align: 'right', color: c(lvOf(p, 'short', 'overtime', 'dayoff')) });
+      doc.text(C.planned, by, p.expected_secs ? dur(p.expected_secs) : '-', { size: 8.5, align: 'right', color: SOFT });
+      doc.text(C.breaks, by, p.break_secs >= 60 ? dur(p.break_secs) : '-', { size: 8.5, align: 'right', color: c(lvOf(p, 'breaks')) });
+      doc.text(C.idle, by, p.idle_secs >= 60 ? dur(p.idle_secs) : '-', { size: 8.5, align: 'right', color: c(lvOf(p, 'idle')) });
+      doc.text(C.act, by, p.activity_pct == null ? '-' : `${p.activity_pct}%`, { size: 8.5, align: 'right', color: c(lvOf(p, 'activity')) });
+      const nf = p.flags.length;
+      if (nf) { doc.text(C.flags, by, String(nf), { size: 8.5, bold: true, align: 'right', color: LV[p.level] }); dot(C.flags - width(String(nf), 8.5, true) - 9, by, p.level); }
+      else doc.text(C.flags, by, '-', { size: 8.5, align: 'right', color: FAINT });
+      y += 18;
+    });
+    if (!r.people.length) { doc.text(L + 8, y + 14, 'Nobody was scheduled or worked on this day.', { size: 9.5, color: SOFT }); y += 24; }
+    doc.line(L, y, R, y, { color: RULE });
+
+    // ---- each person ----
+    const detail = r.people.filter((p) => p.worked_secs || p.running || p.checkin || p.flags.some((f) => f.level !== 'blue'));
+    if (detail.length) {
+      y += 34;
+      if (y > PAGE_H * 0.62) newPage();
+      doc.text(L, y, 'Each person', { size: 13, bold: true, color: INK });
+      y += 18;
+    }
+    const kv = (label, text, color = INK) => {
+      const ls = wrap(text, 9, CW - 96);
+      if (!ls.length) return;
+      room(Math.min(ls.length, 3) * 12 + 4);
+      doc.text(L + 10, y, label, { size: 8, bold: true, color: SOFT });
+      for (const ln of ls) { if (y + 12 > BOTTOM) newPage(); doc.text(L + 96, y, ln, { size: 9, color }); y += 12; }
+      y += 4;
+    };
+    for (const p of detail) {
+      room(120);
+      doc.line(L, y, R, y, { color: INK, w: 0.8 });
+      y += 18;
+      doc.text(L, y, p.name, { size: 12, bold: true, color: INK, maxW: 330 });
+      const sl = STATUS_LV[p.status];
+      doc.text(R, y, p.status === 'late' ? `Late by ${p.late_by_min} min` : LABEL[p.status] || p.status, { size: 9, bold: true, color: sl ? LV[sl] : SOFT, align: 'right' });
+      y += 13;
+      doc.text(L, y, [p.title, p.team, `Shift ${p.shift}`].filter(Boolean).join('  ·  '), { size: 8.5, color: SOFT, maxW: 360 });
+      doc.text(R, y, p.first_start ? `${p.first_start} to ${p.running ? 'still working' : p.last_end}` : 'Did not start', { size: 8.5, color: SOFT, align: 'right' });
+      y += 14;
+      // the flags, in their colours
+      for (const f of p.flags) {
+        for (const [i, ln] of wrap(f.label, 9, CW - 30).entries()) {
+          room(14);
+          if (!i) { doc.rect(L, y - 1, CW, 14, { fill: TINT[f.level] }); dot(L + 8, y + 9.5, f.level); }
+          else doc.rect(L, y - 1, CW, 14, { fill: TINT[f.level] });
+          doc.text(L + 19, y + 9.5, ln, { size: 9, bold: f.level === 'red' && !i, color: f.level === 'blue' ? LV.blue : f.level === 'red' ? LV.red : '#7C3E06' });
+          y += 14;
+        }
+        y += 2;
+      }
+      y += 6;
+      // the numbers
+      const nums = [
+        ['Worked', p.worked_secs ? dur(p.worked_secs) : '-', lvOf(p, 'short', 'overtime', 'dayoff')], ['Planned', p.expected_secs ? dur(p.expected_secs) : '-', null],
+        ['Breaks', p.break_secs >= 60 ? `${dur(p.break_secs)} (${p.break_count})` : '-', lvOf(p, 'breaks')], ['Idle', p.idle_secs >= 60 ? dur(p.idle_secs) : '-', lvOf(p, 'idle')],
+        ['Activity', p.activity_pct == null ? '-' : `${p.activity_pct}%`, lvOf(p, 'activity')], ['Computer away', p.away_secs >= 60 ? dur(p.away_secs) : '-', lvOf(p, 'away')],
+        ['Screenshots', String(p.shots || 0), null], ['Tasks done', String(p.tasks.filter((x) => x.done).length || '-'), null],
+      ];
+      room(30);
+      const nw = CW / nums.length;
+      nums.forEach(([k, v, lv], i) => {
+        doc.text(L + i * nw, y + 8, k, { size: 7.5, color: SOFT });
+        doc.text(L + i * nw, y + 22, v, { size: 10, bold: true, color: lv ? LV[lv] : INK, maxW: nw - 6 });
+      });
+      y += 36;
+      if (p.projects.length) kv('Time on', p.projects.map((x) => `${x.name} ${dur(x.secs)}`).join('   ·   '));
+      if (p.breaks.length) kv('Breaks', p.breaks.map((b) => `${b.from}–${b.to || 'now'} ${dur(b.secs)}${b.reason ? ` ${b.reason}` : ''}`).join('   ·   '), lvOf(p, 'breaks') ? LV[lvOf(p, 'breaks')] : INK);
+      if (p.tasks.length) kv('Tasks', p.tasks.map((x) => `${x.done ? 'Done' : 'For review'}: ${x.title}${x.project ? ` (${x.project})` : ''}`).join('\n'));
       if (p.checkin) {
-        block('Did', p.checkin.did);
-        block('Next', p.checkin.next);
-        if (p.checkin.blockers.trim()) block('Blockers', p.checkin.blockers, '#C0392B');
-        if (p.checkin.mood) block('Felt', { smooth: 'Smooth', busy: 'Busy', rough: 'Rough' }[p.checkin.mood] || p.checkin.mood);
-      } else if (p.worked_secs) block('Check-in', 'No check-in written.', SOFT);
-      if (p.time_requests.length) block('Missing time', p.time_requests.map((q) => `${q.from}–${q.to} ${dur(q.secs)}: ${q.reason} (${q.status})`).join('   ·   '));
-      y += 4; room(10); doc.line(L, y, R, y, { color: RULE }); y += 20;
+        kv('Did', p.checkin.did); kv('Next', p.checkin.next);
+        if (p.checkin.blockers.trim()) kv('Blocked by', p.checkin.blockers, LV.amber);
+        if (p.checkin.mood) kv('Felt', { smooth: 'Smooth', busy: 'Busy', rough: 'Rough' }[p.checkin.mood] || p.checkin.mood, p.checkin.mood === 'rough' ? LV.amber : INK);
+      }
+      if (p.time_requests.length) kv('Missing time', p.time_requests.map((q) => `${q.from}–${q.to} ${dur(q.secs)}: ${q.reason} (${q.status})`).join('\n'));
+      y += 10;
     }
     foot();
     return doc.toBuffer({ title: `Shift report ${r.day}`, author: r.org });

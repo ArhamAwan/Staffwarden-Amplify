@@ -45,6 +45,10 @@ test('a day of work becomes a report, announced after the shift, with a PDF', as
   assert.equal(h.checkin.blockers, 'Waiting on the API keys');
   const s = r.people.find((p) => p.id === sara.id);
   assert.equal(s.worked_secs, 0);
+  assert.ok(h.flags.some((f) => f.key === 'late' && f.level === 'amber'));
+  assert.ok(h.flags.some((f) => f.key === 'blocked'));
+  assert.equal(h.level, 'amber');
+  assert.ok(s.flags.some((f) => f.key === 'absent' && f.level === 'red'));
   assert.equal(r.totals.tasks_done, 1); assert.equal(r.totals.blockers, 1);
 
   // nothing yet; then once the shift (18:00) is over by 15 minutes, the owner hears once

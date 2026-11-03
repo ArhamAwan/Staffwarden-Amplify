@@ -1106,3 +1106,28 @@ html.ng-on body { overflow: hidden; }
 .sr-chip em { font-style: normal; font-size: 12px; color: var(--muted); }
 .sr-chip em.bad { color: #FF9C88; }
 @media (max-width: 520px) { .sr-proj li { grid-template-columns: minmax(0, 1fr) 48px 60px; gap: 10px; } }
+/* the shift report: what's unusual */
+.sr-att { margin-bottom: 16px; }
+.sr-att.ok .body { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #6FD8A8; }
+.sr-att.ok .body span { color: var(--muted); }
+.sr-att.ok .ic { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2.4; }
+.sr-key { display: inline-flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.sr-key span { display: inline-flex; align-items: center; gap: 6px; }
+.sr-key i, .sr-flags i { width: 7px; height: 7px; border-radius: 2px; flex: none; background: currentColor; }
+.sr-key .lv-red i { background: #FF7A66; } .sr-key .lv-amber i { background: #F7B544; } .sr-key .lv-blue i { background: #7DA7FF; }
+.sr-att-l { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.sr-att-l > li { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 14px; align-items: start; padding: 11px 14px; border-radius: 12px; border-left: 3px solid #7DA7FF; background: rgba(125,167,255,.07); }
+.sr-att-l > li.lv-red { border-left-color: #FF7A66; background: rgba(255,122,102,.09); }
+.sr-att-l > li.lv-amber { border-left-color: #F7B544; background: rgba(247,181,68,.08); }
+.sr-att-l .sr-who { padding-top: 1px; }
+@media (max-width: 700px) { .sr-att-l > li { grid-template-columns: minmax(0, 1fr); gap: 8px; } }
+.sr-flags { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.sr-flags li { display: flex; align-items: baseline; gap: 8px; font-size: 13.5px; line-height: 1.4; overflow-wrap: anywhere; }
+.sr-flags li i { transform: translateY(-1px); }
+.sr-flags .lv-red { color: #FF9C88; font-weight: 600; } .sr-flags .lv-amber { color: #F7C46A; } .sr-flags .lv-blue { color: #9DBBFF; }
+.sr-card > .sr-flags { padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); }
+.sr-t td.lv-red, .sr-t td.lv-red b { color: #FF9C88; } .sr-t td.lv-amber, .sr-t td.lv-amber b { color: #F7C46A; } .sr-t td.lv-blue, .sr-t td.lv-blue b { color: #9DBBFF; }
+.sr-t tr.sr-f-red > td { background: rgba(255,122,102,.07); } .sr-t tr.sr-f-amber > td { background: rgba(247,181,68,.06); }
+.sr-t tr.sr-f-red > td:first-child { box-shadow: inset 3px 0 0 #FF7A66; } .sr-t tr.sr-f-amber > td:first-child { box-shadow: inset 3px 0 0 #F7B544; }
+.sr-fn { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 99px; font-size: 12px; font-weight: 700; }
+.sr-fn.lv-red { background: rgba(255,122,102,.18); color: #FF9C88; } .sr-fn.lv-amber { background: rgba(247,181,68,.16); color: #F7C46A; } .sr-fn.lv-blue { background: rgba(125,167,255,.16); color: #9DBBFF; }

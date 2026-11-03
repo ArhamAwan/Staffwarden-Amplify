@@ -33,20 +33,33 @@ export default {
         ? html`<b>Final.</b> Ready since ${readyAt}, after the last shift ended. A time request approved later still changes it.`
         : html`<b>In progress.</b> These are the numbers so far.${readyAt ? html` The report is final at ${readyAt}, and the owner and managers get a notification then.` : ''}`}</span></div>
       ${bento(r)}
+      ${attention(r)}
       <section class="panel flush"><header><h2>The team at a glance</h2><span class="muted small">${plural(t.people, 'person', 'people')}, times in each person’s own time zone</span></header><div class="body">
-        ${r.people.length ? html`<div class="tbl-wrap"><table class="t sr-t"><thead><tr><th>Name</th><th>Status</th><th>In</th><th>Out</th><th class="r">Worked</th><th class="r">Breaks</th><th class="r">Idle</th><th class="r">Activity</th><th class="r">Tasks done</th><th>Check-in</th></tr></thead><tbody>
-          ${r.people.map((p) => html`<tr><td><span class="sr-who">${avatar(p, true)}<b>${p.name}</b></span></td>
+        ${r.people.length ? html`<div class="tbl-wrap"><table class="t sr-t"><thead><tr><th>Name</th><th>Status</th><th>In</th><th>Out</th><th class="r">Worked</th><th class="r">Breaks</th><th class="r">Idle</th><th class="r">Activity</th><th class="r">Tasks done</th><th>Check-in</th><th class="r">Flags</th></tr></thead><tbody>
+          ${r.people.map((p) => html`<tr class="${p.level === 'red' || p.level === 'amber' ? `sr-f-${p.level}` : ''}"><td><span class="sr-who">${avatar(p, true)}<b>${p.name}</b></span></td>
             <td><span class="tag ${p.status}"><i></i>${p.status === 'late' ? `Late ${p.late_by_min}m` : LABEL[p.status] || p.status}</span></td>
-            <td class="num">${p.first_start || '–'}</td><td class="num">${p.running ? html`<span class="sr-on">working</span>` : p.last_end || '–'}</td>
-            <td class="r num"><b>${p.worked_secs ? dur(p.worked_secs) : '–'}</b></td><td class="r num">${p.break_secs >= 60 ? dur(p.break_secs) : '–'}</td>
-            <td class="r num">${p.idle_secs >= 60 ? dur(p.idle_secs) : '–'}</td><td class="r num">${pctText(p.activity_pct)}</td>
+            <td class="num ${lv(p, 'late')}">${p.first_start || '–'}</td><td class="num ${lv(p, 'early', 'running')}">${p.running ? html`<span class="sr-on">working</span>` : p.last_end || '–'}</td>
+            <td class="r num ${lv(p, 'short', 'overtime', 'dayoff')}"><b>${p.worked_secs ? dur(p.worked_secs) : '–'}</b></td><td class="r num ${lv(p, 'breaks')}">${p.break_secs >= 60 ? dur(p.break_secs) : '–'}</td>
+            <td class="r num ${lv(p, 'idle')}">${p.idle_secs >= 60 ? dur(p.idle_secs) : '–'}</td><td class="r num ${lv(p, 'activity')}">${pctText(p.activity_pct)}</td>
             <td class="r num">${p.tasks.filter((x) => x.done).length || '–'}</td>
-            <td>${p.checkin ? html`<span class="sr-ci${p.checkin.blockers.trim() ? ' bad' : ''}">${icon(p.checkin.blockers.trim() ? 'alert' : 'check')}${p.checkin.blockers.trim() ? 'Blocked' : 'Written'}</span>` : html`<span class="muted">–</span>`}</td></tr>`)}
+            <td>${p.checkin ? html`<span class="sr-ci${p.checkin.blockers.trim() ? ' bad' : ''}">${icon(p.checkin.blockers.trim() ? 'alert' : 'check')}${p.checkin.blockers.trim() ? 'Blocked' : 'Written'}</span>` : html`<span class="muted">–</span>`}</td>
+            <td class="r">${p.flags.length ? html`<span class="sr-fn lv-${p.level}">${p.flags.length}</span>` : html`<span class="muted">–</span>`}</td></tr>`)}
         </tbody></table></div>` : empty('Nobody was scheduled on this day', 'Pick another day above.')}</div></section>
       ${worked.length ? html`<h2 class="sr-h2">Each person</h2><div class="sr-grid">${worked.map(card)}</div>` : ''}
       ${missing.length ? html`<section class="panel sr-miss"><div class="body"><b>Didn’t work this day</b><div class="sr-chips">${missing.map((p) => html`<span class="sr-chip">${avatar(p, true)}${p.name}<em class="${TONE[p.status] || ''}">${LABEL[p.status] || p.status}</em></span>`)}</div></div></section>` : ''}`;
   },
 };
+
+const lv = (p, ...keys) => { const f = p.flags.find((x) => keys.includes(x.key)); return f ? `lv-${f.level}` : ''; };
+const LVN = { red: 0, amber: 1, blue: 2 };
+
+// what's out of the ordinary, person by person: red to act on, amber worth a look, blue unusual but fine
+function attention(r) {
+  const list = r.people.filter((p) => p.flags.length).sort((a, b) => LVN[a.level] - LVN[b.level]);
+  if (!list.length) return html`<section class="panel sr-att ok"><div class="body">${icon('check')}<b>Nothing unusual.</b><span>Everyone kept to their hours.</span></div></section>`;
+  return html`<section class="panel sr-att"><header><h2>Needs attention</h2><span class="sr-key"><span class="lv-red"><i></i>Act on it</span><span class="lv-amber"><i></i>Worth a look</span><span class="lv-blue"><i></i>Unusual but fine</span></span></header>
+    <div class="body"><ul class="sr-att-l">${list.map((p) => html`<li class="lv-${p.level}"><span class="sr-who">${avatar(p, true)}<b>${p.name}</b></span><ul class="sr-flags">${p.flags.map((f) => html`<li class="lv-${f.level}"><i></i>${f.label}</li>`)}</ul></li>`)}</ul></div></section>`;
+}
 
 function bento(r) {
   // a day still going is measured against the part of the shift that's gone by, and isn't coloured
@@ -86,6 +99,7 @@ function card(p) {
   return html`<article class="panel sr-card">
     <header class="sr-ch">${avatar(p)}<div class="sr-cn"><b>${p.name}</b><span>${[p.title, p.team, `shift ${p.shift}`].filter(Boolean).join(' · ')}</span></div>
       <div class="sr-cs"><span class="tag ${p.status}"><i></i>${p.status === 'late' ? `Late ${p.late_by_min} min` : LABEL[p.status] || p.status}</span><span class="num">${p.first_start ? `${p.first_start} – ${p.running ? 'now' : p.last_end}` : 'Didn’t start'}</span></div></header>
+    ${p.flags.length ? html`<ul class="sr-flags">${p.flags.map((f) => html`<li class="lv-${f.level}"><i></i>${f.label}</li>`)}</ul>` : ''}
     ${ribbon(p)}
     <dl class="sr-nums">
       <div><dt>Worked</dt><dd class="num">${dur(p.worked_secs)}</dd></div>
