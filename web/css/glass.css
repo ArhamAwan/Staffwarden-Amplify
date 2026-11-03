@@ -1272,3 +1272,7 @@ table.t.grid tr:hover td.nm { background: #221A4E !important; }
 .upd-c { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.04); cursor: pointer; font-size: 14px; }
 .upd-c:has(input:checked) { border-color: rgba(195,179,255,.5); background: rgba(132,112,238,.18); }
 .upd-ban { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+/* a confirmation ("Delete this screenshot?") opens on top of whatever asked for it, the viewer included */
+.scrim.top { z-index: 76 !important; }
+#toasts { z-index: 90 !important; }
+.scrim { z-index: 74 !important; } .scrim.top { z-index: 76 !important; }
