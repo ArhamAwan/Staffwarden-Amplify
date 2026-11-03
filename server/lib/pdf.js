@@ -12,13 +12,21 @@ const BOLD = [278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 3
 const WIN = { '‘': '\x91', '’': '\x92', '“': '\x93', '”': '\x94', '•': '\x95', '–': '\x96', '—': '\x97', '…': '\x85', '·': '\xB7', '×': '\xD7', '\u00A0': ' ', '\u202F': ' ' };
 const WIN_W = { 0x91: 222, 0x92: 222, 0x93: 333, 0x94: 333, 0x95: 350, 0x96: 556, 0x97: 1000, 0x85: 1000, 0xB7: 278, 0xD7: 584 };
 function clean(s) {
-  return String(s ?? '').replace(/[‘’“”•–—…·×\u00A0\u202F]/g, (c) => WIN[c]).replace(/[^\x20-\x7E\x85\x91-\x97\xB7\xD7]/g, '?');
+  return String(s ?? '')
+    .replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, '')                       // invisible: zero-width spaces and joiners, soft hyphens
+    .replace(/[\u2010-\u2012\u2212\uFE63\uFF0D]/g, '-')                       // hyphens that look like '-' (a name typed on a phone often has one)
+    .replace(/[\u2002-\u200A\u202F\u205F\u3000]/g, ' ')                       // other spaces
+    .replace(/[‘’“”•–—…·×\u00A0]/g, (c) => WIN[c])
+    .replace(/[^\x20-\x7E\x85\x91-\x97\xA0-\xFF]/g, (c) => {                  // accents WinAnsi lacks: the plain letter (ā → a)
+      const base = c.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+      return /^[\x20-\x7E]+$/.test(base) ? base : '?';
+    });
 }
 const esc = (s) => clean(s).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
 function width(s, size, bold = false) {
   const t = bold ? BOLD : HELV;
   let w = 0;
-  for (const ch of clean(s)) { const c = ch.charCodeAt(0); w += c < 127 ? t[c - 32] || 556 : WIN_W[c] || 556; }
+  for (const ch of clean(s)) { const c = ch.charCodeAt(0); w += c < 127 ? t[c - 32] || 556 : WIN_W[c] || (c >= 0xC0 ? 556 : 333); }
   return (w / 1000) * size;
 }
 const rgb = (hex) => { const n = parseInt(String(hex || '#000000').slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => (v / 255).toFixed(3)).join(' '); };
