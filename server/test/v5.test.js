@@ -322,7 +322,7 @@ test('god mode: the owner turns it on, it only changes the look, and screenshots
   assert.equal(await ok('GET', '/api/me/fun', { token: tokens.waseem }), null);
 });
 
-test('the owner can turn the boost show off for one person: no clip, no full-screen show, still a notification', async () => {
+test('the owner can turn the boost pop-up off for one person: no clip, no full-screen show, still a notification', async () => {
   const { ok, api, tokens, advance } = env;
   advance(13 * 60 * MIN);
   const before = await ok('GET', '/api/boost', { token: tokens.owner });
@@ -334,9 +334,11 @@ test('the owner can turn the boost show off for one person: no clip, no full-scr
   const g = await ok('GET', '/api/boost', { token: tokens.owner });
   assert.equal(g.people.find((p) => p.id === waseem.id).quiet, true);
   assert.equal(g.quiet_working, 1); assert.equal(g.clip_ready, 0);
+  assert.equal(g.working_now, before.working_now, 'he still counts: he still gets the notification');
   const b = await ok('POST', '/api/boost', { token: tokens.owner, body: { vibe: 'win', clip: true } });
   assert.equal(b.popped_up, 0, 'no clip for him');
   assert.ok(notes(waseem.id).some((n) => n.kind === 'boost' && n.link === `#/?boost=${b.id}`), 'he still gets it as a notification');
+  assert.ok(!notes(waseem.id).some((n) => n.kind === 'boost_clip' && n.link === `#/?boost=${b.id}`), 'not as a clip');
   assert.equal((await ok('GET', `/api/boost/${b.id}`, { token: tokens.waseem })).quiet, true);
   await ok('PUT', '/api/boost/quiet', { token: tokens.owner, body: { user_id: waseem.id, quiet: false } });
   assert.equal((await ok('GET', '/api/boost', { token: tokens.owner })).people.find((p) => p.id === waseem.id).quiet, false);

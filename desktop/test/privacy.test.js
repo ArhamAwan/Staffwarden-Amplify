@@ -250,3 +250,34 @@ test('Windows 11: notification pop-ups have no window, so the corner above the c
   assert.deepEqual(windowsToastZone({ x: 0, y: 0, width: 1366, height: 728 }), { x: 982, y: 468, w: 384, h: 260 });
   assert.equal(windowsToastZone(null), null);
 });
+
+// ---- the Windows notification corner: hidden only when a pop-up may be showing ----
+test('toastMayShow: recent pop-up hides the corner, an old one does not, unknown always hides', () => {
+  const p = require('../src/privacy');
+  const now = Date.UTC(2026, 10, 3, 15, 0, 0);
+  const ft = (ms) => (ms + 11644473600000) * 10000;
+  const info = (o) => p.parseToastInfo(JSON.stringify({ ok: true, rows: 5, toasts: 5, dur: 5, sticky: 0, ...o }));
+  assert.equal(p.toastMayShow(info({ last: ft(now - 5000) }), now), true);
+  assert.equal(p.toastMayShow(info({ last: ft(now - 30000) }), now), true);      // a long pop-up is still up
+  assert.equal(p.toastMayShow(info({ last: ft(now - 60000) }), now), false);
+  assert.equal(p.toastMayShow(info({ last: 0, rows: 0, toasts: 0 }), now), false); // never had one
+  assert.equal(p.toastMayShow(info({ last: ft(now - 60000), sticky: 1 }), now), true);   // a reminder or a call stays up
+  assert.equal(p.toastMayShow(info({ last: ft(now - 60000), dur: 300 }), now), true);    // "dismiss after 5 minutes"
+  assert.equal(p.toastMayShow(info({ last: 0, rows: 4, toasts: 0 }), now), true);        // format not recognised
+  assert.equal(p.toastMayShow(info({ last: ft(now + 600000) }), now), true);              // clock is off
+  assert.equal(p.toastMayShow(null, now), true);
+  assert.equal(p.toastMayShow(p.parseToastInfo('{"ok":false,"error":"open"}'), now), true);
+  assert.equal(p.toastMayShow(p.parseToastInfo('garbage'), now), true);
+});
+
+test('pixelate turns a rectangle into flat blocks and leaves the rest alone', () => {
+  const p = require('../src/privacy');
+  const w = 40, h = 20, b = Buffer.alloc(w * h * 4);
+  for (let i = 0; i < b.length; i += 4) { b[i] = (i / 4) % 256; b[i + 3] = 255; }
+  const before = Buffer.from(b);
+  p.pixelate(b, w, h, [{ x: 10, y: 0, w: 20, h: 20 }], 10);
+  const px = (x, y) => b[(y * w + x) * 4];
+  assert.equal(px(10, 0), px(19, 9));                   // one block, one colour
+  assert.notEqual(px(10, 0), before[(0 * w + 10) * 4]);
+  assert.equal(px(0, 0), before[0]); assert.equal(px(39, 19), before[(19 * w + 39) * 4]);   // outside untouched
+});

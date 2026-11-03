@@ -186,6 +186,25 @@ function fillBlack(bitmap, width, height, rects) {
   return bitmap;
 }
 
+// Pixelates rectangles of an RGBA bitmap in coarse blocks, so text in them can't be read but the picture
+// still looks like the screen. Used for the Windows notification corner, which is hidden every time
+// because a pop-up there can't be detected (see windowsToastZone); a solid black box there looked broken.
+function pixelate(bitmap, width, height, rects, block = 12) {
+  for (const r of rects) {
+    const x1 = Math.min(width, r.x + r.w), y1 = Math.min(height, r.y + r.h);
+    for (let by = Math.max(0, r.y); by < y1; by += block) {
+      for (let bx = Math.max(0, r.x); bx < x1; bx += block) {
+        const ex = Math.min(x1, bx + block), ey = Math.min(y1, by + block);
+        let c0 = 0, c1 = 0, c2 = 0, n = 0;
+        for (let y = by; y < ey; y++) for (let x = bx; x < ex; x++) { const i = (y * width + x) * 4; c0 += bitmap[i]; c1 += bitmap[i + 1]; c2 += bitmap[i + 2]; n++; }
+        c0 = Math.round(c0 / n); c1 = Math.round(c1 / n); c2 = Math.round(c2 / n);
+        for (let y = by; y < ey; y++) for (let x = bx; x < ex; x++) { const i = (y * width + x) * 4; bitmap[i] = c0; bitmap[i + 1] = c1; bitmap[i + 2] = c2; bitmap[i + 3] = 255; }
+      }
+    }
+  }
+  return bitmap;
+}
+
 // ---------- parsing what the OS tells us ----------
 // Marks the frontmost real window (the lists come front-to-back on macOS and Windows).
 const NOT_APP = new Set(['window server', 'dock', 'control center', 'controlcenter', 'notification center', 'notificationcenter', 'notification centre', 'usernotificationcenter', 'systemuiserver', 'textinputhost', 'shellexperiencehost', 'searchhost', 'startmenuexperiencehost', 'electron']);
@@ -274,6 +293,83 @@ function windowsToastZone(workArea) {
   const w = Math.min(TOAST_W, workArea.width), h = Math.min(TOAST_H, workArea.height);
   return { x: workArea.x + workArea.width - w, y: workArea.y + workArea.height - h, w, h };
 }
+// Is a Windows notification pop-up on screen right now? Pop-ups have no window to find (above), but Windows
+// writes every notification to the user's own notification database (wpndatabase.db, in their profile) with
+// the moment it arrived. Only that time is read, never what the notification says. The corner is hidden when a
+// pop-up arrived recently enough to still be showing, or when one that stays until dismissed (a reminder, an
+// alarm, a call) arrived in the last few minutes. If the database can't be read, the corner is always hidden.
+const FT_EPOCH = 11644473600000;                 // FILETIME (100 ns since 1601) to Unix ms
+const TOAST_LONG_S = 25;                         // a "long" pop-up stays about 25 seconds
+const TOAST_MARGIN_S = 10;                       // queueing, a slow pop-up animation, clocks
+const STICKY_MIN = 10;                           // a pop-up that stays until dismissed: assume it's up for 10 minutes
+// the pop-ups that stay until dismissed, matched as bytes (the payload may be stored as UTF-8 or UTF-16)
+const STICKY_SQL = ['reminder', 'alarm', 'incomingCall'].flatMap((k) => {
+  const t = `scenario="${k}"`;
+  return [`instr(Payload, X'${Buffer.from(t, 'utf8').toString('hex')}') > 0`, `instr(Payload, X'${Buffer.from(t, 'utf16le').toString('hex')}') > 0`];
+}).join(' OR ');
+const toastSince = (now) => Math.round((now - STICKY_MIN * 60000 + FT_EPOCH) * 10000);
+function parseToastInfo(stdout) {
+  try {
+    const o = JSON.parse(String(stdout || '').trim());
+    if (!o || o.ok !== true) return null;
+    return { last: Number(o.last) ? Number(o.last) / 10000 - FT_EPOCH : 0, sticky: Number(o.sticky) || 0, rows: Number(o.rows) || 0, toasts: Number(o.toasts) || 0, dur: Number(o.dur) || 5 };
+  } catch { return null; }
+}
+// true: hide the corner. Unknown (null), or anything that doesn't add up, hides it.
+function toastMayShow(info, now = Date.now()) {
+  if (!info) return true;
+  if (info.rows > 0 && info.toasts === 0) return true;          // notifications, but none recognised as pop-ups: the format changed
+  if (info.sticky > 0) return true;
+  if (!info.last) return false;
+  if (info.last > now + 60000) return true;                     // the clock is off: can't tell
+  const window = (Math.max(TOAST_LONG_S, Math.min(info.dur, 600)) + TOAST_MARGIN_S) * 1000;
+  return now - info.last < window;
+}
+const TOAST_SCRIPT = (since) => `
+$ErrorActionPreference = 'Stop'
+try {
+Add-Type -TypeDefinition @"
+using System; using System.Text; using System.Runtime.InteropServices;
+public static class Wpn {
+  [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Winapi)] static extern int sqlite3_open_v2(byte[] f, out IntPtr db, int flags, IntPtr vfs);
+  [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Winapi)] static extern int sqlite3_busy_timeout(IntPtr db, int ms);
+  [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Winapi)] static extern int sqlite3_prepare_v2(IntPtr db, byte[] sql, int n, out IntPtr st, IntPtr tail);
+  [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Winapi)] static extern int sqlite3_step(IntPtr st);
+  [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Winapi)] static extern long sqlite3_column_int64(IntPtr st, int i);
+  [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Winapi)] static extern int sqlite3_finalize(IntPtr st);
+  [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Winapi)] static extern int sqlite3_close(IntPtr db);
+  static byte[] U(string s) { return Encoding.UTF8.GetBytes(s + "\\0"); }
+  public static long[] Read(string path, long since) {
+    IntPtr db;
+    if (sqlite3_open_v2(U(path), out db, 1, IntPtr.Zero) != 0) { sqlite3_close(db); throw new Exception("open"); }
+    try {
+      sqlite3_busy_timeout(db, 1500);
+      string sticky = "(${STICKY_SQL})";
+      string q = "SELECT IFNULL((SELECT MAX(ArrivalTime) FROM Notification WHERE LOWER(Type) = 'toast'), 0), (SELECT COUNT(*) FROM Notification WHERE LOWER(Type) = 'toast' AND ArrivalTime > " + since + " AND " + sticky + "), (SELECT COUNT(*) FROM Notification), (SELECT COUNT(*) FROM Notification WHERE LOWER(Type) = 'toast')";
+      IntPtr st;
+      if (sqlite3_prepare_v2(db, U(q), -1, out st, IntPtr.Zero) != 0) throw new Exception("prepare");
+      try {
+        int rc = sqlite3_step(st);
+        if (rc != 100) throw new Exception("step " + rc);
+        return new long[] { sqlite3_column_int64(st, 0), sqlite3_column_int64(st, 1), sqlite3_column_int64(st, 2), sqlite3_column_int64(st, 3) };
+      } finally { sqlite3_finalize(st); }
+    } finally { sqlite3_close(db); }
+  }
+}
+"@
+  $r = [Wpn]::Read((Join-Path $env:LOCALAPPDATA 'Microsoft\\Windows\\Notifications\\wpndatabase.db'), ${Number(since)})
+  $dur = 5
+  try { $v = (Get-ItemProperty 'HKCU:\\Control Panel\\Accessibility' -Name MessageDuration -ErrorAction Stop).MessageDuration; if ($v) { $dur = [int]$v } } catch { }
+  '{"ok":true,"last":' + $r[0] + ',"sticky":' + $r[1] + ',"rows":' + $r[2] + ',"toasts":' + $r[3] + ',"dur":' + $dur + '}'
+} catch { '{"ok":false,"error":' + (ConvertTo-Json ([string]$_.Exception.Message)) + '}' }
+`;
+async function windowsToastInfo(now = Date.now()) {
+  try {
+    const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', TOAST_SCRIPT(toastSince(now))], 10000);
+    return parseToastInfo(r.stdout);
+  } catch { return null; }
+}
+
 function notificationZones(wins) {
   return wins.map((w) => {
     if (!/^(notification ?cent(er|re)|usernotificationcenter)$/i.test(String(w.app || '')) || !(w.w > 900)) return w;
@@ -379,6 +475,6 @@ async function listWindows(platform = process.platform, { selfNames = ['Workhelm
 }
 
 module.exports = {
-  CATEGORIES, ALWAYS, PAD, COVER_FULL, buildMatcher, decide, coverage, normalizeTerms, isBlocked, blockedRects, toImageRects, fillBlack, toDipRect, subtract, visibleParts, solid,
-  markFront, notificationZones, windowsToastZone, parseJsonWindows, parseWmctrl, activeWindowFrom, currentDesktopFrom, listWindows,
+  CATEGORIES, ALWAYS, PAD, COVER_FULL, buildMatcher, decide, coverage, normalizeTerms, isBlocked, blockedRects, toImageRects, fillBlack, pixelate, toDipRect, subtract, visibleParts, solid,
+  markFront, notificationZones, windowsToastZone, windowsToastInfo, toastMayShow, parseToastInfo, toastSince, TOAST_SCRIPT, STICKY_SQL, parseJsonWindows, parseWmctrl, activeWindowFrom, currentDesktopFrom, listWindows,
 };

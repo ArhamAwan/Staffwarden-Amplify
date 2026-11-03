@@ -55,23 +55,23 @@ actions['boost-open'] = async (el) => {
     <div class="bp-clip"><span class="bp-clip-v" aria-hidden="true"></span>
       <span class="bp-clip-t"><b id="bp-clip-l">Pop up on their laptops with my clip</b><span>You power up in the corner of their screen for 8 seconds, your message above you. ${d.working_now ? `${plural(d.clip_ready ?? 0, 'laptop')} will show it; the rest get a notification.` : 'For people with the timer on.'}${missed(d)}</span><button type="button" class="bp-prev" data-b="preview">${ic('play', 14)}Preview on my screen</button></span>
       <label class="bp-sw"><input type="checkbox" data-r="clip" checked aria-labelledby="bp-clip-l"><span aria-hidden="true"></span></label></div>
-    ${d.people ? `<button type="button" class="bp-who" data-b="who" aria-haspopup="true">${ic('users', 18)}<span class="bp-who-t"><b>Who gets the show</b><span data-r="who-sum"></span></span>${ic('chev', 16)}</button>` : ''}
-    <div class="bp-f"><button type="button" class="bp-send" data-b="send"${d.working_now ? '' : ' disabled'}>${ic('rocket', 17)}<span>${d.working_now ? `Send to ${plural(d.working_now, 'person', 'people')} working` : 'Nobody is working right now'}</span></button>
+    ${d.people ? `<button type="button" class="bp-who" data-b="who" aria-haspopup="true">${ic('users', 18)}<span class="bp-who-t"><b>Who sees the pop-up</b><span data-r="who-sum"></span></span>${ic('chev', 16)}</button>` : ''}
+    <div class="bp-f"><button type="button" class="bp-send" data-b="send"${d.working_now ? '' : ' disabled'}>${ic('rocket', 17)}<span data-r="send-l">${sendLabel(d.working_now)}</span></button>
       ${last ? `<span class="bp-last">Last boost: ${esc(new Date(last.created_at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }))} · ${last.boosted.length} boosted back${last.chai.length ? ` · ${last.chai.length} want more chai` : ''}</span>` : ''}</div></div>`;
   // the people view: the owner turns the show off, or back on, for anyone
   const ppl = d.people || [];
   const whoSum = () => {
     const off = ppl.filter((p) => p.quiet);
-    if (!off.length) return 'Everyone. They see your clip and the full-screen show.';
+    if (!off.length) return 'Everyone working sees your pop-up.';
     const names = off.map((p) => callName(p.name));
-    return `Off for ${names.length <= 2 ? names.join(' and ') : `${names.slice(0, 2).join(', ')} and ${plural(names.length - 2, 'other')}`}. They get a notification instead.`;
+    return `Off for ${names.length <= 2 ? names.join(' and ') : `${names.slice(0, 2).join(', ')} and ${plural(names.length - 2, 'other')}`}. They still get the notification.`;
   };
   const row = (p) => `<li class="bpp-r" data-k="${p.id}"><span class="bpp-av" style="background:${avColor(p.id)}">${esc(initials(p.name))}</span>
       <span class="bpp-n"><b id="bpp-n${p.id}">${esc(p.name)}</b><span>${p.working ? `<i class="bpp-on"></i>Working now${p.clip && !p.clip.ok && p.clip.why !== 'show_off' ? `<em class="bpp-why">${esc(p.clip.text)}</em>` : ''}` : esc(p.title || 'Not working right now')}</span></span>
       <label class="bp-sw"><input type="checkbox" data-r="show" data-id="${p.id}" ${p.quiet ? '' : 'checked'} aria-labelledby="bpp-n${p.id}" aria-describedby="bpp-sw-d"><span aria-hidden="true"></span></label></li>`;
   const pplView = document.createElement('div');
   pplView.className = 'bpp'; pplView.hidden = true;
-  pplView.innerHTML = `<div class="bp-h"><button type="button" class="bp-x bpp-back" data-b="who-back" aria-label="Back to the boost">${ic('back', 18)}</button><div style="flex:1"><h2 id="bpp-t">Who gets the show</h2><p id="bpp-sw-d">Switch someone off and they get your boosts as a normal notification: no clip on their laptop, no full-screen show. Saved for next time.</p></div><button type="button" class="bp-x" data-b="close" aria-label="Close">${ic('x', 18)}</button></div>
+  pplView.innerHTML = `<div class="bp-h"><button type="button" class="bp-x bpp-back" data-b="who-back" aria-label="Back to the boost">${ic('back', 18)}</button><div style="flex:1"><h2 id="bpp-t">Who sees the pop-up</h2><p id="bpp-sw-d">Switch someone off and you won’t pop up on their screen: no clip on their laptop, no full-screen show. They still get the boost as a normal notification. Saved for next time.</p></div><button type="button" class="bp-x" data-b="close" aria-label="Close">${ic('x', 18)}</button></div>
     ${ppl.length > 7 ? `<label class="bpp-s">${ic('search', 16)}<input data-r="find" type="text" enterkeyhint="search" autocomplete="off" placeholder="Find someone" aria-label="Find someone"></label>` : ''}
     <ul class="bpp-l" aria-labelledby="bpp-t">${ppl.map(row).join('')}</ul>
     <p class="bpp-none" data-r="none" hidden>Nobody by that name.</p>
@@ -81,7 +81,7 @@ actions['boost-open'] = async (el) => {
   const paintWho = () => {
     const sum = box.querySelector('[data-r="who-sum"]'); if (sum) sum.textContent = whoSum();
     const off = ppl.filter((p) => p.quiet).length;
-    box.querySelector('[data-r="ppl-sum"]').textContent = off ? `${plural(off, 'person', 'people')} switched off` : 'Everyone gets the show';
+    box.querySelector('[data-r="ppl-sum"]').textContent = off ? `Pop-up off for ${plural(off, 'person', 'people')}` : 'Everyone sees the pop-up';
   };
   const showPeople = (on) => {
     for (const c of main) c.hidden = on;
@@ -109,8 +109,14 @@ actions['boost-open'] = async (el) => {
   clipEl('', '').then((v) => { v.removeAttribute('aria-label'); v.removeAttribute('role'); const slot = box.querySelector('.bp-clip-v'); if (slot && box.isConnected) { slot.appendChild(v); playClip(v); } });
   const paint = () => { box.querySelector('[data-r="line"]').textContent = box.querySelector('[data-r="own"]').value.trim() || lineNow(); for (const b of box.querySelectorAll('[data-b="vibe"]')) b.setAttribute('aria-checked', String(b.dataset.v === st.vibe)); };
   paint();
-  // under the button on a computer, a sheet from the bottom on a phone
-  if (!phone() && el && el.getBoundingClientRect) { const r = el.getBoundingClientRect(); const p = box.querySelector('.bp'); p.style.top = `${Math.round(r.bottom + 8)}px`; p.style.maxHeight = `calc(100vh - ${Math.round(r.bottom + 8)}px - 12px)`; p.style.maxHeight = `calc(100dvh - ${Math.round(r.bottom + 8)}px - 12px)`; p.style.right = `${Math.max(12, Math.round(innerWidth - r.right))}px`; }
+  // under the button when it fits; otherwise moved up just enough to show the whole panel (never cut to a sliver)
+  if (!phone() && el && el.getBoundingClientRect) {
+    const r = el.getBoundingClientRect(), p = box.querySelector('.bp');
+    p.style.right = `${Math.max(12, Math.round(innerWidth - r.right))}px`;
+    p.style.maxHeight = `calc(100dvh - 24px)`;
+    const h = p.offsetHeight, below = Math.round(r.bottom + 8);
+    p.style.top = `${Math.max(12, Math.min(below, innerHeight - h - 12))}px`;
+  }
   box.addEventListener('mousedown', (e) => { if (e.target === box) closeBoostPanel(); });
   box.querySelector('[data-r="own"]').addEventListener('input', paint);
   box.addEventListener('click', async (e) => {
@@ -193,8 +199,9 @@ function confetti(n = 26) {
   return `<div class="bo-cf" aria-hidden="true">${out}</div>`;
 }
 // working people who would get only a notification, and why (an old app, the limit for the shift...)
+const sendLabel = (n) => (n ? `Send to ${plural(n, 'person', 'people')} working` : 'Nobody else is working right now');
 function missed(d) {
-  const no = (d.people || []).filter((p) => p.working && p.clip && !p.clip.ok && p.clip.why !== 'show_off');
+  const no = (d.people || []).filter((p) => p.working && !p.quiet && p.clip && !p.clip.ok && p.clip.why !== 'show_off');
   if (!no.length) return '';
   return `<span class="bp-miss">${no.slice(0, 4).map((p) => `<span><b>${esc(p.name.split(' ')[0])}</b>: ${esc(p.clip.text.charAt(0).toLowerCase() + p.clip.text.slice(1))}</span>`).join('')}${no.length > 4 ? `<span>and ${no.length - 4} more</span>` : ''}</span>`;
 }

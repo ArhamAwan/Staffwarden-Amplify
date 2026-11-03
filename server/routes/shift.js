@@ -227,7 +227,8 @@ module.exports = (ctx) => {
         .map((u) => ({ id: u.id, name: u.name, title: u.title || null, quiet: !!u.boost_quiet, working: workingSet.has(u.id), clip: clipWhy(u.id, workingSet) }))
       : undefined;
     const quietWorking = working.filter(isQuiet).length;
-    return { can_boost: user.role === 'owner', working_now: running().length, clip_ready: clipReady, clip_update: clipUpdate, quiet_working: quietWorking, people, lines, custom, last: lastBoost() };
+    // who it goes to: everyone working except the sender (the sender's own timer doesn't count)
+    return { can_boost: user.role === 'owner', working_now: working.length, clip_ready: clipReady, clip_update: clipUpdate, quiet_working: quietWorking, people, lines, custom, last: lastBoost() };
   });
   route('POST', '/api/boost', ({ user, body }) => {
     staffOnly(user); needOwner(user);
@@ -237,6 +238,7 @@ module.exports = (ctx) => {
     let line = optStr(body.line, 'line', 160);
     if (!line) { const pool = linesFor(vibe).filter((l) => !prev || l !== prev.line); line = pool[Math.floor(Math.random() * pool.length)] || VIBES.chai[0]; }
     const to = [...new Set(running().map((e) => e.user_id))].filter((id) => id !== user.id);
+    need(to.length, 409, 'Nobody else is working right now.');
     const clip = !!body.clip;
     const id = Number(db.prepare('INSERT INTO boosts (author_id, vibe, line, sent_to, clip, created_at) VALUES (?,?,?,?,?,?)').run(user.id, vibe, line, to.length, clip ? 1 : 0, nowIso()).lastInsertRowid);
     const mid = ctx.teamPost(ctx.companyThread(), user, { body: line, kind: 'boost', meta: { boost_id: id, vibe, sent_to: to.length } });
@@ -244,7 +246,7 @@ module.exports = (ctx) => {
     // the clip pops up in the corner of their laptop (the desktop app) for anyone whose timer runs, who
     // hasn't switched boosts to notifications only, and who hasn't had three already this shift
     const popup = clip ? to.filter(clipOk) : [];
-    // people the owner turned the show off for get the boost as an ordinary notification only
+    // people the owner switched the pop-up off for get the boost as an ordinary notification only
     for (const uid of popup) db.prepare('INSERT OR IGNORE INTO boost_popups (boost_id, user_id, at) VALUES (?,?,?)').run(id, uid, nowIso());
     const plain = to.filter((uid) => !popup.includes(uid));
     // everyone it goes to has their timer on, so it comes through even if their shift hours say otherwise
@@ -273,7 +275,7 @@ module.exports = (ctx) => {
     const u = db.prepare('SELECT app_version, boost_popup FROM users WHERE id = ?').get(uid) || {};
     if (!workingSet.has(uid)) return { ok: false, why: 'not_working', text: 'Timer not running: boosts only go to people working' };
     if (ctx.featureOn && !ctx.featureOn('boost_clip', uid)) return { ok: false, why: 'feature_off', text: 'The clip is switched off in the developer tools' };
-    if (isQuiet(uid)) return { ok: false, why: 'show_off', text: 'You switched the show off for them' };
+    if (isQuiet(uid)) return { ok: false, why: 'show_off', text: 'You switched the pop-up off for them' };
     if (!u.app_version) return { ok: false, why: 'no_app', text: 'Not using the desktop app' };
     if (!appCanClip(uid)) return { ok: false, why: 'old_app', text: `Desktop app ${u.app_version}: needs 0.9.18 or later` };
     if (u.boost_popup === 'note') return { ok: false, why: 'notes_only', text: 'They chose notifications only for boosts' };
@@ -285,7 +287,7 @@ module.exports = (ctx) => {
   }
   ctx.clipWhy = clipWhy;
   const popupsFor = (uid) => db.prepare('SELECT COUNT(*) n FROM boost_popups bp JOIN boosts b ON b.id = bp.boost_id WHERE bp.user_id = ? AND bp.at > ? AND b.test = 0').get(uid, new Date(clockNow() - 12 * 3600000).toISOString()).n;
-  // the owner turns the boost show (the clip on their laptop and the full-screen show in the browser) off or
+  // the owner turns the boost pop-up (the clip on their laptop and the full-screen show in the browser) off or
   // back on for one person; they still get the boost as an ordinary notification
   route('PUT', '/api/boost/quiet', ({ user, body }) => {
     staffOnly(user); needOwner(user);
@@ -294,7 +296,7 @@ module.exports = (ctx) => {
     need(u && uid !== user.id, 404, 'That person isn’t on the team');
     const quiet = !!body.quiet;
     db.prepare('UPDATE users SET boost_quiet = ? WHERE id = ?').run(quiet ? 1 : 0, uid);
-    audit(user, 'team.boost_quiet', uid, quiet ? `Boost show off for ${u.name}` : `Boost show back on for ${u.name}`);
+    audit(user, 'team.boost_quiet', uid, quiet ? `Boost pop-up off for ${u.name}` : `Boost pop-up back on for ${u.name}`);
     return { user_id: uid, quiet };
   });
   // each person's choice: the clip in a corner, or a plain notification

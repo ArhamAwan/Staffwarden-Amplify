@@ -157,13 +157,17 @@ async function captureScreens() {
   if (screenPermission() !== 'granted') throw new Error('Screen recording permission is off');
   // Strict: the windows are listed before AND after the capture and both lists are used, so a private
   // window that opened or moved while the picture was being taken is still covered.
-  const [before, sources] = await Promise.all([scanWindows(), desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1440, height: 900 } })]);
+  const win = process.platform === 'win32';
+  const [before, sources, toast] = await Promise.all([scanWindows(), desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1440, height: 900 } }),
+    win ? privacy.windowsToastInfo() : null]);
   const after = await scanWindows();
   const d = privacy.decide([before, after], matcher);
   const rects = d.rects.map(toPoints);
   const privateWindows = rects.length;   // the pop-up corner alone never hides a whole screen
-  // Windows: notification pop-ups have no window to find, so their corner on the main screen is always hidden
-  if (process.platform === 'win32') { try { const z = privacy.windowsToastZone(screen.getPrimaryDisplay().workArea); if (z) rects.push(z); } catch { /* no screen info */ } }
+  // Windows: notification pop-ups have no window to find. Their corner on the main screen is pixelated
+  // (unreadable, not a black box) when a pop-up may be showing, or when that can't be told (see toastMayShow).
+  const soft = [];
+  if (win && privacy.toastMayShow(toast)) { try { const z = privacy.windowsToastZone(screen.getPrimaryDisplay().workArea); if (z) soft.push(z); } catch { /* no screen info */ } }
   const displays = screen.getAllDisplays();
   // On the person's own computer, only the screen they are working on (the one with the mouse) is captured,
   // unless the company chose all screens. If the screens cannot be told apart, all are used.
@@ -183,13 +187,17 @@ async function captureScreens() {
     const hideAll = privateWindows && !display;
     if (hideAll) { fullCount++; const img = blank(); return { buf: img.toJPEG(60), thumb: img.toJPEG(55), privacy: 'full' }; }
     let img = s.thumbnail, priv = null;
-    if (rects.length && display) {
+    if ((rects.length || soft.length) && display) {
       try {
         const { width, height } = img.getSize();
         const px = privacy.toImageRects(rects, display.bounds, width, height);
-        if (px.length) {
-          img = nativeImage.createFromBitmap(privacy.fillBlack(Buffer.from(img.toBitmap()), width, height, px), { width, height });
-          masked += px.length; priv = 'partial';
+        const sp = privacy.toImageRects(soft, display.bounds, width, height);
+        if (px.length || sp.length) {
+          let bmp = Buffer.from(img.toBitmap());
+          if (sp.length) bmp = privacy.pixelate(bmp, width, height, sp, Math.max(10, Math.round(width / 110)));
+          if (px.length) bmp = privacy.fillBlack(bmp, width, height, px);   // a private window over the corner stays black
+          img = nativeImage.createFromBitmap(bmp, { width, height });
+          if (px.length) { masked += px.length; priv = 'partial'; }
         }
       } catch (e) {
         // the private windows could not be painted over: hide the whole screen rather than skip the screenshot
