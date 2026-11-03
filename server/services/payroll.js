@@ -61,9 +61,14 @@ function createPayroll(ctx) {
     const setup = setupOf(u.id);
     if (!setup) return null;
     const rec = recordOf(u.id);
-    const cur = setup.currency;
     const days = monthDays(period);
     const from = days[0], to = days[days.length - 1];
+    // a raise counts from the month it starts in: the salary in force on the 1st of this month (a change
+    // dated mid-month starts the month after). Before any dated change, the first salary they were given.
+    const hist = db.prepare('SELECT base, currency FROM salary_history WHERE user_id = ? AND effective_from <= ? ORDER BY effective_from DESC, id DESC LIMIT 1').get(u.id, from)
+      || db.prepare('SELECT base, currency FROM salary_history WHERE user_id = ? ORDER BY effective_from, id LIMIT 1').get(u.id);
+    if (hist) { setup.base = hist.base; setup.currency = hist.currency; }
+    const cur = setup.currency;
     const joined = localJoin(u, rec), leaving = rec && rec.leaving_on;
     const inJob = (d) => (!joined || d >= joined) && (!leaving || d <= leaving);
     const wd = c.workDaySet(u);

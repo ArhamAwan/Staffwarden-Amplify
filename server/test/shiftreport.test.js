@@ -154,3 +154,26 @@ test('a manager can’t change or remove the owner or a developer account', asyn
     assert.ok(mgr.id);
   } finally { await e.close(); }
 });
+
+test('a raise made this month is paid from next month', async () => {
+  const e = await makeEnv();
+  try {
+    const p = await e.person('ravi', 'Ravi Shah');
+    e.app.db.prepare("INSERT OR REPLACE INTO hr_records (user_id, joined_on) VALUES (?, '2026-01-01')").run(p.id);
+    // the clock is in October 2026
+    await e.ok('PUT', `/api/hr/people/${p.id}/pay`, { token: e.tokens.owner, body: { base: 100000, currency: 'PKR', tax_mode: 'none' } });
+    await e.ok('PUT', `/api/hr/people/${p.id}/pay`, { token: e.tokens.owner, body: { base: 120000, note: 'Yearly increment' } });
+    const h = (await e.ok('GET', `/api/hr/people/${p.id}`, { token: e.tokens.owner })).history;
+    assert.equal(h[0].effective_from, '2026-11-01');
+    const baseOf = (period) => {
+      const run = e.app.db.prepare('SELECT id FROM pay_runs WHERE period = ?').get(period);
+      const slip = e.app.db.prepare('SELECT lines FROM payslips WHERE run_id = ? AND user_id = ?').get(run.id, p.id);
+      return JSON.parse(slip.lines).find((l) => l.key === 'base').amount;
+    };
+    await e.ok('POST', '/api/payroll/runs', { token: e.tokens.owner, body: { period: '2026-10' } });
+    assert.equal(baseOf('2026-10'), 100000, 'October still pays the old salary');
+    e.app.db.prepare("UPDATE pay_runs SET status = 'paid' WHERE period = '2026-10'").run();
+    await e.ok('POST', '/api/payroll/runs', { token: e.tokens.owner, body: { period: '2026-11' } });
+    assert.equal(baseOf('2026-11'), 120000, 'November pays the new one');
+  } finally { await e.close(); }
+});
