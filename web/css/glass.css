@@ -1210,3 +1210,15 @@ html.ng-on body { overflow: hidden; }
   .sset { scroll-margin-top: 140px !important; }
 }
 @media (max-width: 1080px) { .sset { scroll-margin-top: 78px !important; } }
+
+/* audit fixes */
+.cols.cols-one { grid-template-columns: minmax(0, 1fr) !important; }
+.ci-m[aria-checked="true"] { background: linear-gradient(180deg, #8470EE, #5D47CC) !important; border-color: rgba(195,179,255,.5) !important; color: #fff !important; }
+img[data-shot]:not([src]) { color: transparent; font-size: 0; background: rgba(255,255,255,.06); }
+/* the notification panel: solid, and above the page and the sidebar */
+.npanel { z-index: 72 !important; background: linear-gradient(170deg, rgba(38,27,82,.985), rgba(20,14,46,.99)) !important; border-color: rgba(195,179,255,.18) !important; box-shadow: 0 24px 60px -10px rgba(0,0,0,.75), inset 0 1px 0 rgba(255,255,255,.08) !important; }
+/* task drawer: fields never run off a narrow screen */
+.tp-grid { grid-template-columns: minmax(96px, 120px) minmax(0, 1fr) !important; }
+.tp-grid dd { min-width: 0; }
+.tp-grid select, .tp-grid input { max-width: 100%; min-width: 0 !important; }
+@media (max-width: 520px) { .tp-grid select, .tp-grid input { width: 100% !important; } }

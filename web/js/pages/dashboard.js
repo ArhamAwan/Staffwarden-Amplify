@@ -95,6 +95,8 @@ export const teamPage = {
       else if (shiftWin && shiftWin !== win) subline = `Shift ended at ${sh(shiftWin[1])} · ${dur(k.worked_secs)} tracked`;
       else subline = `${dur(k.worked_secs)} tracked today`;
     }
+    // the owner's bento already has "Needs attention now"; the panel lower down would say it twice
+    const dupAttn = S.me.role === 'owner' && Array.isArray(d.attention);
     return html`
       <div class="page-h"><div><h1>Team activity</h1><p class="sub">${dayLong(d.day)}${isToday ? ' · live' : ''} · ${plural(k.members, 'person', 'people')}</p></div>
         <div class="tools">${S.me.fun_mode && isToday ? html`<a class="btn gm-go" href="#/">Back to god mode</a>` : ''}${teamSelect(q.get('team'))}${dayNav(d.day, today)}${boostTop(d, isToday)}</div>
@@ -131,11 +133,11 @@ export const teamPage = {
             }) : html`<tr class="lane-chips"><td colspan="8"><div class="pgrid2">${sortLane(list, g).map((m) => personTile(m, g, d.day, isToday))}</div></td></tr>`}
           </tbody>`)}</table></div>
 ` : empty('Nobody to show yet', html`Add people on the <a href="#/people">People</a> page.`)}</div></section>
-      <div class="cols">
+      <div class="cols${dupAttn ? ' cols-one' : ''}">
         <section class="panel"><header><h2>Last 7 days</h2><span class="muted small">Team hours worked</span></header><div class="body">
           ${bars(d.trend.map((t) => ({ label: t.day === d.day ? 'Today' : dayShort(t.day).split(',')[0], sub: t.attendance_rate == null ? '' : t.attendance_rate + '% in', value: t.worked_secs, today: t.day === d.day, title: dayLong(t.day) })), { fmt: hoursText })}</div></section>
-        <section class="panel"><header><h2>Needs attention</h2></header><div class="body">
-          ${nowMsg.length ? html`<ul class="steps" style="list-style:none;margin:0;padding:0">${nowMsg.slice(0, 8).map((n) => html`<li data-k="${n.k}" style="display:flex;gap:10px;align-items:flex-start"><i class="sw s-${n.tone === 'bad' ? 'no_signal' : n.tone === 'late' ? 'late' : n.tone}" style="margin-top:6px"></i><span>${n.text}</span></li>`)}</ul>` : html`<p class="muted">Nothing needs attention right now.</p>`}</div></section>
+        ${dupAttn ? '' : html`<section class="panel"><header><h2>Needs attention</h2></header><div class="body">
+          ${nowMsg.length ? html`<ul class="steps" style="list-style:none;margin:0;padding:0">${nowMsg.slice(0, 8).map((n) => html`<li data-k="${n.k}" style="display:flex;gap:10px;align-items:flex-start"><i class="sw s-${n.tone === 'bad' ? 'no_signal' : n.tone === 'late' ? 'late' : n.tone}" style="margin-top:6px"></i><span>${n.text}</span></li>`)}</ul>` : html`<p class="muted">Nothing needs attention right now.</p>`}</div></section>`}
       </div>`;
   },
 };

@@ -14,7 +14,7 @@ const store = { get(k) { try { return localStorage.getItem(k); } catch { return 
 const KIND_ICON = {
   task_assigned: 'tasks', task_status: 'tasks', task_review: 'check', task_approved: 'check', task_sent_back: 'repeat',
   task_comment: 'msg', task_file: 'clip', task_due: 'cal', task_due_changed: 'cal', project_added: 'folder', project_lead: 'folder',
-  timeoff_request: 'sun', timeoff_decision: 'sun', no_signal: 'flag',
+  timeoff_request: 'sun', timeoff_decision: 'sun', no_signal: 'flag', shift_report: 'file',
 };
 const tone = (k) => (k === 'task_sent_back' || k === 'no_signal' ? 'bad' : k === 'task_approved' ? 'good' : k === 'task_due' ? 'warn' : '');
 

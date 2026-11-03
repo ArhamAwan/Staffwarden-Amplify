@@ -18,6 +18,7 @@ module.exports = (ctx) => {
   const teamName = (id) => (id ? (db.prepare('SELECT name FROM teams WHERE id = ?').get(id) || {}).name || null : null);
   const hm = (iso, tz) => { if (!iso) return null; const m = T.localMinOfDay(Date.parse(iso), tz); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
   const dur = (s) => { const m = Math.round((s || 0) / 60); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`; };
+  const clock12 = (t) => { const [h, m] = String(t).split(':').map(Number); return `${(h % 12) || 12}:${String(m || 0).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
   const isWorkDay = (u, day) => calc().workDaySet(u).has(T.dow(day));
   const companyDays = () => new Set(String(cfg.workDays).split(',').filter(Boolean).map(Number));
 
@@ -84,7 +85,7 @@ module.exports = (ctx) => {
     const now = clockNow(), endAt = shiftEndAt(u, day), over = now >= endAt;
     const worked = p.worked_secs, planned = p.expected_secs;
     const missing = ['absent', 'not_started'].includes(att.status);
-    if (missing) add('red', 'absent', att.status === 'absent' ? 'Absent: no work and no leave' : `Hasn’t started; the shift began at ${calc().hoursOn(u, day).shift_start}`);
+    if (missing) add('red', 'absent', att.status === 'absent' ? 'Absent: no work and no leave' : `Hasn’t started; the shift began at ${clock12(calc().hoursOn(u, day).shift_start)}`);
     if (att.status === 'late') add(att.late_by_min >= 30 ? 'red' : 'amber', 'late', `Late by ${dur(att.late_by_min * 60)}`);
     if (worked > 0 && over && !m.running && m.last_end) {
       const early = Math.round((endAt - Date.parse(m.last_end)) / 60000);
