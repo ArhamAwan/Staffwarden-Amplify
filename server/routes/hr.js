@@ -66,7 +66,7 @@ module.exports = (ctx) => {
         notes: me ? undefined : rec.notes || null,
       },
       update_request: rec.upd_fields ? { fields: JSON.parse(rec.upd_fields), note: rec.upd_note || null, by: nameOf(rec.upd_by), at: rec.upd_at } : null,
-      pay: setup ? { base: setup.base, currency: setup.currency, tax_mode: setup.tax_mode, allowances: setup.allowances, deductions: setup.deductions } : null,
+      pay: setup ? { base: setup.base, currency: setup.currency, tax_mode: setup.tax_mode, company_tax: P().rules().tax.on !== false, allowances: setup.allowances, deductions: setup.deductions } : null,
     };
     if (full) {
       out.history = db.prepare('SELECT * FROM salary_history WHERE user_id = ? ORDER BY effective_from DESC, id DESC').all(u.id).map((h) => ({ ...h, by_name: nameOf(h.by_id) }));
@@ -233,6 +233,7 @@ module.exports = (ctx) => {
         .run(u.id, base, currency, body.effective_from ? isoDate(body.effective_from, 'effective_from') : calc.companyToday(), optStr(body.note, 'note', 200) || (cur ? 'Changed' : 'Pay set'), user.id, nowIso());
       ctx.changes.log(u.id, user, { area: 'pay', title: cur ? 'Your pay was changed' : 'Your pay was set', lines: [cur ? `Base salary: ${fmt(cur.base, cur.currency)} → ${fmt(base, currency)} a month, from ${startLabel(body.effective_from ? isoDate(body.effective_from, 'effective_from') : calc.companyToday())}` : `Base salary: ${fmt(base, currency)} a month`], reason: optStr(body.note, 'note', 200), link: '#/pay' });
     }
+    if (cur && cur.tax_mode !== tax) ctx.changes.log(u.id, user, { area: 'pay', title: tax === 'pk' ? 'Income tax is now taken from your pay' : 'Income tax is no longer taken from your pay', lines: [tax === 'pk' ? 'Worked out on the Pakistan brackets each month' : 'Your payslips show no income tax from now on'], reason: optStr(body.note, 'note', 200), link: '#/pay' });
     audit(user, 'hr.pay', u.id, `${fmt(base, currency)}${cur ? ` (was ${fmt(cur.base, cur.currency)})` : ''}, tax ${tax}`);
     redoOpenRuns();
     emit('hr', u.id);

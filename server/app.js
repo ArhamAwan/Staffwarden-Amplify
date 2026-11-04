@@ -57,7 +57,7 @@ function createApp(opts = {}) {
     payroll: {
       day_basis: 'working', unpaid_leave: 'deduct', absent: 'deduct', late: { mode: 'off', every: 3, days: 0.5 }, overtime: { mode: 'off', rate: 1.5 },
       pay_day: 1, pay_by: 10, leave_payout: true, owner_approves: true, hr_own_pay: false, managers_first: true,
-      tax: { label: 'Tax year 2027 (July 2026 to June 2027), from the Finance Act 2026', brackets: [[600000, 0, 0], [1200000, 0, 1], [2200000, 6000, 11], [3200000, 116000, 20], [4100000, 316000, 25], [5600000, 541000, 29], [7000000, 976000, 32], [null, 1424000, 35]] },
+      tax: { on: true, label: 'Tax year 2027 (July 2026 to June 2027), from the Finance Act 2026', brackets: [[600000, 0, 0], [1200000, 0, 1], [2200000, 6000, 11], [3200000, 116000, 20], [4100000, 316000, 25], [5600000, 541000, 29], [7000000, 976000, 32], [null, 1424000, 35]] },
       eobi: { on: false, min_wage: 40700, er: 5, ee: 1 },
       expense_limits: { travel: 3000, meals: 5000 },
     },

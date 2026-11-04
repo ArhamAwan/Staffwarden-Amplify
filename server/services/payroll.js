@@ -157,12 +157,14 @@ function createPayroll(ctx) {
     const counted = lines.filter((l) => l.counted);
     const taxable = counted.filter((l) => l.taxable).reduce((n, l) => n + l.amount, 0);
     let tax = 0;
-    if (setup.tax_mode === 'pk' && cur === 'PKR' && taxable > 0) tax = Math.round(yearlyTax(taxable * 12, R.tax.brackets) / 12);
+    // the company switch first (off: nobody has tax taken), then each person's own setting
+    const taxOn = R.tax.on !== false && setup.tax_mode === 'pk' && cur === 'PKR';
+    if (taxOn && taxable > 0) tax = Math.round(yearlyTax(taxable * 12, R.tax.brackets) / 12);
     const gross = counted.filter((l) => l.amount > 0).reduce((n, l) => n + l.amount, 0);
     const deductions = -counted.filter((l) => l.amount < 0).reduce((n, l) => n + l.amount, 0);
     const facts = {
       workdays: workdays.length, employed_days: employedWork.length, present, absent: absent.length, late: late.length, unpaid: unpaid.length,
-      worked_secs: worked, expected_secs: expected, taxable, tax_note: setup.tax_mode === 'pk' && cur === 'PKR' ? `${fmtMoney(taxable, cur)} × 12 = ${fmtMoney(taxable * 12, cur)} a year, on the brackets` : 'No tax taken: ' + (cur !== 'PKR' ? 'paid in dollars' : 'set to none'),
+      worked_secs: worked, expected_secs: expected, taxable, tax_note: taxOn ? `${fmtMoney(taxable, cur)} × 12 = ${fmtMoney(taxable * 12, cur)} a year, on the brackets` : 'No tax taken: ' + (R.tax.on === false ? 'income tax is off for the company' : cur !== 'PKR' ? 'paid in dollars' : 'set to none'),
       joined, leaving, bank: !!(rec && rec.iban), contract: rec ? rec.contract : null,
     };
     return { currency: cur, lines, gross, deductions, tax, net: gross - deductions - tax, employer, facts };

@@ -1308,3 +1308,12 @@ table.t.grid tr:hover td.nm { background: #221A4E !important; }
 .hr-hist .sh-r { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .hr-hist .sh-fix { font-size: 12.5px; font-weight: 600; }
 .sh-rm { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--line); }
+/* income tax switch: the brackets fade when tax is off for the company; the per-person switch in Change pay */
+#tax .prule { margin-bottom: 14px; }
+#tax.tax-off .tax-br, #tax.tax-off .tax-br + .field, #tax.tax-off .tax-br ~ .hint { opacity: .45; }
+.tax-sw { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; padding-top: 6px; }
+.tax-sw > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.tax-sw b { font-size: 14px; font-weight: 600; }
+.tax-sw > span:last-child > span { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.field > .f.lbl { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink-2); margin: 0 0 5px; }
+.field > .f.lbl + .tax-sw { padding-top: 4px; }

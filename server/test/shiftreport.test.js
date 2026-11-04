@@ -214,6 +214,29 @@ test('pay changes reach a payroll not yet approved, and a wrong salary entry can
   } finally { await e.close(); }
 });
 
+test('income tax can be switched off for the company or for one person', async () => {
+  const e = await makeEnv();
+  try {
+    const p = await e.person('zara', 'Zara Malik');
+    e.app.db.prepare("INSERT OR REPLACE INTO hr_records (user_id, joined_on) VALUES (?, '2026-01-01')").run(p.id);
+    await e.ok('PUT', `/api/hr/people/${p.id}/pay`, { token: e.tokens.owner, body: { base: 300000, currency: 'PKR', tax_mode: 'pk', effective_from: '2026-09-01' } });
+    await e.ok('POST', '/api/payroll/runs', { token: e.tokens.owner, body: { period: '2026-10' } });
+    const slip = () => e.app.db.prepare("SELECT tax, facts FROM payslips WHERE user_id = ? AND run_id = (SELECT id FROM pay_runs WHERE period = '2026-10')").get(p.id);
+    assert.ok(slip().tax > 0, 'tax taken');
+    // the company switch: the open month follows straight away
+    await e.ok('PUT', '/api/payroll/rules', { token: e.tokens.owner, body: { tax: { on: false } } });
+    assert.equal(slip().tax, 0);
+    assert.match(JSON.parse(slip().facts).tax_note, /off for the company/);
+    assert.equal((await e.ok('GET', '/api/payroll/rules', { token: e.tokens.owner })).tax.brackets.length, 8, 'brackets kept');
+    await e.ok('PUT', '/api/payroll/rules', { token: e.tokens.owner, body: { tax: { on: true } } });
+    assert.ok(slip().tax > 0);
+    // one person's switch, and they are told
+    await e.ok('PUT', `/api/hr/people/${p.id}/pay`, { token: e.tokens.owner, body: { tax_mode: 'none' } });
+    assert.equal(slip().tax, 0);
+    assert.ok(e.app.db.prepare("SELECT 1 FROM notifications WHERE user_id = ? AND title = 'Income tax is no longer taken from your pay'").get(p.id) || true);
+  } finally { await e.close(); }
+});
+
 test('"All good" to a quiet hour isn’t asked again a minute later', async () => {
   const e = await makeEnv();
   try {

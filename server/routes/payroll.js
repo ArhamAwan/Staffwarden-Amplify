@@ -353,7 +353,8 @@ module.exports = (ctx) => {
     if ('pay_by' in body) next.pay_by = int(body.pay_by, 'pay_by', 1, 28);
     if (next.pay_by != null && next.pay_day != null) need(next.pay_by >= next.pay_day, 400, 'The last pay day has to be on or after the first');
     if ('leave_payout' in body) next.leave_payout = !!body.leave_payout;
-    if (body.tax) {
+    if (body.tax && 'on' in body.tax) next.tax = { ...next.tax, on: !!body.tax.on };
+    if (body.tax && body.tax.brackets) {
       const b = body.tax.brackets;
       need(Array.isArray(b) && b.length >= 1 && b.length <= 15, 400, 'tax.brackets must be a list');
       let last = -1;
@@ -365,14 +366,16 @@ module.exports = (ctx) => {
         last = hi === null ? last : hi;
       }
       need(b[b.length - 1][0] === null, 400, 'The last bracket must have no upper limit');
-      next.tax = { label: optStr(body.tax.label, 'tax.label', 160) || cur.tax.label, brackets: b };
+      next.tax = { ...next.tax, label: optStr(body.tax.label, 'tax.label', 160) || cur.tax.label, brackets: b };
     }
     if (body.eobi) next.eobi = { on: !!body.eobi.on, min_wage: int(body.eobi.min_wage ?? cur.eobi.min_wage, 'eobi.min_wage', 0, 10000000), er: Number(body.eobi.er ?? cur.eobi.er), ee: Number(body.eobi.ee ?? cur.eobi.ee) };
     if (body.expense_limits) next.expense_limits = Object.fromEntries(Object.entries(body.expense_limits).filter(([k]) => /^[a-z]{2,20}$/.test(k)).map(([k, v]) => [k, int(v, 'limit', 0, 10000000)]));
     // these decide who controls HR, so only the owner changes them
     for (const k of ['owner_approves', 'hr_own_pay', 'managers_first']) if (k in body) { need(user.role === 'owner', 403, 'Only the owner can change who approves'); next[k] = !!body[k]; }
     saveSetting('payroll', next);
-    audit(user, 'payroll.rules', null, Object.keys(body).join(', '));
+    audit(user, 'payroll.rules', null, `${Object.keys(body).join(', ')}${cur.tax.on !== next.tax.on ? `; income tax ${next.tax.on === false ? 'off' : 'on'}` : ''}`);
+    // a month not approved yet follows the new rules straight away
+    for (const r of db.prepare("SELECT * FROM pay_runs WHERE status IN ('draft','review')").all()) P().compute(r);
     emit('payroll');
     return P().rules();
   });

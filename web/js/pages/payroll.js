@@ -176,8 +176,9 @@ function rulesView(ov) {
         ${rule('Unused leave when someone leaves', 'Leave earned this year and not taken is paid in their last month', sw('leave_payout', R.leave_payout))}
         ${rule('Pay days', 'Each person is paid on their own day in this window, and marked paid one by one', html`<span class="prule-x">From the <input name="pay_day" type="number" min="1" max="28" value="${R.pay_day}" class="num tiny" aria-label="First pay day"> to the <input name="pay_by" type="number" min="1" max="28" value="${R.pay_by || 10}" class="num tiny" aria-label="Last pay day"> of the next month</span>`)}</div></section>
       <div>
-        <section class="panel"><header><h2>Income tax brackets</h2><span class="muted small">${R.tax.label}</span></header><div class="body">
-          <div class="tbl-wrap"><table class="t tight"><thead><tr><th>Yearly income from</th><th>Up to</th><th>Fixed tax</th><th>% on the rest</th></tr></thead><tbody>${brackets}</tbody></table></div>
+        <section class="panel${R.tax.on === false ? ' tax-off' : ''}" id="tax"><header><h2>Income tax</h2><span class="muted small">${R.tax.label}</span></header><div class="body">
+          ${rule('Take income tax off pay', R.tax.on === false ? TAX_OFF_TXT : TAX_ON_TXT, sw('tax_on', R.tax.on !== false))}
+          <div class="tbl-wrap tax-br"><table class="t tight"><thead><tr><th>Yearly income from</th><th>Up to</th><th>Fixed tax</th><th>% on the rest</th></tr></thead><tbody>${brackets}</tbody></table></div>
           <div class="field mt"><label class="f" for="tl">Label</label><input id="tl" name="tax_label" value="${R.tax.label}" maxlength="160"></div>
           <p class="hint">Each month’s taxable pay × 12, taxed on these brackets, ÷ 12. When the budget changes them, edit them here and check with your accountant. Months already approved keep what they were paid with.</p></div></section>
         <section class="panel" id="eobi"><header><h2>Contributions</h2></header><div class="body">
@@ -193,6 +194,8 @@ function rulesView(ov) {
     <div class="form-end"><p class="err" data-err></p><button class="btn primary" type="submit">${icon('check')} Save rules</button></div></form>`;
 }
 
+const TAX_ON_TXT = 'On the brackets below, for people paid in rupees whose own pay has tax switched on (in People and pay)';
+const TAX_OFF_TXT = 'Off: nobody has tax taken, and payslips say so. Months already approved keep what they had.';
 // ---------- actions ----------
 const act = (fn) => async (el) => { try { await fn(el); } catch (e) { toast(errMsg(e), true); } };
 actions['pr-start'] = act(async (el) => { const d = await post('/api/payroll/runs', { period: el.dataset.period }); toast(`${periodLabel(el.dataset.period)} started`); S.navigate(`#/payroll?run=${d.run.id}`); });
@@ -274,9 +277,16 @@ actions['pr-rules'] = async (form) => {
   const body = {
     day_basis: fd.get('day_basis'), unpaid_leave: fd.get('unpaid_leave'), absent: fd.get('absent'),
     late: { mode: fd.get('late_mode'), every: n('late_every'), days: n('late_days') }, overtime: { mode: fd.get('ot_mode'), rate: n('ot_rate') },
-    leave_payout: !!fd.get('leave_payout'), pay_day: n('pay_day'), pay_by: n('pay_by'), tax: { label: fd.get('tax_label'), brackets },
+    leave_payout: !!fd.get('leave_payout'), pay_day: n('pay_day'), pay_by: n('pay_by'), tax: { on: !!fd.get('tax_on'), label: fd.get('tax_label'), brackets },
     eobi: { on: !!fd.get('eobi_on'), min_wage: n('eobi_min'), er: n('eobi_er'), ee: n('eobi_ee') },
   };
   if (S.me.role === 'owner') Object.assign(body, { owner_approves: !!fd.get('owner_approves'), hr_own_pay: !!fd.get('hr_own_pay'), managers_first: !!fd.get('managers_first') });
   try { await put('/api/payroll/rules', body); toast('Rules saved'); S.refresh(); } catch (e) { err.textContent = errMsg(e); }
 };
+// the brackets fade as soon as income tax is switched off (saved with "Save rules")
+document.addEventListener('change', (e) => {
+  const box = e.target && e.target.name === 'tax_on' && e.target.closest('#tax'); if (!box) return;
+  box.classList.toggle('tax-off', !e.target.checked);
+  const say = box.querySelector('.prule span');
+  if (say) say.textContent = e.target.checked ? TAX_ON_TXT : TAX_OFF_TXT;
+});
