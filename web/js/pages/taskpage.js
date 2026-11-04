@@ -6,6 +6,7 @@
 import { html, raw, esc, dur, plural, dayShort, todayIn, addDays, initials, avColor, relTime, callName } from '../util.js';
 import { get, post, patch, put, del, download, fileUrl, fileBytes, fileBase64, getToken } from '../api.js';
 import { S, actions, toast, errMsg, openModal, confirmBox } from '../ui.js';
+import { morph } from '../morph.js';
 import { isMgr, loadPeople } from '../parts.js';
 import { assigneeOptions, PRIORITY } from './tasks.js';
 
@@ -56,11 +57,11 @@ const chainName = (t, chainId) => { const c = chainsOf(t).find((x) => x.id === c
 const ui = { id: null, tab: 'talk', mode: 'comment', shown: new Set(), sel: null, ver: null, page: 1, pin: null, draft: null, compare: null, cmode: 'side', mtab: 'work', replyPin: null, open: false, wantPin: null };
 const FRESH = () => ({ tab: 'talk', mode: 'comment', shown: new Set(), sel: null, ver: null, page: 1, pin: null, draft: null, compare: null, cmode: 'side', mtab: 'work', replyPin: null, open: false });
 const pdfDocs = new Map(), pdfPages = new Map();
-let cur = null;
+let cur = null, mod = null;
 const imgCache = new Map();
 const fileSrc = (t, f) => `/api/tasks/${t.id}/files/${f.id}?inline=1`;
 
-export default {
+const pageMod = {
   title: 'Task',
   async load(q) {
     const id = Number(q.get('id'));
@@ -97,7 +98,7 @@ export default {
       imgCache.set(key, null);
       const [fid, pg] = img.dataset.tkpdf.split(':').map(Number);
       const known = pdfPages.has(fid);
-      pdfPage(fid, pg).then((u) => { imgCache.set(key, u); for (const i of document.querySelectorAll(`img[data-tkpdf="${img.dataset.tkpdf}"]`)) i.src = u; if (!known) S.refresh(); })
+      pdfPage(fid, pg).then((u) => { imgCache.set(key, u); for (const i of document.querySelectorAll(`img[data-tkpdf="${img.dataset.tkpdf}"]`)) i.src = u; if (!known) redraw(); })
         .catch(() => { imgCache.delete(key); for (const i of document.querySelectorAll(`img[data-tkpdf="${img.dataset.tkpdf}"]`)) i.closest('.tk-stage')?.classList.add('tk-bad'); });
     }
     if (ui.scrollPin) { ui.scrollPin = false; setTimeout(() => document.querySelector('.tk-mark.tk-on')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 400); }
@@ -109,6 +110,8 @@ export default {
     if (ti && document.fonts && document.fonts.load) document.fonts.load(`400 ${getComputedStyle(ti).fontSize} 'Instrument Serif'`).then(fit, () => {});
   },
 };
+mod = pageMod;
+export default pageMod;
 
 // ---------- who can do what ----------
 function roles(t) {
@@ -400,9 +403,9 @@ function pinCard(t, p, r, { float = true } = {}) {
     <div class="tk-poph"><span class="tk-pn${p.resolved ? ' tk-g' : ''}">${p.num}</span><b>Pin ${p.num} · ${p.resolved ? 'fixed' : 'open'}</b><span class="tk-tag">${I('lock', 12, 2.2)}Team only</span><button type="button" class="tk-x-btn" data-act="tk-pinsel" data-id="0" aria-label="Close">${I('x', 14)}</button></div>
     <div class="tk-cm">${av(p.user_id, p.user)}<div class="tk-w"><div class="tk-by"><b>${p.user || 'Someone'}</b>${hm(p.created_at)}${verOf(t, p) > 1 || chainsOf(t).find((c) => c.id === p.chain_id)?.versions.length > 1 ? ` · on V${verOf(t, p)}` : ''}</div><p class="tk-feedtext">${p.body}</p></div></div>
     ${p.replies.map((x) => html`<div class="tk-cm tk-rep" data-k="pr${x.id}">${av(x.user_id, x.user)}<div class="tk-w"><div class="tk-by"><b>${x.user || 'Someone'}</b>${hm(x.created_at)}</div><p class="tk-feedtext">${x.body}</p></div></div>`)}
-    <div class="tk-popa"><button type="button" class="tk-btn tk-sm" data-act="tk-reply" data-id="${p.id}">${I('reply', 15)}Reply on pin ${p.num}</button>
+    ${p.pending ? html`<div class="tk-popa"><span class="tk-small tk-muted">Saving…</span></div>` : html`<div class="tk-popa"><button type="button" class="tk-btn tk-sm" data-act="tk-reply" data-id="${p.id}">${I('reply', 15)}Reply on pin ${p.num}</button>
       ${can ? html`<button type="button" class="tk-btn tk-sm ${p.resolved ? '' : 'tk-ok'}" data-act="tk-resolve" data-id="${p.id}" data-v="${p.resolved ? '0' : '1'}">${p.resolved ? 'Reopen' : html`${I('check', 15, 2.6)}Mark fixed`}</button>` : ''}
-      ${p.user_id === S.me.id || r.manage ? html`<button type="button" class="tk-lnk tk-small" data-act="tk-delpin" data-id="${p.id}" style="margin-left:auto;color:#8E87B5">Remove</button>` : ''}</div>
+      ${p.user_id === S.me.id || r.manage ? html`<button type="button" class="tk-lnk tk-small" data-act="tk-delpin" data-id="${p.id}" style="margin-left:auto;color:#8E87B5">Remove</button>` : ''}</div>`}
   </div>`;
 }
 function draftCard(d) {
@@ -575,11 +578,11 @@ function rail(t, r) {
 function pinItem(t, p, r) {
   const multi = chainsOf(t).find((c) => c.id === p.chain_id)?.versions.length > 1;
   const can = p.user_id === S.me.id || t.is_mine || r.approver || r.manage;
-  return html`<li class="tk-pinit${p.resolved ? ' tk-res' : ''}${ui.pin === p.id ? ' tk-on' : ''}" data-k="fp${p.id}">
+  return html`<li class="tk-pinit${p.pending ? ' tk-pending' : ''}${p.resolved ? ' tk-res' : ''}${ui.pin === p.id ? ' tk-on' : ''}" data-k="fp${p.id}">
     <div class="tk-pinh"><span class="tk-pn${p.resolved ? ' tk-g' : ''}">${p.num}</span><span>${chainName(t, p.chain_id)}${multi ? ` · ${p.resolved ? `from V${verOf(t, p)}` : `V${verOf(t, p)}`}` : ''}${isPdf(fileOf(t, p.file_id) || {}) ? ` · page ${p.page}` : ''} · ${p.resolved ? 'fixed' : 'open'}</span><button type="button" class="tk-lnk tk-small" data-act="tk-goto" data-id="${p.id}">Go to pin</button></div>
     <p class="tk-feedtext"><b>${first(p.user)}:</b> ${p.body}</p>
     ${p.replies.map((x) => html`<p class="tk-feedtext tk-rep" data-k="fr${x.id}"><b>${first(x.user)}:</b> ${x.body}</p>`)}
-    <div class="tk-popa"><button type="button" class="tk-lnk tk-small" data-act="tk-reply" data-id="${p.id}">Reply</button>${can ? html`<button type="button" class="tk-lnk tk-small" data-act="tk-resolve" data-id="${p.id}" data-v="${p.resolved ? '0' : '1'}">${p.resolved ? 'Reopen' : 'Mark fixed'}</button>` : ''}<span class="tk-small tk-muted" style="margin-left:auto">${relTime(p.created_at)}</span></div>
+    <div class="tk-popa">${p.pending ? html`<span class="tk-small tk-muted">Saving…</span>` : html`<button type="button" class="tk-lnk tk-small" data-act="tk-reply" data-id="${p.id}">Reply</button>`}${can && !p.pending ? html`<button type="button" class="tk-lnk tk-small" data-act="tk-resolve" data-id="${p.id}" data-v="${p.resolved ? '0' : '1'}">${p.resolved ? 'Reopen' : 'Mark fixed'}</button>` : ''}<span class="tk-small tk-muted" style="margin-left:auto">${relTime(p.created_at)}</span></div>
   </li>`;
 }
 
@@ -592,8 +595,8 @@ function feedbackBody(body) {
 
 function commentItem(t, c, r) {
   const kind = c.kind === 'update' ? 'progress update' : c.kind === 'feedback' ? 'asked for changes' : '';
-  const body = html`<li class="tk-cm${c.kind === 'feedback' ? ' tk-fb' : ''}" data-k="c${c.id}">${av(c.user_id || c.client_user_id, c.user)}<div class="tk-w">
-    <div class="tk-by"><b>${c.user || 'Someone'}</b>${relTime(c.created_at)}${kind ? html` · <span class="tk-kind">${kind}</span>` : ''}${c.from_client ? html` · <span class="tk-kind">${t.client || 'Client'}</span>` : ''}${c.team_only && c.kind !== 'feedback' ? html` · <span class="tk-kind">team only</span>` : ''}${c.user_id === S.me.id || r.manage ? html` <button type="button" class="tk-lnk" style="font-size:12px;min-height:0;color:#8E87B5" data-act="tk-delc" data-id="${c.id}">Delete</button>` : ''}</div>
+  const body = html`<li class="tk-cm${c.kind === 'feedback' ? ' tk-fb' : ''}${c.pending ? ' tk-pending' : ''}" data-k="c${c.id}">${av(c.user_id || c.client_user_id, c.user)}<div class="tk-w">
+    <div class="tk-by"><b>${c.user || 'Someone'}</b>${c.pending ? 'Sending…' : relTime(c.created_at)}${kind ? html` · <span class="tk-kind">${kind}</span>` : ''}${c.from_client ? html` · <span class="tk-kind">${t.client || 'Client'}</span>` : ''}${c.team_only && c.kind !== 'feedback' ? html` · <span class="tk-kind">team only</span>` : ''}${!c.pending && (c.user_id === S.me.id || r.manage) ? html` <button type="button" class="tk-lnk" style="font-size:12px;min-height:0;color:#8E87B5" data-act="tk-delc" data-id="${c.id}">Delete</button>` : ''}</div>
     ${c.kind === 'feedback' ? feedbackBody(c.body) : c.body ? html`<p class="tk-feedtext">${c.body}</p>` : ''}
     ${c.file ? html`<button type="button" class="tk-lnk" style="min-height:0" data-act="tk-cfile" data-url="${c.file.url}" data-name="${c.file.name}">${I('clip', 14)} ${c.file.name}</button>` : ''}
   </div></li>`;
@@ -632,8 +635,22 @@ function composer(t, r) {
 
 // ---------- actions ----------
 const T = () => cur && cur.t;
-const done = async (msg) => { if (msg) toast(msg); S.refresh(); };
-const run = (fn) => async (el, e) => { try { await fn(el, e); } catch (err) { toast(errMsg(err), true); } };
+const done = async (msg) => { if (msg) toast(msg); (S.refreshNow || S.refresh)(); };
+// redraw from what we already have: for switching tabs, versions, pins and the like, nothing to fetch
+function redraw() {
+  const v = document.getElementById('view'), root = v && v.querySelector('.tk');
+  if (!root || !cur) { S.refresh(); return; }
+  morph(v, page(cur.t, cur.projects).toString());
+  if (mod && mod.after) mod.after(v);
+}
+// a button shows it's working until the server answers, so a click never looks ignored
+const busy = (b, on) => { if (!b) return; b.classList.toggle('tk-busy', on); if (on) b.setAttribute('aria-busy', 'true'); else b.removeAttribute('aria-busy'); };
+const run = (fn) => async (el, e) => {
+  const b = el && el.closest && el.matches && !el.matches('input') ? el.closest('button, label.tk-btn') : null;
+  if (b && b.classList.contains('tk-busy')) return;
+  busy(b, true);
+  try { await fn(el, e); } catch (err) { toast(errMsg(err), true); (S.refreshNow || S.refresh)(); } finally { busy(b, false); }
+};
 const closeMenus = () => document.querySelectorAll('.tk details[open]').forEach((d) => d.removeAttribute('open'));
 
 actions['tk-stage'] = run(async (el) => {
@@ -664,10 +681,15 @@ function askChanges(prefill = '') {
 }
 actions['tk-ask'] = () => askChanges();
 actions['tk-sendask'] = () => { const ta = document.getElementById('tk-c'); closeMenus(); askChanges(ta ? ta.value : ''); if (ta) { ta.value = ''; delete ta.dataset.dirty; } };
-actions['tk-tick'] = run(async (el) => { await patch(`/api/tasks/${T().id}/checks/${el.dataset.id}`, { checked: el.checked }); done(); });
+actions['tk-tick'] = run(async (el) => {
+  const t = T(), c = t.checks.find((x) => x.id === Number(el.dataset.id)), on = el.checked;
+  if (c) { c.checked = on; c.checked_by = on ? S.me.name : null; redraw(); }
+  await patch(`/api/tasks/${t.id}/checks/${el.dataset.id}`, { checked: on }); done();
+});
 actions['tk-delcheck'] = run(async (el) => { await del(`/api/tasks/${T().id}/checks/${el.dataset.id}`); done(); });
 actions['tk-step'] = run(async (el) => {
   const t = T(); const list = (t.steps_list || []).map((x, i) => ({ id: x.id, title: x.title, done: i === Number(el.dataset.i) ? el.checked : x.done }));
+  t.steps_list = list.map((x) => ({ ...x })); redraw();
   await (await import('../api.js')).put(`/api/tasks/${t.id}/steps`, { steps: list }); done();
 });
 actions['tk-delstep'] = run(async (el) => {
@@ -679,15 +701,15 @@ actions['tk-cfile'] = run(async (el) => download(el.dataset.url, el.dataset.name
 actions['tk-delfile'] = run(async (el) => { if (!(await confirmBox({ title: Number(el.dataset.v) > 1 ? 'Remove this version?' : 'Remove this file?', message: Number(el.dataset.v) > 1 ? 'Only the latest version goes. Its pins go with it; earlier versions stay.' : 'It is deleted from the task, with any pins on it.', confirm: 'Remove', danger: true }))) return; await del(`/api/tasks/${T().id}/files/${el.dataset.id}`); done('File removed'); });
 actions['tk-dellink'] = run(async (el) => { await del(`/api/tasks/${T().id}/links/${el.dataset.id}`); done(); });
 actions['tk-delc'] = run(async (el) => { if (!(await confirmBox({ title: 'Delete this comment?', message: 'It is removed for everyone.', confirm: 'Delete', danger: true }))) return; await del(`/api/tasks/${T().id}/comments/${el.dataset.id}`); done(); });
-actions['tk-tab'] = (el) => { ui.tab = el.dataset.v; S.refresh(); };
-actions['tk-mode'] = (el) => { ui.mode = el.dataset.v; closeMenus(); S.refresh(); setTimeout(() => document.getElementById('tk-c')?.focus(), 60); };
-actions['tk-view'] = (el) => { ui.view = el.dataset.v; S.refresh(); };
+actions['tk-tab'] = (el) => { ui.tab = el.dataset.v; redraw(); };
+actions['tk-mode'] = (el) => { ui.mode = el.dataset.v; closeMenus(); redraw(); setTimeout(() => document.getElementById('tk-c')?.focus(), 60); };
+actions['tk-view'] = (el) => { ui.view = el.dataset.v; redraw(); };
 actions['tk-show'] = (el) => {
   const k = el.dataset.v;
   closeMenus();
   if (k === 'estimate') return actions['tk-estimate']();
   if (k === 'count') return actions['tk-count']();
-  ui.shown.add(k); S.refresh();
+  ui.shown.add(k); redraw();
   setTimeout(() => { const f = document.getElementById(k === 'steps' ? 'tk-ns' : k === 'checks' ? 'tk-nc' : k === 'files' ? 'tk-nl' : ''); if (f) f.focus(); }, 120);
 };
 actions['tk-at'] = () => { const ta = document.getElementById('tk-c'); if (!ta) return; ta.focus(); const p = ta.selectionStart; ta.value = `${ta.value.slice(0, p)}@${ta.value.slice(p)}`; ta.selectionStart = ta.selectionEnd = p + 1; ta.dataset.dirty = '1'; };
@@ -786,7 +808,7 @@ document.addEventListener('change', async (e) => {
   }
   if (e.target.matches('[data-tk-file]') && e.target.files[0]) { const file = e.target.files[0], ver = e.target.dataset.ver; e.target.value = ''; if (ver) newVersion(file, Number(ver)); else await upload(file); return; }
   if (e.target.matches('[data-tk-team]')) { ui.mode = e.target.checked ? 'team' : 'comment'; return; }
-  if (e.target.matches('[data-tk-cmp]')) { ui[e.target.dataset.tkCmp === 'a' ? 'cmpA' : 'cmpB'] = Number(e.target.value); S.refresh(); }
+  if (e.target.matches('[data-tk-cmp]')) { ui[e.target.dataset.tkCmp === 'a' ? 'cmpA' : 'cmpB'] = Number(e.target.value); redraw(); }
 });
 document.addEventListener('click', (e) => {
   // a due chip opens the date picker; menus close when you click elsewhere
@@ -796,7 +818,7 @@ document.addEventListener('click', (e) => {
   for (const d of document.querySelectorAll('.tk details.tk-more[open]')) if (!d.contains(e.target) || e.target.closest('.tk-mi')) d.removeAttribute('open');
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { closeMenus(); if (document.querySelector('.tk') && (ui.draft || ui.pin) && !document.querySelector('#overlay > *')) { ui.draft = null; ui.pin = null; S.refresh(); } }
+  if (e.key === 'Escape') { closeMenus(); if (document.querySelector('.tk') && (ui.draft || ui.pin) && !document.querySelector('#overlay > *')) { ui.draft = null; ui.pin = null; redraw(); } }
   if (e.key === 'Enter' && !e.shiftKey && e.target.id === 'tk-c') { e.preventDefault(); e.target.form.requestSubmit(); }
   if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('tk-title')) { e.preventDefault(); e.target.blur(); }
 });
@@ -828,63 +850,79 @@ document.addEventListener('submit', async (e) => {
   e.preventDefault();
   const t = T(), kind = form.dataset.tkForm, fd = new FormData(form);
   const clear = () => form.querySelectorAll('input,textarea').forEach((x) => { if (x.type !== 'file') { x.value = ''; delete x.dataset.dirty; } });
+  const sb = form.querySelector('button[type="submit"]');
+  if (sb && sb.classList.contains('tk-busy')) return;
+  const now = new Date().toISOString();
+  busy(sb, true);
   try {
     if (kind === 'pin') {
       const body = String(fd.get('body') || '').trim(); if (!body || !ui.draft) return;
-      const p = await post(`/api/tasks/${t.id}/pins`, { file_id: ui.draft.fid, page: ui.draft.page, x: ui.draft.x, y: ui.draft.y, body });
-      Object.assign(ui, { draft: null, pin: p.id }); clear(); done(`Pin ${p.num} added`); return;
+      // shown at once; the real pin replaces it when the server answers
+      const d = ui.draft, f = fileOf(t, d.fid), num = Math.max(0, ...t.pins.filter((x) => x.chain_id === (f ? f.chain_id : 0)).map((x) => x.num)) + 1;
+      t.pins.push({ id: -1, file_id: d.fid, chain_id: f ? f.chain_id : d.fid, page: d.page, x: d.x, y: d.y, num, user_id: S.me.id, user: S.me.name, body, round: t.review_rounds + 1, created_at: now, resolved: false, replies: [], pending: true });
+      Object.assign(ui, { draft: null, pin: -1 }); clear(); redraw();
+      const p = await post(`/api/tasks/${t.id}/pins`, { file_id: d.fid, page: d.page, x: d.x, y: d.y, body });
+      t.pins = t.pins.filter((x) => x.id !== -1).concat(p); ui.pin = p.id; redraw(); done(); return;
     }
     if (kind === 'comment' && ui.replyPin) {
       const body = String(fd.get('body') || '').trim(); if (!body) return;
-      const p = await post(`/api/tasks/${t.id}/pins/${ui.replyPin}/replies`, { body });
-      ui.replyPin = null; clear(); done(`Replied on pin ${p.num}`); return;
+      const pin = pinById(ui.replyPin), pid = ui.replyPin;
+      if (pin) pin.replies.push({ id: -1, user_id: S.me.id, user: S.me.name, body, created_at: now });
+      ui.replyPin = null; clear(); redraw();
+      await post(`/api/tasks/${t.id}/pins/${pid}/replies`, { body }); done(); return;
     }
     if (kind === 'comment') {
       const body = String(fd.get('body') || '').trim(); if (!body) return;
-      await post(`/api/tasks/${t.id}/comments`, { body, kind: ui.mode === 'update' ? 'update' : 'comment', team_only: ui.mode === 'team' });
-      clear(); done(); setTimeout(() => document.getElementById('tk-c')?.focus(), 60); return;
+      const kind2 = ui.mode === 'update' ? 'update' : 'comment', team = ui.mode === 'team';
+      t.comments.push({ id: -Date.now(), user_id: S.me.id, user: S.me.name, team_only: team, kind: kind2, body, created_at: now, pending: true });
+      if (ui.mode === 'update') ui.mode = 'comment';
+      clear(); redraw(); setTimeout(() => document.getElementById('tk-c')?.focus(), 30);
+      await post(`/api/tasks/${t.id}/comments`, { body, kind: kind2, team_only: team });
+      done(); return;
     }
     if (kind === 'check') { await post(`/api/tasks/${t.id}/checks`, { title: fd.get('title') }); clear(); done(); setTimeout(() => document.getElementById('tk-nc')?.focus(), 60); return; }
     if (kind === 'step') { await (await import('../api.js')).put(`/api/tasks/${t.id}/steps`, { steps: [...(t.steps_list || []).map((x) => ({ id: x.id, title: x.title, done: x.done })), { title: fd.get('title') }] }); clear(); done(); setTimeout(() => document.getElementById('tk-ns')?.focus(), 60); return; }
     if (kind === 'link') { await post(`/api/tasks/${t.id}/links`, { url: fd.get('url') }); clear(); done('Link added'); }
-  } catch (err) { toast(errMsg(err), true); }
+  } catch (err) { toast(errMsg(err), true); (S.refreshNow || S.refresh)(); } finally { busy(sb, false); }
 });
 
 // ---------- the work: pick, versions, pins, compare ----------
 const pinById = (id) => T().pins.find((p) => p.id === Number(id));
-actions['tk-open'] = (el) => { Object.assign(ui, { sel: el.dataset.v, ver: null, page: 1, pin: null, draft: null, open: true, compare: null, mtab: 'work' }); S.refresh(); setTimeout(() => document.querySelector('.tk-viewer')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80); };
-actions['tk-close'] = () => { Object.assign(ui, { open: false, pin: null, draft: null }); S.refresh(); };
-actions['tk-sel'] = (el) => { Object.assign(ui, { sel: el.dataset.v, ver: null, page: 1, pin: null, draft: null }); S.refresh(); };
-actions['tk-ver'] = (el) => { Object.assign(ui, { ver: Number(el.dataset.id), pin: null, draft: null }); S.refresh(); };
-actions['tk-page'] = (el) => { ui.page = Math.max(1, ui.page + Number(el.dataset.v)); Object.assign(ui, { pin: null, draft: null }); S.refresh(); };
-actions['tk-compare'] = (el) => { Object.assign(ui, { compare: Number(el.dataset.v), cmpA: null, cmpB: null, pin: null, draft: null, cut: 50 }); S.refresh(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-actions['tk-uncompare'] = () => { ui.compare = null; S.refresh(); };
-actions['tk-cmode'] = (el) => { ui.cmode = el.dataset.v; S.refresh(); };
-actions['tk-mtab'] = (el) => { ui.mtab = el.dataset.v; S.refresh(); window.scrollTo({ top: 0 }); };
+actions['tk-open'] = (el) => { Object.assign(ui, { sel: el.dataset.v, ver: null, page: 1, pin: null, draft: null, open: true, compare: null, mtab: 'work' }); redraw(); setTimeout(() => document.querySelector('.tk-viewer')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80); };
+actions['tk-close'] = () => { Object.assign(ui, { open: false, pin: null, draft: null }); redraw(); };
+actions['tk-sel'] = (el) => { Object.assign(ui, { sel: el.dataset.v, ver: null, page: 1, pin: null, draft: null }); redraw(); };
+actions['tk-ver'] = (el) => { Object.assign(ui, { ver: Number(el.dataset.id), pin: null, draft: null }); redraw(); };
+actions['tk-page'] = (el) => { ui.page = Math.max(1, ui.page + Number(el.dataset.v)); Object.assign(ui, { pin: null, draft: null }); redraw(); };
+actions['tk-compare'] = (el) => { Object.assign(ui, { compare: Number(el.dataset.v), cmpA: null, cmpB: null, pin: null, draft: null, cut: 50 }); redraw(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+actions['tk-uncompare'] = () => { ui.compare = null; redraw(); };
+actions['tk-cmode'] = (el) => { ui.cmode = el.dataset.v; redraw(); };
+actions['tk-mtab'] = (el) => { ui.mtab = el.dataset.v; redraw(); window.scrollTo({ top: 0 }); };
 actions['tk-pinat'] = (el, e) => {
   const b = el.getBoundingClientRect();
   if (!b.width || !b.height) return;
   const x = Math.min(1, Math.max(0, (e.clientX - b.left) / b.width)), y = Math.min(1, Math.max(0, (e.clientY - b.top) / b.height));
   ui.pin = null; ui.draft = { fid: Number(el.dataset.fid), page: Number(el.dataset.page) || 1, x, y };
-  S.refresh();
+  redraw();
 };
-actions['tk-undraft'] = () => { ui.draft = null; S.refresh(); };
-actions['tk-pinsel'] = (el) => { const id = Number(el.dataset.id); ui.pin = id && ui.pin !== id ? id : null; ui.draft = null; S.refresh(); };
+actions['tk-undraft'] = () => { ui.draft = null; redraw(); };
+actions['tk-pinsel'] = (el) => { const id = Number(el.dataset.id); ui.pin = id && ui.pin !== id ? id : null; ui.draft = null; redraw(); };
 // show a pin wherever it is: its piece of work, its version, its page
 actions['tk-goto'] = (el) => {
   const p = pinById(el.dataset.id); if (!p) return;
   Object.assign(ui, { sel: `c${p.chain_id}`, ver: p.file_id, page: p.page, pin: p.id, draft: null, compare: null, open: true, mtab: 'work' });
-  S.refresh();
+  redraw();
   setTimeout(() => (document.querySelector('.tk-mark.tk-on') || document.querySelector('.tk-viewer'))?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
 };
 actions['tk-reply'] = (el) => {
   const id = Number(el.dataset.id);
   ui.replyPin = id || null;
   if (id && matchMedia('(max-width: 760px)').matches) ui.mtab = 'talk';
-  S.refresh();
+  redraw();
   if (id) setTimeout(() => document.getElementById('tk-c')?.focus(), 80);
 };
 actions['tk-resolve'] = run(async (el) => {
+  const mine = pinById(el.dataset.id);
+  if (mine) { mine.resolved = el.dataset.v === '1'; redraw(); }
   const p = await patch(`/api/tasks/${T().id}/pins/${el.dataset.id}`, { resolved: el.dataset.v === '1' });
   done(p.resolved ? `Pin ${p.num} marked fixed` : `Pin ${p.num} reopened`);
 });
@@ -916,7 +954,7 @@ actions['tk-bump'] = (el) => {
   // quick taps add up and are sent once
   const t = T(); if (!t.count) return;
   bumpTo = Math.max(0, (bumpTo ?? t.count.done) + Number(el.dataset.v));
-  t.count.done = bumpTo; S.refresh();
+  t.count.done = bumpTo; redraw();
   clearTimeout(bumpT);
   bumpT = setTimeout(async () => { const v = bumpTo; bumpTo = null; try { await post(`/api/tasks/${t.id}/progress`, { count_done: v }); done(); } catch (err) { toast(errMsg(err), true); done(); } }, 500);
 };
@@ -947,4 +985,4 @@ async function pdfPage(fid, page) {
   return URL.createObjectURL(blob);
 }
 
-actions['tk-moredet'] = () => { ui.more = !ui.more; S.refresh(); };
+actions['tk-moredet'] = () => { ui.more = !ui.more; redraw(); };

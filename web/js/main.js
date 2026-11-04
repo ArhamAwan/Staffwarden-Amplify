@@ -381,6 +381,8 @@ function schedule() {
   wake = setTimeout(() => { wake = null; run(); }, wait);
 }
 S.refresh = schedule;
+// right away, for a change the person just made (the normal refresh waits up to 1.5 s to group updates)
+S.refreshNow = () => { if (wake) { clearTimeout(wake); wake = null; } run(); };
 
 let chatAt = 0, chatWait = null;
 async function chatCount() {
