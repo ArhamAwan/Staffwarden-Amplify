@@ -178,6 +178,42 @@ test('a raise counts for the month it is given in, paid the month after', async 
   } finally { await e.close(); }
 });
 
+test('pay changes reach a payroll not yet approved, and a wrong salary entry can be fixed or removed', async () => {
+  const e = await makeEnv();
+  try {
+    const p = await e.person('omar', 'Omar Ali');
+    e.app.db.prepare("INSERT OR REPLACE INTO hr_records (user_id, joined_on) VALUES (?, '2026-01-01')").run(p.id);
+    const baseOf = () => { const run = e.app.db.prepare("SELECT id FROM pay_runs WHERE period = '2026-10'").get(); return JSON.parse(e.app.db.prepare('SELECT lines FROM payslips WHERE run_id = ? AND user_id = ?').get(run.id, p.id).lines).find((l) => l.key === 'base').amount; };
+    // a typo: Rs 100 set from September, and October's payroll started with it
+    await e.ok('PUT', `/api/hr/people/${p.id}/pay`, { token: e.tokens.owner, body: { base: 100, currency: 'PKR', tax_mode: 'none', effective_from: '2026-09-01' } });
+    await e.ok('POST', '/api/payroll/runs', { token: e.tokens.owner, body: { period: '2026-10' } });
+    assert.equal(baseOf(), 100);
+    // changed from October: the open payroll follows at once, without pressing refresh
+    await e.ok('PUT', `/api/hr/people/${p.id}/pay`, { token: e.tokens.owner, body: { base: 150000, effective_from: '2026-10-01' } });
+    assert.equal(baseOf(), 150000);
+    // dated in November instead: October keeps the old amount (by design), until the wrong entry is fixed
+    let h = (await e.ok('GET', `/api/hr/people/${p.id}`, { token: e.tokens.owner })).history;
+    await e.ok('PUT', `/api/hr/people/${p.id}/salary-history/${h[0].id}`, { token: e.tokens.owner, body: { effective_from: '2026-11-04' } });
+    assert.equal(baseOf(), 100);
+    await e.ok('PUT', `/api/hr/people/${p.id}/salary-history/${h[1].id}`, { token: e.tokens.owner, body: { base: 150000 } });
+    assert.equal(baseOf(), 150000);
+    // or removed: the only other entry counts for every month
+    await e.ok('PUT', `/api/hr/people/${p.id}/salary-history/${h[1].id}`, { token: e.tokens.owner, body: { base: 100 } });
+    await e.ok('DELETE', `/api/hr/people/${p.id}/salary-history/${h[1].id}`, { token: e.tokens.owner });
+    assert.equal(baseOf(), 150000);
+    h = (await e.ok('GET', `/api/hr/people/${p.id}`, { token: e.tokens.owner })).history;
+    assert.equal(h.length, 1);
+    assert.equal((await e.api('DELETE', `/api/hr/people/${p.id}/salary-history/${h[0].id}`, { token: e.tokens.owner })).status, 409, 'the last one stays');
+    // an approved payroll never changes
+    e.app.db.prepare("UPDATE pay_runs SET status = 'approved' WHERE period = '2026-10'").run();
+    await e.ok('PUT', `/api/hr/people/${p.id}/salary-history/${h[0].id}`, { token: e.tokens.owner, body: { base: 160000 } });
+    assert.equal(baseOf(), 150000);
+    assert.equal((await e.ok('GET', `/api/hr/people/${p.id}`, { token: e.tokens.owner })).pay.base, 160000);
+    // the person is told
+    assert.ok(e.app.db.prepare("SELECT 1 FROM notifications WHERE user_id = ? AND title LIKE '%salary%'").get(p.id) || e.app.db.prepare("SELECT 1 FROM changes WHERE user_id = ? AND title = 'Your salary record was corrected'").get(p.id));
+  } finally { await e.close(); }
+});
+
 test('"All good" to a quiet hour isn’t asked again a minute later', async () => {
   const e = await makeEnv();
   try {

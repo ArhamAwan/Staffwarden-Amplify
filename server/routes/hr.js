@@ -234,9 +234,53 @@ module.exports = (ctx) => {
       ctx.changes.log(u.id, user, { area: 'pay', title: cur ? 'Your pay was changed' : 'Your pay was set', lines: [cur ? `Base salary: ${fmt(cur.base, cur.currency)} → ${fmt(base, currency)} a month, from ${startLabel(body.effective_from ? isoDate(body.effective_from, 'effective_from') : calc.companyToday())}` : `Base salary: ${fmt(base, currency)} a month`], reason: optStr(body.note, 'note', 200), link: '#/pay' });
     }
     audit(user, 'hr.pay', u.id, `${fmt(base, currency)}${cur ? ` (was ${fmt(cur.base, cur.currency)})` : ''}, tax ${tax}`);
+    redoOpenRuns();
     emit('hr', u.id);
     return personOut(u, user, { full: true });
   }
+  // a payroll that isn't approved yet always shows today's pay: worked out again whenever pay changes
+  function redoOpenRuns() {
+    const runs = db.prepare("SELECT * FROM pay_runs WHERE status IN ('draft','review')").all();
+    for (const r of runs) P().compute(r);
+    if (runs.length) emit('payroll');
+  }
+  // fixing the salary history: a wrong amount or date, or an entry that shouldn't be there
+  function histOf(params) {
+    const u = userOf(params.id);
+    const h = db.prepare('SELECT * FROM salary_history WHERE id = ? AND user_id = ?').get(Number(params.hid), u.id);
+    need(h, 404, 'That salary entry isn’t there any more');
+    return { u, h };
+  }
+  function afterHist(user, u, title, lines) {
+    // their pay now is the latest entry
+    const last = db.prepare('SELECT base, currency FROM salary_history WHERE user_id = ? ORDER BY effective_from DESC, id DESC LIMIT 1').get(u.id);
+    if (last) db.prepare('UPDATE pay_setup SET base = ?, currency = ?, updated_at = ? WHERE user_id = ?').run(last.base, last.currency, nowIso(), u.id);
+    ctx.changes.log(u.id, user, { area: 'pay', title, lines, link: '#/pay' });
+    redoOpenRuns();
+    emit('hr', u.id);
+    return personOut(u, user, { full: true });
+  }
+  const ownPayGuard = (user, u) => need(u.id !== user.id || (user.role === 'owner' && !user.dev_owner) || P().rules().hr_own_pay, 403, 'Your own pay is changed by the owner');
+  route('PUT', '/api/hr/people/:id/salary-history/:hid', ({ user, params, body }) => {
+    needHR(user);
+    const { u, h } = histOf(params); ownPayGuard(user, u);
+    const base = int(body.base ?? h.base, 'base', 0, 100000000);
+    const from = body.effective_from ? isoDate(body.effective_from, 'effective_from') : h.effective_from;
+    const fmt = (n) => P().fmtMoney(n, h.currency);
+    if (base === h.base && from === h.effective_from) return personOut(u, user, { full: true });
+    db.prepare('UPDATE salary_history SET base = ?, effective_from = ?, note = ? WHERE id = ?').run(base, from, optStr(body.note, 'note', 200) || h.note, h.id);
+    audit(user, 'hr.pay_fix', u.id, `${fmt(h.base)} from ${h.effective_from} → ${fmt(base)} from ${from}`);
+    return afterHist(user, u, 'Your salary record was corrected', [`${fmt(h.base)} from ${T.human(h.effective_from)} → ${fmt(base)} from ${T.human(from)}`]);
+  });
+  route('DELETE', '/api/hr/people/:id/salary-history/:hid', ({ user, params }) => {
+    needHR(user);
+    const { u, h } = histOf(params); ownPayGuard(user, u);
+    need(db.prepare('SELECT COUNT(*) n FROM salary_history WHERE user_id = ?').get(u.id).n > 1, 409, 'This is their only salary. Change it instead.');
+    db.prepare('DELETE FROM salary_history WHERE id = ?').run(h.id);
+    const fmt = (n) => P().fmtMoney(n, h.currency);
+    audit(user, 'hr.pay_fix', u.id, `removed ${fmt(h.base)} from ${h.effective_from}`);
+    return afterHist(user, u, 'A wrong salary entry was removed', [`${fmt(h.base)} from ${T.human(h.effective_from)} was removed`]);
+  });
 
   // ---- adding people from their contracts ----
   // The page reads each contract (text, or OCR for a scan) and HR checks what it found. This makes the

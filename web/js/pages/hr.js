@@ -87,7 +87,7 @@ function overview(p) {
     ${pay ? kv([['Base salary', `${money(pay.base, pay.currency)} a month`], ['Income tax', pay.tax_mode === 'pk' && pay.currency === 'PKR' ? 'Pakistan brackets' : 'None'], ...pay.allowances.map((a) => [a.label, `+ ${money(a.amount, pay.currency)} every month`]), ...pay.deductions.map((x) => [x.label, `− ${money(x.amount, pay.currency)} every month`]),
       ['Bank', r.iban ? `${r.bank_name || ''} ${r.iban}`.trim() : html`<span class="bad-t">Missing: needed for the bank sheet</span>`], r.account_title ? ['Account title', r.account_title] : null])
       : empty('No pay set', `${p.name.split(' ')[0]} is left off payroll until it is.`)}</div></section>`;
-  const hist = html`<section class="panel hr-hist"><header><h2>Salary history</h2></header><div class="body">${p.history.length ? html`<ul class="tline">${p.history.map((h) => html`<li><i></i><div><b class="num">${money(h.base, h.currency)}</b><span>${h.note || ''}${h.by_name ? ` · ${h.by_name}` : ''}</span></div><span class="muted small">${dateY(h.effective_from)}</span></li>`)}</ul>` : empty('Nothing yet', `Each change to ${p.name.split(' ')[0]}’s base salary is kept here, starting when you set their pay.`)}</div></section>`;
+  const hist = html`<section class="panel hr-hist"><header><h2>Salary history</h2></header><div class="body">${p.history.length ? html`<ul class="tline">${p.history.map((h) => html`<li data-k="sh${h.id}"><i></i><div><b class="num">${money(h.base, h.currency)}</b><span>${h.note || ''}${h.by_name ? ` · ${h.by_name}` : ''}</span><span class="sh-from">Counts from ${monthOf(h.effective_from)}’s pay, paid in ${paidIn(h.effective_from)}</span></div><span class="sh-r"><span class="muted small">${dateY(h.effective_from)}</span>${p.can_edit_pay ? html`<button type="button" class="linkbtn sh-fix" data-act="hr-shfix" data-id="${p.id}" data-h="${h.id}" data-base="${h.base}" data-cur="${h.currency}" data-from="${h.effective_from}" data-only="${p.history.length === 1 ? '1' : ''}" data-name="${p.name.split(' ')[0]}">Fix</button>` : ''}</span></li>`)}</ul>` : empty('Nothing yet', `Each change to ${p.name.split(' ')[0]}’s base salary is kept here, starting when you set their pay.`)}</div></section>`;
   const leave = html`<section class="panel"><header><h2>Time off</h2><span class="muted small">This year</span></header><div class="body"><div class="mini-stats"><div><span>Annual left</span><b class="num">${Math.max(0, p.leave.allowance - p.leave.taken)}</b><small>of ${p.leave.allowance} days</small></div><div><span>Taken</span><b class="num">${p.leave.taken}</b><small>days</small></div><div><span>Unpaid</span><b class="num">${p.leave.unpaid}</b><small>${p.leave.unpaid === 1 ? 'request' : 'requests'}</small></div></div></div></section>`;
   const slips = html`<section class="panel flush"><header><h2>Payslips</h2></header><div class="body">${p.slips.length ? html`<ul class="blist">${p.slips.map((s) => html`<li class="clickable" data-act="go" data-href="#/payroll?id=${s.id}" tabindex="0"><span class="what">${s.name}</span><span class="len num">${money(s.net, s.currency)}</span><span class="when">${STATUS[s.status][1]}</span></li>`)}</ul>` : empty('None yet', `${p.name.split(' ')[0]}’s payslips show here after their first payroll.`)}</div></section>`;
   const adv = p.advances.length ? html`<section class="panel"><header><h2>Advances</h2></header><div class="body"><ul class="adv-list">${p.advances.map((a) => { const [c, w] = ADV_ST[a.status] || ['idle', a.status]; return html`<li><div><p><b class="num">${money(a.amount, pay ? pay.currency : 'PKR')}</b> over ${plural(a.months, 'month')}</p>${a.reason ? html`<span>${a.reason}</span>` : ''}</div>${tag(c, w)}</li>`; })}</ul></div></section>` : '';
@@ -288,3 +288,30 @@ document.addEventListener('click', (e) => {
   }
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') for (const d of document.querySelectorAll('details.hr-more[open]')) d.open = false; });
+
+// the month a salary entry counts in: "October 2026"
+const paidIn = (d) => { const [y, m] = d.split('-').map(Number); return new Date(Date.UTC(m === 12 ? y + 1 : y, m % 12, 1)).toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' }); };
+const monthOf = (d) => new Date(`${d.slice(0, 7)}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+// fixing a salary entry: a typo in the amount, the wrong date, or an entry that shouldn't be there.
+// Payrolls not yet approved are worked out again straight away; approved ones never change.
+actions['hr-shfix'] = (el) => {
+  const d = el.dataset, cur = d.cur === 'USD' ? '$' : 'Rs';
+  const md = openModal({
+    title: 'Fix this salary entry', submit: 'Save the fix',
+    sub: `For a mistake, like a wrong amount or date. ${d.name} is told it was corrected. For a raise, use Change pay instead, so the history shows both.`,
+    body: html`<div class="grid2"><div class="field"><label class="f" for="shb">Monthly base (${cur})</label><input id="shb" name="base" type="number" min="0" step="1" inputmode="numeric" value="${d.base}" required></div>
+      <div class="field"><label class="f" for="shf">From</label><input id="shf" name="effective_from" type="date" value="${d.from}" required><p class="hint">Counts for the payroll of this month, paid the month after.</p></div></div>
+      <p class="hint">Payrolls not approved yet are worked out again with this. Approved ones stay as they were.</p>
+      ${d.only ? '' : html`<div class="sh-rm"><button type="button" class="linkbtn danger" data-shrm>Remove this entry instead</button><span class="muted small">If it should never have been there</span></div>`}`,
+    onSubmit: async (fd) => {
+      await put(`/api/hr/people/${d.id}/salary-history/${d.h}`, { base: Number(fd.get('base')), effective_from: fd.get('effective_from') });
+      toast('Fixed. Open payrolls are updated.'); S.refresh();
+    },
+  });
+  const rm = md.form.querySelector('[data-shrm]');
+  if (rm) rm.addEventListener('click', async () => {
+    md.close();
+    if (!(await confirmBox({ title: `Remove ${cur} ${Number(d.base).toLocaleString('en-US')} from ${dateY(d.from)}?`, message: `${d.name}’s pay for each month then comes from the other entries. ${d.name} is told.`, confirm: 'Remove', danger: true }))) return;
+    try { await del(`/api/hr/people/${d.id}/salary-history/${d.h}`); toast('Removed. Open payrolls are updated.'); S.refresh(); } catch (e) { toast(errMsg(e), true); }
+  });
+};

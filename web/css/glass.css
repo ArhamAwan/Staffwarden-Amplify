@@ -1302,3 +1302,9 @@ table.t.grid tr:hover td.nm { background: #221A4E !important; }
 .page-h:has(.hr-more[open]) { position: relative; z-index: 30; }
 /* bell: the icon circle lines up with the avatars, so every row's text starts at the same place */
 .npanel .np-ic { width: 26px; height: 26px; flex: none; }
+/* salary history: which month's pay each entry counts in, and a Fix for mistakes */
+.hr-hist .tline li > div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.hr-hist .sh-from { font-size: 12px; color: var(--muted); }
+.hr-hist .sh-r { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.hr-hist .sh-fix { font-size: 12.5px; font-weight: 600; }
+.sh-rm { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--line); }
