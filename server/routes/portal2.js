@@ -462,7 +462,7 @@ module.exports = (ctx) => {
     const out = [];
     for (const th of threadsFor(user, a)) {
       const rows = db.prepare(`SELECT * FROM chat_messages WHERE thread_id = ? AND deleted_at IS NULL ${a.client ? 'AND team_only = 0' : ''} AND (body LIKE ? ESCAPE '\\' OR file_name LIKE ? ESCAPE '\\') ORDER BY id DESC LIMIT 30`).all(th.id, like, like);
-      const name = th.kind === 'group' ? 'Whole team' : a.client ? staffName(th.staff_id) : clientName(th.client_user_id);
+      const name = th.kind === 'group' ? 'Everyone' : a.client ? staffName(th.staff_id) : clientName(th.client_user_id);
       for (const m of rows) out.push({ thread_id: th.id, thread: name, id: m.id, author: who(m.author_kind, m.author_id), mine: m.author_kind === me.kind && m.author_id === me.id, body: m.body.slice(0, 240), file: m.file ? m.file_name : null, created_at: m.created_at });
     }
     out.sort((x, y) => (x.created_at < y.created_at ? 1 : -1));

@@ -1,0 +1,163 @@
+/* ---------- the Client tab, from the "Client chat redesign" canvas ----------
+   One workspace under the project tabs: what needs a reply and the chats on the left, the conversation in the
+   middle, the client at a glance on the right. Scoped to .ws2 so the portal and team chat keep their look. */
+.ws.ws2 { grid-template-columns: 300px minmax(0, 1fr) 300px; height: clamp(560px, calc(100dvh - 220px), 980px); border-radius: 22px; border: 1px solid rgba(255,255,255,.1); background: rgba(18,12,40,.55); overflow: hidden; }
+.ws2 .ws-q, .ws2 .ws-r { border-color: rgba(255,255,255,.08); background: transparent; }
+
+/* ---- left: needs a reply, then chats ---- */
+.cq { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0 16px; }
+.cq-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 16px 18px 10px; }
+.cq-h h2 { margin: 0; font: 700 13px 'Instrument Sans', sans-serif; color: #ABA4CE; letter-spacing: 0; display: flex; gap: 6px; align-items: center; }
+.cq-h h2 span { min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 99px; background: #F7B544; color: #241400; font-size: 11.5px; display: inline-flex; align-items: center; justify-content: center; }
+.cq-h > span { font-size: 12px; color: #8E87B5; }
+.cq-l { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cq-need { width: calc(100% - 20px); margin: 0 10px; padding: 12px; box-sizing: border-box; border-radius: 14px; border: 1px solid rgba(247,181,68,.3); background: rgba(247,181,68,.07); color: #F2EFFF; display: flex; flex-direction: column; gap: 5px; text-align: left; cursor: pointer; font: inherit; transition: border-color .15s, background-color .15s, transform .15s; }
+.cq-need:hover { border-color: rgba(247,181,68,.55); transform: translateY(-1px); }
+.cq-need.on { border-color: #F7B544; background: rgba(247,181,68,.15); }
+.cq-need.late { border-color: rgba(255,120,100,.45); background: rgba(255,120,100,.08); }
+.cq-top { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: #FFD58A; }
+.cq-need.late .cq-top { color: #FFB3A8; }
+.cq-top .ic { width: 14px; height: 14px; }
+.cq-wait { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+.cq-need b { font-size: 14.5px; font-weight: 600; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.cq-need small { font-size: 12.5px; color: #ABA4CE; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cq-ok { margin: 0 10px; padding: 12px; border-radius: 14px; background: rgba(61,214,140,.08); color: #8DEBBE; font-size: 13.5px; font-weight: 600; display: flex; gap: 8px; align-items: flex-start; line-height: 1.4; }
+.cq-ok .ic { width: 16px; height: 16px; flex: none; margin-top: 1px; }
+.cq-chats { gap: 2px; }
+.cq-chat { width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px 18px; border: 0; background: transparent; color: #F2EFFF; text-align: left; cursor: pointer; font: inherit; transition: background-color .15s; }
+.cq-chat:hover { background: rgba(255,255,255,.04); }
+.cq-chat.on { background: rgba(139,92,246,.2); box-shadow: inset 3px 0 0 #9B7BFF; }
+.cq-grp { width: 38px; height: 38px; border-radius: 11px; background: rgba(139,92,246,.25); color: #D9CCFF; display: flex; align-items: center; justify-content: center; flex: none; }
+.cq-grp .ic { width: 19px; height: 19px; }
+.cq-av { position: relative; display: inline-flex; flex: none; border-radius: 99px; box-shadow: 0 0 0 2px #150E30, 0 0 0 4px #F7B544; }
+.cq-on { position: absolute; right: -2px; bottom: -2px; width: 11px; height: 11px; border-radius: 99px; background: #3DD68C; border: 2px solid #150E30; }
+.cq-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cq-t b { font-size: 14.5px; font-weight: 600; }
+.cq-t span { font-size: 13px; color: #ABA4CE; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cq-r { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: 12px; color: #8E87B5; flex: none; }
+.cq-un { min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 99px; background: #9B7BFF; color: #fff; font-size: 11.5px; font-weight: 700; font-style: normal; display: inline-flex; align-items: center; justify-content: center; }
+.cq-new { padding: 8px 18px 0; display: flex; flex-direction: column; gap: 4px; }
+.cq-newb { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; border: 0; background: none; padding: 0; color: #C9BBFF; font: 600 13.5px 'Instrument Sans', sans-serif; cursor: pointer; text-align: left; }
+.cq-newb:hover { color: #fff; }
+.cq-newb .ic { width: 15px; height: 15px; }
+
+/* ---- middle: the conversation ---- */
+.ws2 .chat { background: transparent; }
+.ws2 .ch-head { padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,.08); background: transparent; }
+.ws2 .ch-ht b { font-size: 16px; }
+.ws2 .ch-pin { margin: 10px 20px 0; border-radius: 12px; background: rgba(255,255,255,.05); border: 0; }
+.ws2 .ch-list { padding: 12px 20px; }
+.ws2 .msg.first { margin-top: 14px; }
+.ws2 .bub { border-radius: 18px; padding: 9px 14px 8px; font-size: 15px; line-height: 1.45; background: rgba(255,255,255,.07); box-shadow: none; max-width: min(600px, 78%); }
+.ws2 .msg.them.first .bub { border-top-left-radius: 6px; }
+.ws2 .msg.me .bub { background: linear-gradient(135deg, #6B4FE0, #8B6CF6); }
+.ws2 .msg.me.first .bub { border-top-right-radius: 6px; }
+.ws2 .msg.fromclient .bub { background: rgba(247,181,68,.12); box-shadow: inset 0 0 0 1px rgba(247,181,68,.24); }
+.ws2 .msg.note .bub, .ws2 .msg.me.note .bub { background: repeating-linear-gradient(135deg, rgba(247,181,68,.1) 0 10px, rgba(247,181,68,.05) 10px 20px); box-shadow: inset 0 0 0 1px rgba(247,181,68,.55); color: #F1DDB3; }
+.ws2 .bub-name { margin-bottom: 4px; font-size: 12.5px; }
+.ws2 .ch-tag.client { background: rgba(247,181,68,.18); color: #FFD58A; }
+.ws2 .ch-tag.note { background: rgba(247,181,68,.25); color: #FFD58A; }
+.ws2 .msg.me .bub-meta { color: rgba(255,255,255,.75); }
+.ws2 .ch-day span { background: rgba(255,255,255,.06); box-shadow: none; color: #ABA4CE; }
+
+/* the message box: who sees it comes first, and team-only turns everything amber */
+.ws2 .ch-comp { display: flex; flex-direction: column; gap: 10px; padding: 12px 20px 16px; border-top: 1px solid rgba(255,255,255,.08); background: transparent; }
+.ws2 .ch-team { order: -1; margin: 0; gap: 12px; }
+.ws2 .ch-team[hidden] { display: none; }
+.ws2 .ch-aud { border: 0; padding: 4px; border-radius: 14px; background: rgba(255,255,255,.05); }
+.ws2 .ch-aud button { height: 36px; padding: 0 14px; border-radius: 10px; font-size: 13.5px; color: #ABA4CE; gap: 7px; transition: background-color .15s, color .15s; }
+.ws2 .ch-aud button:hover { color: #fff; }
+.ws2 .ch-aud button[aria-checked="true"] { background: rgba(139,92,246,.4); color: #fff; }
+.ws2 .chat.team-only .ch-aud button[aria-checked="true"] { background: #F7B544; color: #241400; }
+.ws2 .ch-audnote { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: #FFD58A; }
+.ws2 .ch-audnote .ic { width: 13px; height: 13px; }
+.ws2 .ch-field { border: 1.5px solid rgba(255,255,255,.14); border-radius: 18px; padding: 5px 6px; background: rgba(255,255,255,.05); align-items: center; transition: border-color .15s, background-color .15s; }
+.ws2 .ch-field:focus-within { border-color: #9B7BFF; box-shadow: 0 0 0 3px rgba(155,123,255,.2); }
+.ws2 .chat.team-only .ch-field { border-color: #F7B544; background: rgba(247,181,68,.08); }
+.ws2 .chat.team-only .ch-field:focus-within { box-shadow: 0 0 0 3px rgba(247,181,68,.22); }
+.ws2 .ch-field textarea { font-size: 15px; padding: 10px 6px; }
+.ws2 .ch-row { align-items: center; }
+.ws2 .ch-send { width: 48px; height: 48px; border-radius: 15px; background: linear-gradient(135deg, #7C5CF0, #9B7BFF) !important; border: 0 !important; }
+.ws2 .chat.team-only .ch-send { background: #F7B544 !important; color: #241400 !important; }
+
+/* ---- right: the client at a glance ---- */
+.cr { flex: 1; min-height: 0; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 18px; }
+.cr-id { display: flex; gap: 12px; align-items: center; }
+.cr-id > div { min-width: 0; }
+.cr-id b { display: block; font-size: 15.5px; }
+.cr-id > div > span { display: block; font-size: 13px; color: #ABA4CE; }
+.cr-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.cr-f { padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.045); display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cr-f span { font-size: 12px; color: #ABA4CE; }
+.cr-f b { font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
+.cr-f b.warn, .cr-f b.late { color: #FFD58A; }
+.cr-f b.late { color: #FFB3A8; }
+.cr-f b.good { color: #8DEBBE; }
+.cr-bar { display: block; height: 6px; margin-top: 4px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
+.cr-bar > i { display: block; height: 100%; border-radius: 99px; background: #9B7BFF; }
+.cr-bar.warn > i { background: #F7B544; }
+.cr-bar.late > i { background: #FF8A7A; }
+.cr-bar.good > i { background: #3DD68C; }
+.cr-s > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.cr-s h3 { margin: 0; font: 700 13px 'Instrument Sans', sans-serif; color: #ABA4CE; letter-spacing: 0; }
+.cr-s .linkbtn { font-size: 12.5px; font-weight: 600; }
+.cr-who { display: flex; gap: 12px; align-items: center; }
+.cr-who b { display: block; font-size: 14.5px; }
+.cr-who > div > span { display: block; font-size: 12.5px; color: #ABA4CE; }
+.cr-l { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.cr-l li { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.cr-l li > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cr-l small { font-size: 12.5px; color: #8E87B5; white-space: nowrap; }
+.cr-call { display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 14px; background: rgba(255,255,255,.045); }
+.cr-day { width: 44px; height: 48px; border-radius: 10px; background: rgba(139,92,246,.22); display: flex; flex-direction: column; align-items: center; justify-content: center; font: 700 17px/1.05 'Instrument Sans', sans-serif; color: #fff; flex: none; }
+.cr-day small { font-size: 10.5px; color: #D9CCFF; }
+.cr-call b { display: block; font-size: 14px; }
+.cr-call > div > span { display: block; font-size: 12.5px; color: #ABA4CE; }
+.cr-none { margin: 0; font-size: 13px; color: #8E87B5; }
+.cr-mile b { display: block; font-size: 14px; }
+.cr-mile > span { display: block; font-size: 12.5px; color: #ABA4CE; margin-bottom: 4px; }
+.cr-gos { display: flex; flex-direction: column; gap: 6px; }
+.cr-go { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 0 12px; box-sizing: border-box; border-radius: 12px; border: 0; background: rgba(255,255,255,.045); color: #F2EFFF; font: 500 14px 'Instrument Sans', sans-serif; text-align: left; cursor: pointer; text-decoration: none; transition: background-color .15s; }
+.cr-go:hover { background: rgba(255,255,255,.09); color: #fff; text-decoration: none; }
+.cr-go span { flex: 1; min-width: 0; }
+.cr-go i { min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 99px; background: #F7B544; color: #241400; font-size: 11.5px; font-weight: 700; font-style: normal; display: inline-flex; align-items: center; justify-content: center; }
+.cr-go .ic { width: 15px; height: 15px; color: #8E87B5; }
+
+/* the other views (requests, approvals, calls, what they see): a way back to the chat */
+.cback { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-bottom: 16px; }
+.cback .btn .ic { width: 16px; height: 16px; }
+
+/* the middle when something from "Needs a reply" is open */
+.ws2 .pp { padding: 0; }
+
+@media (max-width: 1240px) { .ws.ws2 { grid-template-columns: 270px minmax(0, 1fr); } .ws2 .ws-r { display: none; } }
+@media (max-width: 760px) {
+  .ws.ws2 { grid-template-columns: minmax(0, 1fr); height: calc(100dvh - 150px); border-radius: 16px; }
+  .ws2 .ch-head { padding: 12px 14px; }
+  .ws2 .ch-list { padding: 10px 12px; }
+  .ws2 .ch-comp { padding: 10px 12px 12px; }
+  .ws2 .ch-aud { align-self: stretch; }
+  .ws2 .ch-aud button { flex: 1; justify-content: center; }
+  .ws2 .bub { max-width: 86%; }
+}
+@media (prefers-reduced-motion: reduce) { .cq-need, .cq-chat, .cr-go { transition: none; } .cq-need:hover { transform: none; } }
+.ws2 .pb > div { border-radius: 16px 16px 16px 6px; padding: 10px 14px; background: rgba(255,255,255,.07); border-color: transparent; }
+.ws2 .pb > div > p { font-size: 15px; line-height: 1.45; }
+.ws2 .pb.fromclient > div { background: rgba(247,181,68,.12) !important; border: 1px solid rgba(247,181,68,.26) !important; }
+.ws2 .pb.fromclient > div > b { color: #FFD58A; }
+.ws2 .pb.me > div { border-radius: 16px 16px 6px 16px; }
+/* phone: Chat, Needs a reply and About as tabs */
+.cmob { display: none; }
+@media (max-width: 760px) {
+  .cmob { display: flex; gap: 4px; padding: 4px; margin-bottom: 10px; border-radius: 14px; background: rgba(255,255,255,.06); }
+  .cmob button { flex: 1; height: 40px; border: 0; border-radius: 10px; background: transparent; color: #ABA4CE; font: 600 13.5px 'Instrument Sans', sans-serif; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+  .cmob button[aria-selected="true"] { background: rgba(139,92,246,.4); color: #fff; }
+  .cmob button span { min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 99px; background: #F7B544; color: #241400; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
+  .ws.ws2 > .ws-q, .ws.ws2 > .ws-c, .ws.ws2 > .ws-r { display: none; height: 100%; border: 0; }
+  .ws.ws2[data-m="c"] > .ws-c, .ws.ws2[data-m="q"] > .ws-q, .ws.ws2[data-m="r"] > .ws-r { display: flex !important; }
+  .ws2 .ch-team { flex-direction: column; align-items: stretch; gap: 8px; }
+  .ws2 .ch-aud { display: flex; }
+  .ws2 .ch-aud button { white-space: nowrap; font-size: 13px; padding: 0 10px; }
+  .ws2 .ch-field textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ws2 .ch-gifb { display: none; }
+}

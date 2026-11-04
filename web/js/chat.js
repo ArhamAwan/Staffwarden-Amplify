@@ -262,8 +262,10 @@ export function mountChat(el, opts) {
     }
     if (!st.data.can_team_only) { box.hidden = true; return; }
     box.hidden = false;
-    box.innerHTML = `<div role="radiogroup" aria-label="Who sees this" class="ch-aud"><button type="button" role="radio" aria-checked="${String(!st.teamOnly)}" data-c="aud" data-v="all">${ic('eye', 14)}Everyone in the chat</button><button type="button" role="radio" aria-checked="${String(st.teamOnly)}" data-c="aud" data-v="team">${ic('lock', 14)}Team only</button></div><span class="ch-audnote">${st.teamOnly ? 'Only the team sees this. The client never does.' : 'The client sees this.'}</span>`;
+    const cn = st.data.thread.kind === 'direct' && st.data.thread.with && st.data.thread.with.kind === 'client' ? st.data.thread.with.name.split(' ')[0] : (st.clientName || 'The client');
+    box.innerHTML = `<div role="radiogroup" aria-label="Who sees this" class="ch-aud"><button type="button" role="radio" aria-checked="${String(!st.teamOnly)}" data-c="aud" data-v="all">${ic('eye', 14)}${esc(cn)} sees it</button><button type="button" role="radio" aria-checked="${String(st.teamOnly)}" data-c="aud" data-v="team">${ic('lock', 14)}Team only</button></div>${st.teamOnly ? `<span class="ch-audnote">${ic('lock', 13)}${esc(cn)} never sees this. It stays with your team.</span>` : ''}`;
     el.classList.toggle('team-only', st.teamOnly);
+    const inp = $('input'); if (inp) inp.placeholder = st.teamOnly ? 'Only your team sees this' : `Message ${cn}${st.data.thread.kind === 'group' ? ' and the team' : ''}`;
   }
 
   // ---------- the messages ----------
@@ -291,7 +293,7 @@ export function mountChat(el, opts) {
     const d = st.data;
     if (m.kind && !m.deleted) { const sp = specialHtml(m); if (sp) return sp; }
     const first = !prev || prev.author.kind !== m.author.kind || prev.author.id !== m.author.id || dayLabel(prev.created_at) !== dayLabel(m.created_at) || Date.parse(m.created_at) - Date.parse(prev.created_at) > 6 * 60000 || prev.team_only !== m.team_only;
-    const cls = ['msg', m.mine ? 'me' : 'them', first ? 'first' : '', m.team_only ? 'note' : '', m.deleted ? 'gone' : '', st.search && !(`${m.body} ${m.file ? m.file.name : ''}`.toLowerCase().includes(st.search.toLowerCase())) ? 'dim' : ''].filter(Boolean).join(' ');
+    const cls = ['msg', m.mine ? 'me' : 'them', first ? 'first' : '', m.team_only ? 'note' : '', !m.mine && m.author.kind === 'client' && d.me.kind !== 'client' ? 'fromclient' : '', m.deleted ? 'gone' : '', st.search && !(`${m.body} ${m.file ? m.file.name : ''}`.toLowerCase().includes(st.search.toLowerCase())) ? 'dim' : ''].filter(Boolean).join(' ');
     const tag = m.author.kind === 'client' ? `<span class="ch-tag client">${esc(st.clientName || 'Client')}</span>` : m.author.kind === 'staff' && d.me.kind === 'client' ? `<span class="ch-tag team">${esc(st.orgShort || 'Team')}</span>` : '';
     const name = !m.mine && first ? `<div class="bub-name"><b style="color:${nameCol(m.author)}">${esc(m.author.name)}</b>${tag}${m.team_only ? `<span class="ch-tag note">${ic('lock', 11)}Team only</span>` : ''}</div>` : (m.mine && m.team_only && first ? `<div class="bub-name"><span class="ch-tag note">${ic('lock', 11)}Team only</span></div>` : '');
     const quote = m.reply ? `<button type="button" class="bub-quote" data-c="goto" data-id="${m.reply.id}" style="--qc:${nameCol(m.reply.author)}"><b>${esc(m.reply.author.name)}</b><span>${m.reply.deleted ? 'This message was deleted' : esc(m.reply.body || m.reply.file || '')}</span></button>` : '';

@@ -192,7 +192,7 @@ module.exports = (ctx) => {
         last: last ? { author: person(last.author_kind, last.author_id), mine: last.author_kind === me.kind && last.author_id === me.id, body: last.deleted_at ? '' : last.body.slice(0, 120), deleted: !!last.deleted_at,
           file: last.file ? (last.voice_secs != null ? 'Voice message' : last.file_name) : null, at: last.created_at } : null };
     };
-    if (!a.client || a.s.messages) list.push(summary(groupThread(a.p.id), { name: 'Whole team', members: readers(groupThread(a.p.id), a).map((r) => person(r.kind, r.id)) }));
+    if (!a.client || a.s.messages) list.push(summary(groupThread(a.p.id), { name: 'Everyone', members: readers(groupThread(a.p.id), a).map((r) => person(r.kind, r.id)) }));
     if (a.client && a.s.direct) {
       for (const m of db.prepare('SELECT u.id FROM project_members pm JOIN users u ON u.id = pm.user_id WHERE pm.project_id = ? AND u.active = 1 ORDER BY (u.id = ?) DESC, u.name').all(a.p.id, a.p.lead_id || 0)) {
         const th = db.prepare("SELECT * FROM chat_threads WHERE project_id = ? AND kind = 'direct' AND staff_id = ? AND client_user_id = ?").get(a.p.id, m.id, user.id);
@@ -253,7 +253,7 @@ module.exports = (ctx) => {
     const pinned = db.prepare(`SELECT * FROM chat_messages WHERE thread_id = ? AND pinned = 1 AND deleted_at IS NULL ${a.client ? 'AND team_only = 0' : ''} ORDER BY id DESC LIMIT 1`).get(th.id);
     const other = th.kind === 'direct' ? person(a.client ? 'staff' : 'client', a.client ? th.staff_id : th.client_user_id) : null;
     return {
-      thread: { id: th.id, kind: th.kind, project_id: th.project_id, name: th.kind === 'group' ? 'Whole team' : other.name, with: other, members: th.kind === 'group' ? readers(th, a).map((r) => person(r.kind, r.id)) : null },
+      thread: { id: th.id, kind: th.kind, project_id: th.project_id, name: th.kind === 'group' ? 'Everyone' : other.name, with: other, members: th.kind === 'group' ? readers(th, a).map((r) => person(r.kind, r.id)) : null },
       me, can_team_only: !a.client && th.kind === 'group' && !parent, more: !parent && rows.length === 80, parent,
       last_read: (db.prepare('SELECT last_id FROM chat_reads WHERE thread_id = ? AND author_kind = ? AND author_id = ?').get(th.id, me.kind, me.id) || {}).last_id || 0,
       messages: rows.map((m) => msgOut(m, me, reads)),
@@ -327,7 +327,7 @@ module.exports = (ctx) => {
     if (me.kind === 'staff' && !teamOnly && ctx.pnotify) {
       const to = th.kind === 'direct' ? [th.client_user_id] : ctx.pnotify.clientsOf(a.p);
       const hour = new Date(clockNow()).toISOString().slice(0, 13);
-      ctx.pnotify.notifyClient(to, { kind: 'chat', project_id: a.p.id, link: `#/messages?p=${a.p.id}&t=${th.id}`, title: th.kind === 'direct' ? `${user.name} messaged you` : `${user.name} wrote in Whole team`, body: text ? text.slice(0, 200) : (voice ? 'Voice message' : f.file_name), dedupe: `chat:${th.id}:${hour}` });
+      ctx.pnotify.notifyClient(to, { kind: 'chat', project_id: a.p.id, link: `#/messages?p=${a.p.id}&t=${th.id}`, title: th.kind === 'direct' ? `${user.name} messaged you` : `${user.name} wrote in the group chat`, body: text ? text.slice(0, 200) : (voice ? 'Voice message' : f.file_name), dedupe: `chat:${th.id}:${hour}` });
     }
     emitPortal(a.p, 'chat', { thread_id: th.id }, teamOnly ? { staffOnly: true } : recipients(th));
     return msgOut(db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id), me, db.prepare('SELECT * FROM chat_reads WHERE thread_id = ?').all(th.id));

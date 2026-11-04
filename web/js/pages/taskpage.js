@@ -144,7 +144,7 @@ function page(t, projects) {
     ${stage !== 'done' && t.count ? countCard(t, r) : ''}
     ${stage !== 'done' && stage !== 'in_review' ? workCards(t, r, changes) : ''}
     ${stage !== 'done' && stage !== 'in_review' ? addRow(t, r, projects) : ''}`;
-  return html`<div class="tk" data-k="tk${t.id}" data-m="${ui.mtab}">
+  return html`<div class="tkp" data-k="tk${t.id}" data-m="${ui.mtab}">
     <main class="tk-main">${main}</main>
     ${rail(t, r)}
   </div>`;
@@ -655,7 +655,7 @@ const T = () => cur && cur.t;
 const done = async (msg) => { if (msg) toast(msg); (S.refreshNow || S.refresh)(); };
 // redraw from what we already have: for switching tabs, versions, pins and the like, nothing to fetch
 function redraw() {
-  const v = document.getElementById('view'), root = v && v.querySelector('.tk');
+  const v = document.getElementById('view'), root = v && v.querySelector('.tkp');
   if (!root || !cur) { S.refresh(); return; }
   morph(v, page(cur.t, cur.projects).toString());
   if (mod && mod.after) mod.after(v);
@@ -668,7 +668,7 @@ const run = (fn) => async (el, e) => {
   busy(b, true);
   try { await fn(el, e); } catch (err) { toast(errMsg(err), true); (S.refreshNow || S.refresh)(); } finally { busy(b, false); }
 };
-const closeMenus = () => document.querySelectorAll('.tk details[open]').forEach((d) => d.removeAttribute('open'));
+const closeMenus = () => document.querySelectorAll('.tkp details[open]').forEach((d) => d.removeAttribute('open'));
 
 actions['tk-stage'] = run(async (el) => {
   const t = T(), to = el.dataset.v;
@@ -812,7 +812,7 @@ function newVersion(file, prevId) {
   });
 }
 document.addEventListener('change', async (e) => {
-  if (!e.target.closest || !e.target.closest('.tk')) return;
+  if (!e.target.closest || !e.target.closest('.tkp')) return;
   const f = e.target.dataset && e.target.dataset.tf;
   const t = T();
   if (f && t) {
@@ -829,19 +829,19 @@ document.addEventListener('change', async (e) => {
 });
 document.addEventListener('click', (e) => {
   // a due chip opens the date picker; menus close when you click elsewhere
-  const due = e.target.closest && e.target.closest('.tk input[type="date"]');
+  const due = e.target.closest && e.target.closest('.tkp input[type="date"]');
   if (due && due.showPicker) { try { due.showPicker(); } catch { /* not allowed here */ } }
-  if (!e.target.closest || !e.target.closest('.tk')) return;
-  for (const d of document.querySelectorAll('.tk details.tk-more[open]')) if (!d.contains(e.target) || e.target.closest('.tk-mi')) d.removeAttribute('open');
+  if (!e.target.closest || !e.target.closest('.tkp')) return;
+  for (const d of document.querySelectorAll('.tkp details.tk-more[open]')) if (!d.contains(e.target) || e.target.closest('.tk-mi')) d.removeAttribute('open');
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { closeMenus(); if (document.querySelector('.tk') && (ui.draft || ui.pin) && !document.querySelector('#overlay > *')) { ui.draft = null; ui.pin = null; redraw(); } }
+  if (e.key === 'Escape') { closeMenus(); if (document.querySelector('.tkp') && (ui.draft || ui.pin) && !document.querySelector('#overlay > *')) { ui.draft = null; ui.pin = null; redraw(); } }
   if (e.key === 'Enter' && !e.shiftKey && e.target.id === 'tk-c') { e.preventDefault(); e.target.form.requestSubmit(); }
   if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('tk-title')) { e.preventDefault(); e.target.blur(); }
 });
 document.addEventListener('focusout', (e) => {
   // the title and the description save when you leave them
-  if (!e.target.closest || !e.target.closest('.tk') || !e.target.dataset.tf || !['title', 'description'].includes(e.target.dataset.tf)) return;
+  if (!e.target.closest || !e.target.closest('.tkp') || !e.target.dataset.tf || !['title', 'description'].includes(e.target.dataset.tf)) return;
   const t = T(); if (!t) return;
   const v = e.target.value;
   if ((t[e.target.dataset.tf] || '') === v) return;
@@ -852,17 +852,17 @@ document.addEventListener('input', (e) => {
   if (e.target.classList && e.target.classList.contains('tk-title')) { e.target.style.height = 'auto'; e.target.style.height = `${e.target.scrollHeight}px`; }
 });
 document.addEventListener('paste', (e) => {
-  if (!document.querySelector('.tk') || !e.clipboardData) return;
+  if (!document.querySelector('.tkp') || !e.clipboardData) return;
   const file = [...e.clipboardData.files].find((f) => /^image\//.test(f.type));
   if (file) { e.preventDefault(); upload(file); }
 });
-document.addEventListener('dragover', (e) => { if (e.target.closest && e.target.closest('.tk') && e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
+document.addEventListener('dragover', (e) => { if (e.target.closest && e.target.closest('.tkp') && e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
 document.addEventListener('drop', (e) => {
-  if (!e.target.closest || !e.target.closest('.tk') || !e.dataTransfer || !e.dataTransfer.files.length) return;
+  if (!e.target.closest || !e.target.closest('.tkp') || !e.dataTransfer || !e.dataTransfer.files.length) return;
   e.preventDefault(); upload(e.dataTransfer.files[0]);
 });
 document.addEventListener('submit', async (e) => {
-  const form = e.target.closest && e.target.closest('.tk [data-tk-form]');
+  const form = e.target.closest && e.target.closest('.tkp [data-tk-form]');
   if (!form) return;
   e.preventDefault();
   const t = T(), kind = form.dataset.tkForm, fd = new FormData(form);

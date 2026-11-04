@@ -148,7 +148,7 @@
 @media (max-width:1240px){.tk-stagebox{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:760px){.tk-sep{display:none}.tk-st{padding:0 10px;font-size:13px;gap:4px}.tk-st svg{display:none}.tk-stages{gap:5px}.tk-live{padding:16px}.tk-tl li{grid-template-columns:12px minmax(0,1fr)}.tk-tl li > span{grid-column:2}}
 /* ---------- the task page (web/js/pages/taskpage.js) ---------- */
-.tk{display:flex;gap:22px;align-items:stretch;min-height:calc(100vh - 140px);font-family:'Instrument Sans',system-ui,sans-serif;color:#F2EFFF}
+.tkp{display:flex;gap:22px;align-items:stretch;min-height:calc(100vh - 140px);font-family:'Instrument Sans',system-ui,sans-serif;color:#F2EFFF}
 .tk-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .tk-title{min-height:0;width:100%;box-sizing:border-box;margin:0;border:0;background:transparent;color:#F2EFFF;resize:none;overflow:hidden;font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:42px;line-height:1.08;letter-spacing:-.01em;padding:0;outline:none;border-radius:8px}
 .tk-title:focus-visible{box-shadow:0 0 0 2px rgba(155,123,255,.6)}
@@ -180,8 +180,8 @@
 .tk-x-btn:hover{background:rgba(255,255,255,.08);color:#fff}
 .tk-feedtext{margin:0;font-size:14.5px;line-height:1.5;color:#E4DFF7;white-space:pre-line;overflow-wrap:anywhere}
 .tk-kind{font-size:11.5px;font-weight:700;color:#C9BBFF}
-@media (max-width:980px){.tk{flex-direction:column}.tk-rail{flex:none;width:100%}}
-@media (max-width:760px){.tk-title{font-size:31px}.tk-acts{position:fixed;left:0;right:0;bottom:0;z-index:30;padding:12px 16px 18px;background:rgba(12,8,29,.95);border-top:1px solid rgba(255,255,255,.1);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}.tk-acts .tk-btn{flex:1}.tk-acts .tk-icon{flex:none}.tk{padding-bottom:80px}.tk-menu{right:0;bottom:calc(100% + 6px);top:auto}}
+@media (max-width:980px){.tkp{flex-direction:column}.tk-rail{flex:none;width:100%}}
+@media (max-width:760px){.tk-title{font-size:31px}.tk-acts{position:fixed;left:0;right:0;bottom:0;z-index:30;padding:12px 16px 18px;background:rgba(12,8,29,.95);border-top:1px solid rgba(255,255,255,.1);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}.tk-acts .tk-btn{flex:1}.tk-acts .tk-icon{flex:none}.tkp{padding-bottom:80px}.tk-menu{right:0;bottom:calc(100% + 6px);top:auto}}
 
 @media (max-width:1240px) and (min-width:761px){.tk-head{grid-template-columns:minmax(0,1fr)}.tk-acts{flex-wrap:wrap}}
 .tk-cm.tk-fb{border:1px solid rgba(247,181,68,.35);background:rgba(247,181,68,.07);border-radius:14px;padding:12px}
@@ -270,12 +270,12 @@
   .tk-mtabs button[aria-selected="true"]{background:rgba(139,92,246,.35);color:#fff}
   .tk-mtabs .tk-n{min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:99px;background:rgba(255,255,255,.18);color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center}
   .tk-msub{display:block;margin:0;font-size:14px;color:#ABA4CE}
-  .tk:not([data-m="details"]) .tk-meta{display:none}
-  .tk[data-m="work"] .tk-rail,.tk[data-m="details"] .tk-rail{display:none}
-  .tk[data-m="work"] .tk-main > .tk-md{display:none}
-  .tk[data-m="details"] .tk-main > :not(header):not(.tk-md):not(.tk-mtabs):not(.tk-next){display:none}
-  .tk[data-m="talk"] .tk-main > :not(header):not(.tk-mtabs):not(.tk-next){display:none}
-  .tk[data-m="talk"] .tk-path{display:none}
+  .tkp:not([data-m="details"]) .tk-meta{display:none}
+  .tkp[data-m="work"] .tk-rail,.tkp[data-m="details"] .tk-rail{display:none}
+  .tkp[data-m="work"] .tk-main > .tk-md{display:none}
+  .tkp[data-m="details"] .tk-main > :not(header):not(.tk-md):not(.tk-mtabs):not(.tk-next){display:none}
+  .tkp[data-m="talk"] .tk-main > :not(header):not(.tk-mtabs):not(.tk-next){display:none}
+  .tkp[data-m="talk"] .tk-path{display:none}
   .tk-pop.tk-float{position:static;width:100%;margin-top:10px}
   .tk-stagewrap{flex-direction:column;align-items:stretch}
   .tk-stage{align-self:center}
@@ -328,7 +328,7 @@
 .tk-teamonly:has(input:checked){border-color:rgba(247,181,68,.5)}
 .tk-pathm{display:none;margin:0;font-size:14px;color:#ABA4CE}
 .tk-pathm b{color:#fff}
-@media (max-width:760px){.tk-path{display:none}.tk-pathm{display:block}.tk[data-m="talk"] .tk-pathm{display:none}}
+@media (max-width:760px){.tk-path{display:none}.tk-pathm{display:block}.tkp[data-m="talk"] .tk-pathm{display:none}}
 
 /* ---------- feel: instant feedback and motion ---------- */
 @keyframes tkIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
@@ -340,21 +340,21 @@
 @keyframes tkFlash{0%{box-shadow:0 0 0 0 rgba(155,123,255,.55)}100%{box-shadow:0 0 0 14px rgba(155,123,255,0)}}
 @keyframes tkFade{from{opacity:0}to{opacity:1}}
 /* buttons and tabs answer the pointer */
-.tk .tk-btn,.tk .tk-tab,.tk .tk-ftab,.tk .tk-ver-b,.tk .tk-seg button,.tk .tk-mtabs button,.tk .tk-mi,.tk .tk-lnk,.tk .tk-morebtn,.tk .tk-pinrow,.tk .tk-item,.tk .tk-pinit,.tk .tk-chip,.tk .tk-mark,.tk .tk-st{transition:background-color .2s ease,border-color .2s ease,color .2s ease,box-shadow .2s ease,transform .15s ease,opacity .2s ease,filter .15s ease}
-.tk .tk-btn:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.1);box-shadow:0 8px 18px -8px rgba(0,0,0,.6)}
-.tk .tk-btn:active:not(:disabled),.tk .tk-ftab:active,.tk .tk-tab:active,.tk .tk-ver-b:active{transform:scale(.96);transition-duration:.06s}
-.tk .tk-ftab:hover,.tk .tk-tab:hover,.tk .tk-ver-b:hover{transform:translateY(-1px)}
-.tk .tk-item:hover,.tk .tk-pinit:hover{transform:translateY(-1px);border-color:rgba(255,255,255,.2)}
-.tk .tk-mark:hover{transform:scale(1.15)}
-.tk .tk-mi:hover{transform:translateX(2px)}
+.tkp .tk-btn,.tkp .tk-tab,.tkp .tk-ftab,.tkp .tk-ver-b,.tkp .tk-seg button,.tkp .tk-mtabs button,.tkp .tk-mi,.tkp .tk-lnk,.tkp .tk-morebtn,.tkp .tk-pinrow,.tkp .tk-item,.tkp .tk-pinit,.tkp .tk-chip,.tkp .tk-mark,.tkp .tk-st{transition:background-color .2s ease,border-color .2s ease,color .2s ease,box-shadow .2s ease,transform .15s ease,opacity .2s ease,filter .15s ease}
+.tkp .tk-btn:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.1);box-shadow:0 8px 18px -8px rgba(0,0,0,.6)}
+.tkp .tk-btn:active:not(:disabled),.tkp .tk-ftab:active,.tkp .tk-tab:active,.tkp .tk-ver-b:active{transform:scale(.96);transition-duration:.06s}
+.tkp .tk-ftab:hover,.tkp .tk-tab:hover,.tkp .tk-ver-b:hover{transform:translateY(-1px)}
+.tkp .tk-item:hover,.tkp .tk-pinit:hover{transform:translateY(-1px);border-color:rgba(255,255,255,.2)}
+.tkp .tk-mark:hover{transform:scale(1.15)}
+.tkp .tk-mi:hover{transform:translateX(2px)}
 /* working on it */
 .tk-busy{pointer-events:none;opacity:.8}
 .tk-busy > svg{display:none}
 .tk-busy::before{content:'';width:14px;height:14px;box-sizing:border-box;border-radius:99px;border:2px solid currentColor;border-top-color:transparent;animation:tkSpin .7s linear infinite;flex:none}
 .tk-pending{opacity:.55}
 /* things arriving */
-.tk-pop,.tk .tk-menu{animation:tkPop .22s cubic-bezier(.2,.8,.3,1.2);transform-origin:top center}
-.tk .tk-mark{animation:tkDrop .45s cubic-bezier(.2,.8,.3,1)}
+.tk-pop,.tkp .tk-menu{animation:tkPop .22s cubic-bezier(.2,.8,.3,1.2);transform-origin:top center}
+.tkp .tk-mark{animation:tkDrop .45s cubic-bezier(.2,.8,.3,1)}
 .tk-feed > li,.tk-list > li,.tk-checks > li{animation:tkIn .3s ease-out backwards}
 .tk-feed > li:nth-last-child(1){animation-delay:.04s}
 .tk-main > *{animation:tkIn .38s ease-out backwards}
@@ -364,16 +364,16 @@
 .tk-next{transition:background .35s ease,border-color .35s ease}
 .tk-pinit,.tk-item{transition:background .35s ease,border-color .35s ease,transform .15s ease}
 .tk-bar i{transition:width .45s cubic-bezier(.2,.8,.3,1)}
-.tk input[type="checkbox"]:checked{animation:tkTick .28s ease-out}
+.tkp input[type="checkbox"]:checked{animation:tkTick .28s ease-out}
 .tk-check{transition:color .25s ease,opacity .25s ease}
 .tk-stage .tk-shot:not([src]),.tk-thumbimg:not([src]),.tk-slider .tk-shot:not([src]){background:linear-gradient(90deg,rgba(255,255,255,.04) 25%,rgba(255,255,255,.12) 50%,rgba(255,255,255,.04) 75%);background-size:200% 100%;animation:tkShimmer 1.2s linear infinite;min-width:min(480px,100%);min-height:280px}
 .tk-thumbimg:not([src]){min-width:0;min-height:0}
 .tk-shot[src],.tk-thumbimg[src]{animation:tkFade .35s ease-out}
 /* a device set to reduce motion still gets gentle fades, without anything moving */
 @media (prefers-reduced-motion:reduce){
-  .tk *:not(.tk-busy){animation-name:tkFade !important}
-  .tk .tk-mark,.tk input[type="checkbox"]:checked{animation:none !important}
-  .tk *:hover,.tk *:active{transform:none !important}
+  .tkp *:not(.tk-busy){animation-name:tkFade !important}
+  .tkp .tk-mark,.tkp input[type="checkbox"]:checked{animation:none !important}
+  .tkp *:hover,.tkp *:active{transform:none !important}
   .tk-busy::before{animation:tkSpin 1.4s linear infinite !important}
 }
 .tk-saveas{white-space:nowrap}.tk-inas{white-space:nowrap}@media (max-width:760px){.tk-saveas span{display:none}}

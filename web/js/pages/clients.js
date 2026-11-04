@@ -211,7 +211,7 @@ ICON.cmt = ICON.cmt || '<path d="M6 4v9a3 3 0 0 0 3 3h10"/><path d="M15 12l4 4-4
 ICON.okc = ICON.okc || '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.3l2.4 2.4 4.6-5"/>';
 const GLY = { msg: 'chat', req: 'req', ok: 'okc', cmt: 'cmt' };
 // a message in the middle pane (the queue item, its thread, our replies)
-const pbub = (who, body, at, me, note) => html`<div class="pb ${me ? 'me' : ''}${note ? ' note' : ''}">${me ? '' : who ? cav(who, 28) : ''}<div><b>${me ? 'You' : who ? who.name : ''}</b><p>${body}</p>${at ? html`<span>${relTime(at)}</span>` : ''}</div></div>`;
+const pbub = (who, body, at, me, note, client = false) => html`<div class="pb ${me ? 'me' : ''}${note ? ' note' : ''}${client ? ' fromclient' : ''}">${me ? '' : who ? cav(who, 28) : ''}<div><b>${me ? 'You' : who ? who.name : ''}</b><p>${body}</p>${at ? html`<span>${relTime(at)}</span>` : ''}</div></div>`;
 // the middle of the Client tab when a request, a comment or an asked-for change is picked
 function pickedPane(it, { pj, requests, approvals, rmsgs, cs, ret }) {
   const from = it.from ? { id: it.from.id || 0, name: it.from.name } : null;
@@ -227,7 +227,7 @@ function pickedPane(it, { pj, requests, approvals, rmsgs, cs, ret }) {
     const left = ret && ret.retainer_hours ? Math.max(0, Math.round((ret.retainer_hours - ret.used_hours) * 10) / 10) : null;
     return html`<div class="pp">${head(r.title, who)}
       <ol class="pp-steps">${steps.map(([t, done, on], i) => html`<li class="${on ? 'on' : done ? 'done' : ''}"><i>${done && !on ? icon('check') : i + 1}</i>${t}</li>`)}</ol>
-      <div class="pp-b">${pbub(from, r.detail || r.title, r.created_at, false)}${m.map((x) => pbub(x.mine ? null : { id: x.author.kind === 'client' ? x.author.id : x.author.id - 1000, name: x.author.name }, x.body, x.created_at, x.mine))}
+      <div class="pp-b">${pbub(from, r.detail || r.title, r.created_at, false, false, !!from)}${m.map((x) => pbub(x.mine ? null : { id: x.author.kind === 'client' ? x.author.id : x.author.id - 1000, name: x.author.name }, x.body, x.created_at, x.mine, false, x.author.kind === 'client' && !x.mine))}
         ${est ? html`<p class="pp-note ${est.answer === 'yes' ? 'ok' : ''}"><b>${est.answer === 'yes' ? `${String(r.by || 'They').split(' ')[0]} said go ahead` : est.answer === 'no' ? 'They said not now' : 'Estimate sent, waiting for their answer'}</b><br>About ${est.hours} h${est.note ? `. ${est.note.replace(/[.\s]+$/, '')}.` : '.'}</p>` : ''}
         ${r.file ? html`<button class="linkbtn small" data-act="client-file" data-url="${r.file.url}">${icon('clip')}${r.file.name}</button>` : ''}</div>
       <div class="pp-f">${['new', 'planned'].includes(st) ? html`<form class="pp-reply" data-submit="client-rmsg" data-id="${r.id}"><input name="body" maxlength="2000" placeholder="Reply to ${String(r.by || cs).split(' ')[0]} about this" aria-label="Reply about this request" required><button class="btn" type="submit">${icon('chat')} Reply</button></form>` : ''}
@@ -239,13 +239,13 @@ function pickedPane(it, { pj, requests, approvals, rmsgs, cs, ret }) {
     const a = approvals.find((x) => x.id === it.approval_id);
     const v = a && a.versions[a.versions.length - 1];
     const pins = v && v.pins ? v.pins.filter((x) => !x.resolved) : [];
-    return html`<div class="pp">${head(it.text, who)}<div class="pp-b">${pbub(from, v && v.decision_note ? `“${v.decision_note}”` : 'Asked for changes.', it.since, false)}
+    return html`<div class="pp">${head(it.text, who)}<div class="pp-b">${pbub(from, v && v.decision_note ? `“${v.decision_note}”` : 'Asked for changes.', it.since, false, false, true)}
         ${pins.length ? html`<ol class="pp-pins">${pins.map((x) => html`<li><i>${x.n}</i>${x.body}</li>`)}</ol>` : ''}</div>
       <div class="pp-f"><div class="pp-acts">${a ? html`<button class="btn primary" data-act="client-version" data-id="${a.id}" data-n="${(v ? v.n : 0) + 1}" data-title="${a.title}">${icon('up')} Send version ${(v ? v.n : 0) + 1}</button>` : ''}<button class="btn quiet" data-act="q" ${raw(qAttr('cv', 'approvals'))}>All approvals</button></div></div></div>`;
   }
   // a comment on a task the client can see: the task is the title, the comment is the message
   const said = it.task && it.text.startsWith(`On “${it.task}”: `) ? it.text.slice(`On “${it.task}”: `.length) : it.text;
-  return html`<div class="pp">${head(it.task || it.text, who)}<div class="pp-b">${pbub(from, it.detail || said, it.since, false)}</div>
+  return html`<div class="pp">${head(it.task || it.text, who)}<div class="pp-b">${pbub(from, it.detail || said, it.since, false, false, true)}</div>
     <div class="pp-f"><form class="pp-reply" data-submit="ibx-reply" data-kind="cmt" data-id="${it.task_id}"><input name="body" maxlength="4000" placeholder="Answer on the task" aria-label="Your comment" required><button class="btn primary" type="submit">${icon('chat')} Comment</button></form>
       <div class="pp-acts"><a class="btn quiet" href="#/tasks?task=${it.task_id}">${icon('tasks')} Open the task</a><span class="pp-left">${cs} sees your name and “Amplify” on the task.</span></div></div></div>`;
 }
@@ -276,51 +276,54 @@ export function clientTab(p, d) {
   if (!picked && /^r\d+$/.test(d.ci || '')) { const r = requests.find((x) => x.id === Number(d.ci.slice(1))); if (r) picked = { kind: 'req', key: d.ci, request_id: r.id, text: r.title, from: r.by ? { id: r.client_user_id || 0, name: r.by } : null, owner: null, answered: true }; }
   const retPct = ret && ret.retainer_hours ? ret.used_hours / ret.retainer_hours : null;
   const tone = (x) => (x >= 0.95 ? 'late' : x >= 0.8 ? 'warn' : '');
-  // ---------- one line about the client, on the page (not a card floating on the band) ----------
-  const cell = (k, v, cls = '', extra = '') => html`<div class="cl-c"><span>${k}</span><b class="${cls}">${v}</b>${extra}</div>`;
-  const cline = html`<div class="cline" role="region" aria-label="${c.name} at a glance"><div class="cl-id">${clientMark(c.name, c.id, 34)}<b>${cs}</b></div>
-    ${cell('Waiting on us', needs.length ? `${needs.length} · oldest ${waitText(oldest.waited_min)}` : 'Nothing', oldest ? (oldest.level === 'ok' ? '' : oldest.level) : 'good')}
-    ${cell('Waiting on them', waitingThem.length ? plural(waitingThem.length, 'approval') : 'Nothing')}
-    ${retPct != null ? cell('Retainer', `${Math.round(ret.used_hours)} of ${ret.retainer_hours} h`, tone(retPct), html`<i class="cl-bar ${tone(retPct)}"><i style="width:${Math.min(100, Math.round(retPct * 100))}%"></i></i>`) : ''}
-    ${cell('Happiness', avg == null ? 'No ratings yet' : `★ ${avg} from ${plural(ratings.length, 'rating')}`, avg == null ? '' : avg >= 4 ? 'good' : avg <= 3 ? 'late' : 'warn')}
-    ${cell('Last signed in', seen ? `${String(seenName || '').split(' ')[0]}, ${relTime(seen.last_seen_at)}` : 'Not yet')}</div>`;
   // ---------- the client's own tabs ----------
   const DOWS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const t12 = (t) => { const [h, m] = String(t || '0:0').split(':').map(Number); return `${((h + 11) % 12) + 1}:${String(m || 0).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
-  const subs = [['', 'Conversations', needs.length || unread || ''], ['requests', 'Requests', requests.filter((r) => r.status === 'new').length || ''], ['approvals', 'Approvals', waitingThem.length || ''], ['plan', 'Plan', ''], ['access', 'Access', '']];
-  const subnav = html`<div class="csub"><nav class="cseg" aria-label="${cs}">${subs.map(([v, n, k]) => html`<button type="button" data-act="q" ${raw(qAttr('cv', v))} aria-current="${view === v ? 'page' : 'false'}">${n}${k !== '' ? html`<span>${k}</span>` : ''}</button>`)}</nav>
-    <div class="csub-r">${pj.manage && sched && sched.on ? html`<span>${icon('cal')} Weekly update goes out ${DOWS[sched.dow]}, ${t12(sched.time)}</span>` : ''}${firstPerson && p.can_manage ? html`<button type="button" class="linkbtn" data-act="client-viewas" data-id="${firstPerson.id}">${icon('eye')} See it as ${firstPerson.name.split(' ')[0]}</button>` : ''}</div></div>`;
   // ---------- the queue: what needs us, then the chats ----------
   const preview = (t) => (!t.last ? (t.kind === 'group' ? 'No messages yet' : 'Start a chat') : t.last.deleted ? 'Message deleted' : `${t.last.mine ? 'You: ' : t.kind === 'group' ? `${String(t.last.author.name).split(' ')[0]}: ` : ''}${t.last.body || t.last.file || ''}`);
   const fresh = clientPeople.filter((m) => !threads.some((t) => t.with && t.with.id === m.id && t.with.kind === 'client'));
   const online = (id) => presence && presence.clients && presence.clients.some((x) => x.id === id && x.online);
-  const qrow = (it) => { const on = picked && picked.key === it.key; return html`<li><button type="button" class="qr${on ? ' on' : ''}" data-act="${it.kind === 'msg' ? 'client-thread' : 'ct-pick'}" data-id="${it.kind === 'msg' ? it.thread_id : ''}" data-key="${it.key}" data-k="n${it.key}" ${on ? raw('aria-current="true"') : ''}>
-      <span class="gly ${it.kind}">${icon(GLY[it.kind])}</span>
-      <span class="qr-m"><b>${it.text}</b><span>${KIND[it.kind]}${it.from ? ` · ${it.from.name}` : ''}</span></span>
-      <span class="qr-r">${waitChip(it)}${it.owner ? html`<span title="${it.owner.name} to answer">${staffAv(it.owner, 20)}</span>` : html`<span class="qr-none">Nobody yet</span>`}</span></button></li>`; };
-  const trow = (t) => { const on = !picked && t.id === cur.id; return html`<li><button type="button" class="qr ct-ti${on ? ' on' : ''}" data-act="client-thread" data-id="${t.id}" ${on ? raw('aria-current="true"') : ''}>
-      ${t.kind === 'group' ? html`<span class="ct-gav">${icon('users')}</span>` : html`<span class="ch-avw">${cav(t.with, 36)}${online(t.with.id) ? raw('<i class="ch-on"></i>') : ''}</span>`}
-      <span class="qr-m"><b>${t.kind === 'group' ? 'Whole team' : t.name}</b><span>${t.kind === 'group' ? '' : 'Direct · '}${preview(t)}</span></span>
-      <span class="qr-r qr-t">${t.last ? relTime(t.last.at).replace(' ago', '') : ''}${t.unread ? html`<i class="ct-un">${t.unread}</i>` : ''}</span></button></li>`; };
-  const queue = html`<section class="wq" aria-label="Needs us and chats"><header><h2>Needs us <span>${needs.length || ''}</span></h2><span class="muted small">Oldest first</span></header>
-    ${needs.length ? html`<ul class="wq-l">${needs.map(qrow)}</ul>` : html`<p class="wq-empty">Nothing from ${cs} is waiting. Messages, requests, comments and asked-for changes show up here until someone answers.</p>`}
-    <div class="wq-h">Chats</div><ul class="wq-l chats">${threads.map(trow)}</ul>
-    ${fresh.length ? html`<div class="wq-new">${fresh.map((m) => html`<button type="button" class="linkbtn" data-act="client-dm" data-pid="${p.id}" data-id="${m.id}">${icon('plus')} Message ${m.name.split(' ')[0]} directly</button>`)}</div>` : ''}</section>`;
+  const ownerTxt = (it) => (it.owner ? `${it.owner.name.split(' ')[0]} to answer` : 'nobody on it yet');
+  const qrow = (it) => { const on = picked && picked.key === it.key; return html`<li><button type="button" class="cq-need${on ? ' on' : ''}${it.level === 'late' ? ' late' : ''}" data-act="${it.kind === 'msg' ? 'client-thread' : 'ct-pick'}" data-id="${it.kind === 'msg' ? it.thread_id : ''}" data-key="${it.key}" data-k="n${it.key}" ${on ? raw('aria-current="true"') : ''}>
+      <span class="cq-top">${icon(GLY[it.kind])}<span>${KIND[it.kind]}</span><span class="cq-wait">${icon('clock')}${waitText(it.waited_min)}</span></span>
+      <b>${it.text}</b><small>${it.from ? `${it.from.name} · ` : ''}${ownerTxt(it)}</small></button></li>`; };
+  const trow = (t) => { const on = !picked && t.id === cur.id; return html`<li><button type="button" class="cq-chat${on ? ' on' : ''}" data-act="client-thread" data-id="${t.id}" ${on ? raw('aria-current="true"') : ''}>
+      ${t.kind === 'group' ? html`<span class="cq-grp">${icon('users')}</span>` : html`<span class="cq-av">${cav(t.with, 38)}${online(t.with.id) ? raw('<i class="cq-on" aria-label="Online"></i>') : ''}</span>`}
+      <span class="cq-t"><b>${t.kind === 'group' ? 'Everyone' : t.name}</b><span>${t.kind === 'group' && !t.last ? `${cs} and your team` : preview(t)}</span></span>
+      <span class="cq-r">${t.last ? html`<span>${relTime(t.last.at).replace(' ago', '')}</span>` : ''}${t.unread ? html`<i class="cq-un" aria-label="${t.unread} unread">${t.unread}</i>` : ''}</span></button></li>`; };
+  const queue = html`<section class="cq" aria-label="Needs a reply and chats">
+    <div class="cq-h"><h2>Needs a reply${needs.length ? html` <span>${needs.length}</span>` : ''}</h2>${needs.length > 1 ? html`<span>Oldest first</span>` : ''}</div>
+    ${needs.length ? html`<ul class="cq-l">${needs.map(qrow)}</ul>` : html`<p class="cq-ok">${icon('check')}Nothing from ${cs} is waiting on you.</p>`}
+    <div class="cq-h"><h2>Chats</h2></div><ul class="cq-l cq-chats">${threads.map(trow)}</ul>
+    ${fresh.length ? html`<div class="cq-new">${fresh.map((m) => html`<button type="button" class="cq-newb" data-act="client-dm" data-pid="${p.id}" data-id="${m.id}">${icon('plus')}Message ${m.name.split(' ')[0]} directly</button>`)}</div>` : ''}</section>`;
   // ---------- the middle: the chat, or the thing picked from the queue ----------
   const center = picked ? pickedPane(picked, { pj, requests, approvals, rmsgs, cs, ret }) : html`<div class="chat-box" data-own="ct${cur.id}" data-thread="${cur.id}"></div>`;
   // ---------- the rail: who we are talking to and what is around them ----------
   const talk = (cur.kind !== 'group' && cur.with ? clientPeople.find((m) => m.id === cur.with.id) || cur.with : null) || (picked && picked.from ? clientPeople.find((m) => m.name === picked.from.name) : null) || firstPerson;
   const nextCall = meet && meet.upcoming[0];
   const curMile = pj.milestones.find((m) => !m.done_at);
-  const rsec = (t, body, link = '') => html`<section class="wr-s"><header><h3>${t}</h3>${link}</header>${body}</section>`;
-  const rail = html`<aside class="wr" aria-label="About ${cs}">
-    ${talk ? rsec('Talking to', html`<div class="wr-who"><span class="ch-avw">${cav(talk, 40)}${online(talk.id) ? raw('<i class="ch-on"></i>') : ''}</span><div><b>${talk.name}</b><span>${[talk.title, talk.can_approve ? 'can approve' : ''].filter(Boolean).join(' · ') || cs}</span>${online(talk.id) ? html`<span class="on">Online now</span>` : ''}</div></div>`) : ''}
-    ${retPct != null ? rsec('Retainer this month', html`<div class="wr-big"><b>${Math.round(ret.used_hours)}</b><span>of ${ret.retainer_hours} h · ${Math.max(0, Math.round(ret.retainer_hours - ret.used_hours))} left</span></div><i class="cl-bar wide ${tone(retPct)}"><i style="width:${Math.min(100, Math.round(retPct * 100))}%"></i></i>${retPct >= 0.8 ? html`<p class="wr-note">Past ${retPct >= 0.95 ? '95' : '80'}%. ${cs} has been told.</p>` : ''}`) : ''}
-    ${rsec('Waiting on them', waitingThem.length ? html`<ul class="wr-l">${waitingThem.slice(0, 3).map((a) => html`<li><span>${a.title}</span><span class="muted">${relTime(a.created_at).replace(' ago', '')}</span>${s.approvals ? html`<button type="button" class="linkbtn" data-act="client-remind" data-id="${a.id}">Remind</button>` : ''}</li>`)}${waitingThem.length > 3 ? html`<li class="muted">and ${waitingThem.length - 3} more</li>` : ''}</ul>` : html`<p class="muted small">Nothing right now.</p>`, waitingThem.length > 3 ? html`<button type="button" class="linkbtn" data-act="q" ${raw(qAttr('cv', 'approvals'))}>All ${waitingThem.length}</button>` : '')}
-    ${meet ? rsec('Next call', nextCall ? html`<div class="wr-call"><span class="wr-day"><small>${when(nextCall.starts_at, c, { weekday: 'short' }).toUpperCase()}</small>${when(nextCall.starts_at, c, { day: 'numeric' })}</span><div><b>${nextCall.title}</b><span>${when(nextCall.starts_at, c, { hour: 'numeric', minute: '2-digit' })} their time · ${nextCall.minutes}\u00a0min${nextCall.agenda.length ? ` · ${plural(nextCall.agenda.length, 'agenda item').replace(/ /g, '\u00a0')}` : ''}</span></div></div>` : html`<p class="muted small">No call booked.</p>`, html`<button type="button" class="linkbtn" data-act="q" ${raw(qAttr('cv', 'plan'))}>${nextCall ? 'Plan' : 'Book one'}</button>`) : ''}
-    ${curMile ? rsec('Current milestone', html`<div class="wr-mile"><b>${curMile.title}</b><span>${curMile.tasks_total ? `${curMile.tasks_done} of ${curMile.tasks_total} tasks` : curMile.due_day ? `Due ${dayShort(curMile.due_day)}` : ''}</span></div>${curMile.tasks_total ? html`<i class="cl-bar wide good"><i style="width:${Math.round((curMile.tasks_done / curMile.tasks_total) * 100)}%"></i></i>` : ''}`) : ''}
+  const rsec = (t, body, link = '') => html`<section class="cr-s"><header><h3>${t}</h3>${link}</header>${body}</section>`;
+  const fact = (k, v, cls = '', extra = '') => html`<div class="cr-f"><span>${k}</span><b class="${cls}">${v}</b>${extra}</div>`;
+  const nowThere = when(new Date().toISOString(), c, { hour: 'numeric', minute: '2-digit' });
+  const go = (cv, label, n = '') => html`<button type="button" class="cr-go" data-act="q" ${raw(qAttr('cv', cv))}><span>${label}</span>${n ? html`<i>${n}</i>` : ''}${icon('right')}</button>`;
+  const newReq = requests.filter((r) => r.status === 'new').length;
+  const rail = html`<aside class="cr" aria-label="About ${cs}">
+    <div class="cr-id">${clientMark(c.name, c.id, 42)}<div><b>${c.name}</b><span>${[c.city, `${nowThere} their time`].filter(Boolean).join(' · ')}</span></div></div>
+    <div class="cr-facts">
+      ${fact('Waiting on us', needs.length ? `${needs.length} · ${waitText(oldest.waited_min)}` : 'Nothing', needs.length ? (oldest.level === 'ok' ? '' : oldest.level) : 'good')}
+      ${fact('Waiting on them', waitingThem.length ? plural(waitingThem.length, 'approval') : 'Nothing')}
+      ${retPct != null ? fact('Retainer', `${Math.round(ret.used_hours)} of ${ret.retainer_hours} h`, tone(retPct), html`<i class="cr-bar ${tone(retPct)}"><i style="width:${Math.min(100, Math.round(retPct * 100))}%"></i></i>`) : fact('Happiness', avg == null ? 'No ratings yet' : `★ ${avg}`, avg == null ? '' : avg >= 4 ? 'good' : avg <= 3 ? 'late' : 'warn')}
+      ${fact('Last signed in', seen ? `${String(seenName || '').split(' ')[0]}, ${relTime(seen.last_seen_at).replace(' ago', '')}` : 'Not yet')}
+    </div>
+    ${talk && cur.kind !== 'group' ? rsec('Talking to', html`<div class="cr-who"><span class="cq-av">${cav(talk, 36)}${online(talk.id) ? raw('<i class="cq-on"></i>') : ''}</span><div><b>${talk.name}</b><span>${[talk.title, talk.can_approve ? 'can approve' : ''].filter(Boolean).join(' · ') || cs}</span></div></div>`) : ''}
+    ${waitingThem.length ? rsec('Waiting on them', html`<ul class="cr-l">${waitingThem.slice(0, 3).map((a) => html`<li data-k="w${a.id}"><span>${a.title}</span><small>${relTime(a.created_at).replace(' ago', '')}</small>${s.approvals ? html`<button type="button" class="btn sm" data-act="client-remind" data-id="${a.id}">Remind</button>` : ''}</li>`)}</ul>`, waitingThem.length > 3 ? html`<button type="button" class="linkbtn" data-act="q" ${raw(qAttr('cv', 'approvals'))}>All ${waitingThem.length}</button>` : '') : ''}
+    ${meet ? rsec('Next call', nextCall ? html`<div class="cr-call"><span class="cr-day"><small>${when(nextCall.starts_at, c, { weekday: 'short' }).toUpperCase()}</small>${when(nextCall.starts_at, c, { day: 'numeric' })}</span><div><b>${nextCall.title}</b><span>${when(nextCall.starts_at, c, { hour: 'numeric', minute: '2-digit' })} their time${nextCall.agenda.length ? ` · ${plural(nextCall.agenda.length, 'thing')} to talk about` : ''}</span></div></div>` : html`<p class="cr-none">No call booked.</p>`, html`<button type="button" class="linkbtn" data-act="q" ${raw(qAttr('cv', 'plan'))}>${nextCall ? 'Plan' : 'Book one'}</button>`) : ''}
+    ${curMile ? rsec('Current milestone', html`<div class="cr-mile"><b>${curMile.title}</b><span>${curMile.tasks_total ? `${curMile.tasks_done} of ${curMile.tasks_total} tasks` : curMile.due_day ? `Due ${dayShort(curMile.due_day)}` : ''}</span></div>${curMile.tasks_total ? html`<i class="cr-bar good"><i style="width:${Math.round((curMile.tasks_done / curMile.tasks_total) * 100)}%"></i></i>` : ''}`) : ''}
+    ${rsec(`Also for ${cs}`, html`<div class="cr-gos">${go('requests', 'Requests', newReq || '')}${go('approvals', 'Approvals and files', waitingThem.length || '')}${go('plan', 'Calls and the weekly update')}<a class="cr-go" href="#/project?id=${p.id}&tab=assets"><span>Their assets</span>${icon('right')}</a>${go('access', 'What they see of you')}${firstPerson && p.can_manage ? html`<button type="button" class="cr-go" data-act="client-viewas" data-id="${firstPerson.id}"><span>See the portal as ${firstPerson.name.split(' ')[0]}</span>${icon('eye')}</button>` : ''}</div>`)}
   </aside>`;
-  const ws = html`<div class="ws"><div class="ws-q">${queue}</div><div class="ws-c ct-main">${center}</div><div class="ws-r">${rail}</div></div>`;
+  // on a phone the three columns become three tabs
+  const mob = html`<div class="cmob" role="tablist" aria-label="Show">${[['c', picked ? 'Reply' : 'Chat', ''], ['q', 'Needs a reply', needs.length], ['r', 'About', '']].map(([k, n, x]) => html`<button type="button" role="tab" data-act="ct-mob" data-v="${k}" aria-selected="${String((mobTab || 'c') === k)}">${n}${x ? html`<span>${x}</span>` : ''}</button>`)}</div>`;
+  const ws = html`${mob}<div class="ws ws2" data-m="${mobTab || 'c'}"><div class="ws-q">${queue}</div><div class="ws-c ct-main">${center}</div><div class="ws-r">${rail}</div></div>`;
   // ---------- the weekly update, with its schedule ----------
   const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const zoneWord = c.tz_name ? `${c.tz_name.split('/').pop().replace(/_/g, ' ')} time` : 'company time';
@@ -370,8 +373,18 @@ export function clientTab(p, d) {
     : view === 'approvals' ? waiting
     : view === 'plan' ? html`<div class="cplan"><div>${miles}</div><div>${meetSec}${upd}</div></div>`
     : view === 'access' ? sees : ws;
-  return html`${cline}${subnav}${body}`;
+  if (!view) return ws;
+  const views = [['requests', 'Requests', newReq], ['approvals', 'Approvals and files', waitingThem.length], ['plan', 'Calls and the weekly update', 0], ['access', 'What they see', 0]];
+  return html`<div class="cback"><button type="button" class="btn" data-act="q" ${raw(qAttr('cv', ''))}>${icon('left')}Back to the chat</button><nav class="cseg" aria-label="${cs}">${views.map(([v, n, k]) => html`<button type="button" data-act="q" ${raw(qAttr('cv', v))} aria-current="${view === v ? 'page' : 'false'}">${n}${k ? html`<span>${k}</span>` : ''}</button>`)}</nav></div>${body}`;
 }
+// the phone tabs switch on the page, nothing reloads; picking a chat or something to answer shows it
+let mobTab = 'c';
+actions['ct-mob'] = (el) => {
+  mobTab = el.dataset.v;
+  const ws = document.querySelector('.ws2'); if (ws) ws.dataset.m = mobTab;
+  for (const b of document.querySelectorAll('.cmob button')) b.setAttribute('aria-selected', String(b.dataset.v === mobTab));
+};
+document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('.ws2 .cq-need, .ws2 .cq-chat, .ws2 .cq-newb')) mobTab = 'c'; }, true);
 // called after the page is drawn: starts the chat inside the tab
 let seenKeys = null, seenFor = null;
 // if the live connection goes quiet, the Client tab still keeps up by checking every few seconds
