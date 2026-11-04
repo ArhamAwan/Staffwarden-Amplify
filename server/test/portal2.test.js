@@ -304,3 +304,26 @@ test('push: a phone subscribes, and the message it gets opens only with its own 
     assert.equal(plain.title, 'Notifications are on');
   } finally { await e2.close(); srv.close(); }
 });
+
+test('a direct chat in the inbox: others see that it waits, not what it says, and can remind the person in it', async () => {
+  const { ok, api, tokens } = env;
+  const d = await api('POST', `/api/chat/projects/${proj.id}/direct`, { token: jessT, body: { staff_id: sara.id } });
+  if (d.status === 403) { await ok('PATCH', `/api/clients/${client.id}`, { token: tokens.owner, body: { settings: { direct: true } } }); }
+  const th = d.status === 200 ? d.data : await ok('POST', `/api/chat/projects/${proj.id}/direct`, { token: jessT, body: { staff_id: sara.id } });
+  await ok('POST', `/api/chat/threads/${th.id}/messages`, { token: jessT, body: { body: 'Private: the price is going down' } });
+  // the owner sees it waiting on Sara, without the words, and can't open it
+  const mine = (await ok('GET', '/api/client-inbox', { token: tokens.owner })).items.find((i) => i.key === `m${th.id}`);
+  assert.equal(mine.private, true);
+  assert.equal(mine.text, 'Direct message to Sara');
+  assert.equal(mine.owner.name, 'Sara Khan');
+  assert.equal((await api('GET', `/api/chat/threads/${th.id}/messages`, { token: tokens.owner })).status, 404);
+  // Sara sees the message itself
+  const hers = (await ok('GET', '/api/client-inbox', { token: tokens.sara })).items.find((i) => i.key === `m${th.id}`);
+  assert.equal(hers.private, false);
+  assert.equal(hers.text, 'Private: the price is going down');
+  // the owner reminds her; she can't remind herself
+  const r = await ok('POST', '/api/client-inbox/remind', { token: tokens.owner, body: { key: `m${th.id}` } });
+  assert.equal(r.to, 'Sara Khan');
+  assert.equal((await api('POST', '/api/client-inbox/remind', { token: tokens.sara, body: { key: `m${th.id}` } })).status, 400);
+  assert.equal((await api('POST', '/api/client-inbox/remind', { token: tokens.owner, body: { key: 'm99999' } })).status, 404);
+});

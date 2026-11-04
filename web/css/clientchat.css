@@ -161,3 +161,65 @@
   .ws2 .ch-field textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ws2 .ch-gifb { display: none; }
 }
+
+/* ---------- the Client inbox: the same workspace, across every client ---------- */
+.ibx2-h { margin-bottom: 18px; }
+.ibx2-h .sub { margin: 4px 0 0; color: #ABA4CE; font-size: 14.5px; }
+.ibx2-late { color: #FFB3A8; font-weight: 650; }
+.ws.ws2.ibx2 { height: clamp(560px, calc(100dvh - 190px), 980px); }
+.ws.ws2.ibx2.ibx2-0 { grid-template-columns: 340px minmax(0, 1fr); }
+.ws.ws2.ibx2.ibx2-0 > .ws-r { display: none; }
+.ibx2 .ws-q, .ibx2 .ws-c, .ibx2 .ws-r { display: flex; flex-direction: column; min-height: 0; }
+.ibx2-f { display: flex; flex-direction: column; gap: 8px; padding: 14px 10px 12px; position: sticky; top: -4px; z-index: 2; background: linear-gradient(#170F33 80%, rgba(23,15,51,0)); }
+.ibx2-seg { display: flex; gap: 2px; padding: 4px; border-radius: 13px; background: rgba(255,255,255,.05); }
+.ibx2-seg button { flex: 1; height: 34px; border: 0; border-radius: 9px; background: transparent; color: #ABA4CE; font: 600 13px 'Instrument Sans', sans-serif; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; transition: background-color .15s, color .15s; }
+.ibx2-seg button:hover { color: #fff; }
+.ibx2-seg button[aria-current="page"] { background: rgba(139,92,246,.4); color: #fff; }
+.ibx2-seg button span { min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 99px; background: rgba(255,255,255,.12); font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
+.ibx2-seg button[aria-current="page"] span { background: rgba(255,255,255,.22); }
+.ibx2-cl { height: 36px; border-radius: 11px; font-size: 13.5px; }
+.ibx2-c .cq-top { color: #F2EFFF; font-weight: 600; }
+.ibx2-c .cq-top .cmark { border-radius: 5px; flex: none; }
+.ibx2-cn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ibx2-c .cq-wait { color: #FFD58A; font-weight: 700; flex: none; }
+.ibx2-c.late .cq-wait { color: #FFB3A8; }
+.ibx2-c b .ic { width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; color: #ABA4CE; }
+.ibx2-c.shut { border-style: dashed; }
+.ibx2-foot { margin: 14px 18px 0; font-size: 12.5px; color: #8E87B5; }
+/* the middle: which client and project, then the conversation */
+.ibx2-chat, .ibx2-shut { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ibx2-chat > .chat-box { flex: 1; min-height: 0; }
+.ibx2-chat > .pp { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ibx2-chat > .pp > .pp-b { flex: 1; min-height: 0; overflow-y: auto; }
+.ibx2-ctx { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid rgba(255,255,255,.08); flex: none; }
+.ibx2-ctx .cmark { border-radius: 8px; flex: none; }
+.ibx2-ctx > div { flex: 1; min-width: 0; }
+.ibx2-ctx b { display: block; font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ibx2-ctx > div > span { display: block; font-size: 12.5px; color: #ABA4CE; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ibx2-ctx .btn .ic { width: 15px; height: 15px; }
+.ibx2 .chat .ch-head { padding: 10px 20px; }
+/* a direct chat that isn't yours */
+.ibx2-lock { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 32px 40px; gap: 12px; }
+.ibx2-li { width: 56px; height: 56px; border-radius: 18px; background: rgba(139,92,246,.2); color: #D9CCFF; display: flex; align-items: center; justify-content: center; }
+.ibx2-li .ic { width: 26px; height: 26px; }
+.ibx2-lock h2 { margin: 6px 0 0; font: 600 22px/1.25 'Instrument Sans', sans-serif; max-width: 30ch; letter-spacing: -.01em; }
+.ibx2-lock p { margin: 0; max-width: 46ch; color: #ABA4CE; font-size: 14.5px; line-height: 1.5; }
+.ibx2-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 8px; }
+.ibx2-acts .btn .ic { width: 16px; height: 16px; }
+.ibx2-lock .ibx2-small { font-size: 13px; color: #8E87B5; }
+/* nothing waiting */
+.ibx2-none { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 32px; color: #ABA4CE; }
+.ibx2-none > .ic { width: 44px; height: 44px; padding: 12px; border-radius: 18px; background: rgba(61,214,140,.12); color: #8DEBBE; }
+.ibx2-none h2 { margin: 8px 0 0; font: 600 22px 'Instrument Sans', sans-serif; color: #F2EFFF; }
+.ibx2-none p { margin: 0; font-size: 14.5px; }
+.ibx2-w { font-size: 12.5px; font-weight: 700; color: #8E87B5; flex: none; }
+.ibx2-w.warn { color: #FFD58A; } .ibx2-w.late { color: #FFB3A8; }
+.ibx2 .cr-go span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 760px) {
+  .ws.ws2.ibx2 { height: calc(100dvh - 200px); }
+  .ws.ws2.ibx2.ibx2-0 { grid-template-columns: minmax(0, 1fr); }
+  .ibx2-ctx { padding: 10px 12px; flex-wrap: wrap; }
+  .ibx2-ctx .btn { display: none; }
+  .ibx2-lock { padding: 24px 18px; }
+}
+a.cq-need { text-decoration: none; } a.cq-need:hover { text-decoration: none; color: #F2EFFF; }

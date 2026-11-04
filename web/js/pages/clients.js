@@ -284,7 +284,10 @@ export function clientTab(p, d) {
   const fresh = clientPeople.filter((m) => !threads.some((t) => t.with && t.with.id === m.id && t.with.kind === 'client'));
   const online = (id) => presence && presence.clients && presence.clients.some((x) => x.id === id && x.online);
   const ownerTxt = (it) => (it.owner ? `${it.owner.name.split(' ')[0]} to answer` : 'nobody on it yet');
-  const qrow = (it) => { const on = picked && picked.key === it.key; return html`<li><button type="button" class="cq-need${on ? ' on' : ''}${it.level === 'late' ? ' late' : ''}" data-act="${it.kind === 'msg' ? 'client-thread' : 'ct-pick'}" data-id="${it.kind === 'msg' ? it.thread_id : ''}" data-key="${it.key}" data-k="n${it.key}" ${on ? raw('aria-current="true"') : ''}>
+  const qrow = (it) => { const on = picked && picked.key === it.key; if (it.private) return html`<li><a class="cq-need ibx2-c shut${it.level === 'late' ? ' late' : ''}" href="#/inbox?i=${it.key}" data-k="n${it.key}">
+      <span class="cq-top">${icon('lock')}<span>Private</span><span class="cq-wait">${icon('clock')}${waitText(it.waited_min)}</span></span>
+      <b>${it.text}</b><small>${it.from ? `From ${it.from.name.split(' ')[0]} · ` : ''}only ${it.owner ? it.owner.name.split(' ')[0] : 'they'} can read it</small></a></li>`;
+    return html`<li><button type="button" class="cq-need${on ? ' on' : ''}${it.level === 'late' ? ' late' : ''}" data-act="${it.kind === 'msg' ? 'client-thread' : 'ct-pick'}" data-id="${it.kind === 'msg' ? it.thread_id : ''}" data-key="${it.key}" data-k="n${it.key}" ${on ? raw('aria-current="true"') : ''}>
       <span class="cq-top">${icon(GLY[it.kind])}<span>${KIND[it.kind]}</span><span class="cq-wait">${icon('clock')}${waitText(it.waited_min)}</span></span>
       <b>${it.text}</b><small>${it.from ? `${it.from.name} · ` : ''}${ownerTxt(it)}</small></button></li>`; };
   const trow = (t) => { const on = !picked && t.id === cur.id; return html`<li><button type="button" class="cq-chat${on ? ' on' : ''}" data-act="client-thread" data-id="${t.id}" ${on ? raw('aria-current="true"') : ''}>
@@ -592,64 +595,96 @@ export const inboxPage = {
   async load(q) {
     const r = await get('/api/client-inbox');
     const sel = q.get('i') || (r.items[0] && r.items[0].key) || null;
-    const it = r.items.find((x) => x.key === sel) || null;
-    let thread = null;
-    if (it && it.kind === 'msg') thread = await get(`/api/chat/threads/${it.thread_id}/messages`).catch(() => null);
-    if (it && it.kind === 'req') thread = { req: await get(`/api/portal/requests/${it.request_id}/messages`).catch(() => []) };
-    return { ...r, sel, it, thread };
-  },
-  render({ items, summary, it, thread }, q) {
-    const mine = q.get('f') === 'mine', late = q.get('f') === 'late', cf = Number(q.get('c')) || null;
-    const shown = items.filter((x) => (!mine || x.mine) && (!late || x.level === 'late') && (!cf || x.client_id === cf));
-    const clientsList = [...new Map(items.map((x) => [x.client_id, x.client])).entries()];
-    const st = (l, v, f, cls = '') => html`<div class="ibx-st"><span>${l}</span><b class="${cls}">${v}</b><small>${f}</small></div>`;
-    const stats = html`<div class="ibx-stats">${st('Waiting on us', String(summary.waiting), summary.waiting ? `across ${plural(summary.clients, 'client')}` : 'all caught up')}${st('Late', String(summary.late), summary.late_clients.length ? summary.late_clients.join(', ') : 'past 4 hours', summary.late ? 'bad' : '')}${st('Typical first reply', summary.typical_reply_min == null ? '–' : waitText(summary.typical_reply_min), 'this week')}${st('Answered today', String(summary.answered_today), summary.answered_by ? `by ${plural(summary.answered_by, 'person', 'people')}` : 'nothing yet')}</div>`;
-    const seg = (label, on, k, v) => html`<button type="button" data-act="q" ${raw(qAttr(k, v))} aria-current="${on ? 'page' : 'false'}">${label}</button>`;
-    const filters = html`<div class="csub"><nav class="cseg" aria-label="Show">${seg(html`Everything <span>${items.length || ''}</span>`, !mine && !late, 'f', '')}${seg(html`Mine <span>${items.filter((x) => x.mine).length || ''}</span>`, mine, 'f', 'mine')}${seg(html`Late <span>${items.filter((x) => x.level === 'late').length || ''}</span>`, late, 'f', 'late')}</nav>
-      ${clientsList.length > 1 ? html`<nav class="cseg" aria-label="Clients">${seg('All clients', !cf, 'c', '')}${clientsList.map(([id, n]) => seg(html`${clientMark(n, id, 18)}${short(n)}`, cf === id, 'c', String(id)))}</nav>` : ''}</div>`;
-    const row = (x) => { const on = it && it.key === x.key; return html`<li><button type="button" class="qr${on ? ' on' : ''}" data-act="ibx-pick" data-key="${x.key}" data-k="ib${x.key}" ${on ? raw('aria-current="true"') : ''}>
-      <span class="gly ${x.kind}">${icon(GLY[x.kind])}</span>
-      <span class="qr-m"><b>${x.text}</b><span class="qr-c">${clientMark(x.client, x.client_id, 18)}${x.from ? `${x.from.name} · ` : ''}${short(x.client)}</span></span>
-      <span class="qr-r">${waitChip(x)}${x.owner ? html`<span title="${x.owner.name} to answer">${staffAv(x.owner, 20)}</span>` : html`<span class="qr-none">Nobody yet</span>`}</span></button></li>`; };
-    const queue = html`<section class="wq" aria-label="Waiting on us"><header><h2>Waiting on us <span>${shown.length || ''}</span></h2><span class="muted small">Oldest first</span></header>
-      ${shown.length ? html`<ul class="wq-l">${shown.map(row)}</ul>` : html`<p class="wq-empty">${items.length ? 'Nothing here with these filters.' : 'Every message, request, comment and asked-for change from clients has an answer. New ones show up here as they come in.'}</p>`}
-      <p class="wq-foot">Amber after 2 hours, red after 4. Answering clears it for everyone.</p></section>`;
-    let center = html`<div class="pp pp-none">${empty('Nothing picked', 'Pick something on the left to answer it here.')}</div>`, rail = html`<aside class="wr"></aside>`;
+    let it = r.items.find((x) => x.key === sel) || null;
+    // just answered: it leaves the list but stays open, so the reply you sent is still in front of you
+    if (!it && ibxLast && ibxLast.key === sel) it = { ...ibxLast, answered: true, level: 'ok' };
+    if (!it && r.items[0]) it = r.items[0];
+    ibxLast = it;
+    // the project around the picked item, so it can be answered here the same way as on the Client tab
+    const opt = (u) => get(u).catch(() => null);
+    let pj = null, requests = [], approvals = [], ret = null, rmsgs = new Map(), presence = null;
     if (it) {
-      const from = it.from ? { id: it.from.id || 0, name: it.from.name } : null;
-      const msgs = thread && thread.messages ? thread.messages.slice(-8) : [];
-      const reqm = thread && thread.req ? thread.req.slice(-8) : [];
-      const staff = (m) => (m.mine ? null : m.author.kind === 'client' ? { id: m.author.id, name: m.author.name } : { id: m.author.id - 1000, name: m.author.name });
-      const conv = it.kind === 'msg' ? msgs.map((m) => pbub(staff(m), m.body || (m.file ? m.file.name : ''), m.created_at, m.mine, m.team_only))
-        : it.kind === 'req' ? html`${pbub(from, it.detail ? `${it.text}\n${it.detail}` : it.text, it.since, false)}${reqm.map((m) => pbub(staff(m), m.body, m.created_at, m.mine))}`
-          : it.kind === 'cmt' && it.task && it.text.startsWith(`On “${it.task}”: `) ? pbub(from, it.text.slice(`On “${it.task}”: `.length), it.since, false)
-            : pbub(from, it.detail ? `“${it.detail}”` : it.text, it.since, false);
-      const first = it.from ? it.from.name.split(' ')[0] : short(it.client);
-      const reply = it.kind === 'msg' ? html`<form class="pp-reply" data-submit="ibx-reply" data-kind="msg" data-id="${it.thread_id}"><input name="body" maxlength="4000" placeholder="Reply to ${first}" aria-label="Your reply" required><button class="btn primary" type="submit">${icon('chat')} Send</button></form>`
-        : it.kind === 'req' ? html`<form class="pp-reply" data-submit="ibx-reply" data-kind="req" data-id="${it.request_id}"><input name="body" maxlength="2000" placeholder="Reply to ${first} about this request" aria-label="Your reply" required><button class="btn primary" type="submit">${icon('chat')} Send</button></form>`
-          : it.kind === 'cmt' ? html`<form class="pp-reply" data-submit="ibx-reply" data-kind="cmt" data-id="${it.task_id}"><input name="body" maxlength="4000" placeholder="Answer on the task" aria-label="Your comment" required><button class="btn primary" type="submit">${icon('chat')} Comment</button></form>` : '';
-      const where = `#/project?id=${it.project_id}&tab=client${it.kind === 'msg' ? `&ct=${it.thread_id}` : `&ci=${it.key}`}`;
-      center = html`<div class="pp"><header class="pp-h"><div class="pp-k"><span class="gly ${it.kind}">${icon(GLY[it.kind])}</span><b class="${it.kind}">${it.kind === 'msg' ? (it.direct ? 'Direct message' : 'Whole team chat') : KIND[it.kind]}</b><span>${it.from ? `${it.from.name} · ` : ''}${short(it.client)} · ${it.project}</span>${waitChip(it)}</div><h2>${it.kind === 'cmt' && it.task ? it.task : it.text}</h2></header>
-        <div class="pp-b">${conv}</div>
-        <div class="pp-f">${reply}<div class="pp-acts"><a class="btn" href="${where}">${icon('folder')} Open in the project</a>${it.kind === 'ok' ? html`<button class="btn primary" data-act="client-version" data-id="${it.approval_id}" data-n="" data-title="${it.text}">${icon('up')} Send a new version</button>` : ''}<span class="pp-left">${it.kind === 'cmt' ? 'They see your name and “Amplify” on the task.' : `${first} sees your name and “Amplify”.`}</span></div></div></div>`;
+      [pj, requests, approvals, ret, presence] = await Promise.all([opt(`/api/portal/projects/${it.project_id}`), it.kind === 'req' ? opt(`/api/portal/projects/${it.project_id}/requests`) : [], it.kind === 'ok' ? opt(`/api/portal/projects/${it.project_id}/approvals`) : [],
+        it.kind === 'req' ? opt(`/api/portal/projects/${it.project_id}/retainer`) : null, opt(`/api/chat/projects/${it.project_id}/presence`)]);
+      if (it.kind === 'req') rmsgs.set(it.request_id, (await opt(`/api/portal/requests/${it.request_id}/messages`)) || []);
+    }
+    return { ...r, sel, it, pj, requests: requests || [], approvals: approvals || [], ret, rmsgs, presence };
+  },
+  render(d, q) {
+    const { items, summary, it, pj } = d;
+    const f = q.get('f') || '', cf = Number(q.get('c')) || null;
+    const shown = items.filter((x) => (f !== 'mine' || x.mine) && (f !== 'late' || x.level === 'late') && (!cf || x.client_id === cf));
+    const clientsList = [...new Map(items.map((x) => [x.client_id, x.client])).entries()];
+    // one line of numbers instead of four boxes
+    const facts = [summary.waiting ? `${plural(summary.waiting, 'thing')} waiting${summary.clients > 1 ? ` across ${plural(summary.clients, 'client')}` : ''}` : 'Nothing waiting',
+      summary.late ? `${summary.late} late` : '', summary.typical_reply_min != null ? `you usually answer in ${waitText(summary.typical_reply_min)}` : '',
+      summary.answered_today ? `${summary.answered_today} answered today` : ''].filter(Boolean);
+    const head = html`<div class="page-h ibx2-h"><div><h1>Client inbox</h1><p class="sub">${facts.map((x, i) => html`${i ? ' · ' : ''}${i === 1 && summary.late ? html`<b class="ibx2-late">${x}</b>` : x}`)}</p></div></div>`;
+    // ---------- left: what clients are waiting on ----------
+    const seg = (label, n, on, v) => html`<button type="button" data-act="q" ${raw(qAttr('f', v))} aria-current="${on ? 'page' : 'false'}">${label}${n ? html`<span>${n}</span>` : ''}</button>`;
+    const filters = html`<div class="ibx2-f"><nav class="ibx2-seg" aria-label="Show">${seg('Everything', items.length, !f, '')}${seg('Mine', items.filter((x) => x.mine).length, f === 'mine', 'mine')}${seg('Late', items.filter((x) => x.level === 'late').length, f === 'late', 'late')}</nav>
+      ${clientsList.length > 1 ? html`<label class="sr" for="ibx2-c">Client</label><select id="ibx2-c" class="ibx2-cl" data-ibxc>${html`<option value="">All clients</option>`}${clientsList.map(([id, n]) => html`<option value="${id}" ${cf === id ? raw('selected') : ''}>${n}</option>`)}</select>` : ''}</div>`;
+    const card = (x) => { const on = it && it.key === x.key; return html`<li><button type="button" class="cq-need ibx2-c${on ? ' on' : ''}${x.level === 'late' ? ' late' : ''}${x.private ? ' shut' : ''}" data-act="ibx-pick" data-key="${x.key}" data-k="ib${x.key}" ${on ? raw('aria-current="true"') : ''}>
+      <span class="cq-top">${clientMark(x.client, x.client_id, 18)}<span class="ibx2-cn">${short(x.client)}</span><span class="cq-wait">${icon('clock')}${waitText(x.waited_min)}</span></span>
+      <b>${x.private ? html`${icon('lock')}${x.text}` : x.text}</b>
+      <small>${x.private ? `From ${x.from ? x.from.name.split(' ')[0] : 'the client'} · only ${x.owner ? x.owner.name.split(' ')[0] : 'they'} can read it` : `${KIND[x.kind]}${x.from ? ` from ${x.from.name.split(' ')[0]}` : ''} · ${x.mine ? 'you to answer' : x.owner ? `${x.owner.name.split(' ')[0]} to answer` : 'nobody on it yet'}`}</small></button></li>`; };
+    const queue = html`<section class="cq" aria-label="Waiting on us">${filters}
+      ${shown.length ? html`<ul class="cq-l">${shown.map(card)}</ul>` : html`<p class="cq-ok">${icon('check')}${items.length ? 'Nothing here with this filter.' : 'Every client has an answer. New messages, requests and comments land here.'}</p>`}
+      <p class="ibx2-foot">Amber after 2 hours, red after 4.</p></section>`;
+    // ---------- middle ----------
+    let center = html`<div class="ibx2-none">${icon('check')}<h2>All caught up</h2><p>Nothing from a client is waiting on Amplify.</p></div>`;
+    let rail = '';
+    if (it) {
+      const cs = short(it.client), first = it.from ? it.from.name.split(' ')[0] : cs;
+      const owner = it.owner ? it.owner.name.split(' ')[0] : null;
+      const ctx = html`<div class="ibx2-ctx">${clientMark(it.client, it.client_id, 26)}<div><b>${it.client}</b><span>${it.project}</span></div><a class="btn sm" href="#/project?id=${it.project_id}&tab=client${it.kind === 'msg' && !it.private ? `&ct=${it.thread_id}` : ''}">${icon('folder')} Open the Client tab</a></div>`;
+      if (it.kind === 'msg' && it.private) {
+        center = html`<div class="ibx2-shut">${ctx}<div class="ibx2-lock"><span class="ibx2-li">${icon('lock')}</span>
+          <h2>${first} is waiting on ${owner || 'a reply'} in a direct chat</h2>
+          <p>Direct chats are only for the two people in them, so you can’t read or answer this one. ${owner ? `${owner} gets a reminder from you, or you can message ${first} yourself.` : ''}</p>
+          <div class="ibx2-acts">${owner && isMgr() ? html`<button type="button" class="btn primary" data-act="ibx-remind" data-key="${it.key}">${icon('bell')} Remind ${owner}</button>` : ''}${it.from && it.from.id ? html`<button type="button" class="btn" data-act="ibx-dm" data-pid="${it.project_id}" data-id="${it.from.id}">${icon('chat')} Message ${first} yourself</button>` : ''}</div>
+          <p class="ibx2-small">Waiting ${waitText(it.waited_min)}${it.count > 1 ? ` · ${it.count} messages` : ''}</p></div></div>`;
+      } else if (it.kind === 'msg') {
+        center = html`<div class="ibx2-chat">${ctx}<div class="chat-box" data-own="ib${it.thread_id}" data-thread="${it.thread_id}" data-cs="${cs}"></div></div>`;
+      } else if (pj) {
+        center = html`<div class="ibx2-chat">${ctx}${pickedPane(it, { pj, requests: d.requests, approvals: d.approvals, rmsgs: d.rmsgs, cs, ret: d.ret })}</div>`;
+      }
+      // ---------- right: who and what is around it ----------
+      const c = pj ? pj.client : { name: it.client, id: it.client_id };
       const also = items.filter((x) => x.client_id === it.client_id && x.key !== it.key);
-      rail = html`<aside class="wr" aria-label="About this">
-        ${it.from ? html`<section class="wr-s"><header><h3>Who sent it</h3></header><div class="wr-who">${cav(from, 40)}<div><b>${it.from.name}</b><span>${it.client}</span></div></div></section>` : ''}
-        <section class="wr-s"><header><h3>${short(it.client)}</h3><a class="linkbtn" href="#/project?id=${it.project_id}&tab=client">Client tab</a></header><dl class="wr-dl"><dt>Project</dt><dd>${it.project}</dd><dt>Answered by</dt><dd>${it.owner ? it.owner.name : 'Nobody yet'}</dd><dt>Waiting</dt><dd>${waitText(it.waited_min)}</dd></dl></section>
-        <section class="wr-s"><header><h3>Also from ${short(it.client)}</h3></header>${also.length ? html`<ul class="wr-l">${also.slice(0, 4).map((x) => html`<li><button type="button" class="linkbtn" data-act="ibx-pick" data-key="${x.key}">${x.text}</button><span class="muted">${waitText(x.waited_min)}</span></li>`)}</ul>` : html`<p class="muted small">Nothing else is waiting.</p>`}</section>
+      const online = it.from && d.presence && d.presence.clients ? d.presence.clients.some((x) => x.id === it.from.id && x.online) : false;
+      const nowThere = when(new Date().toISOString(), c, { hour: 'numeric', minute: '2-digit' });
+      rail = html`<aside class="cr" aria-label="About this">
+        <div class="cr-id">${clientMark(c.name, c.id, 42)}<div><b>${c.name}</b><span>${[c.city, `${nowThere} their time`].filter(Boolean).join(' · ')}</span></div></div>
+        <div class="cr-facts"><div class="cr-f"><span>Waiting</span><b class="${it.answered ? 'good' : it.level === 'ok' ? '' : it.level}">${it.answered ? 'Answered' : waitText(it.waited_min)}</b></div><div class="cr-f"><span>To answer</span><b>${it.mine ? 'You' : owner || 'Nobody yet'}</b></div></div>
+        ${it.from ? html`<section class="cr-s"><header><h3>Sent by</h3></header><div class="cr-who"><span class="cq-av">${cav({ id: it.from.id || 0, name: it.from.name }, 36)}${online ? raw('<i class="cq-on" aria-label="Online"></i>') : ''}</span><div><b>${it.from.name}</b><span>${online ? 'Online now' : cs}</span></div></div></section>` : ''}
+        <section class="cr-s"><header><h3>Also from ${cs}</h3></header>${also.length ? html`<div class="cr-gos">${also.slice(0, 5).map((x) => html`<button type="button" class="cr-go" data-act="ibx-pick" data-key="${x.key}"><span>${x.text}</span><small class="ibx2-w ${x.level}">${waitText(x.waited_min)}</small></button>`)}</div>` : html`<p class="cr-none">Nothing else is waiting.</p>`}</section>
+        <section class="cr-s"><header><h3>${cs}</h3></header><div class="cr-gos"><a class="cr-go" href="#/project?id=${it.project_id}&tab=client"><span>Client tab</span>${icon('right')}</a><a class="cr-go" href="#/project?id=${it.project_id}&tab=client&cv=requests"><span>Requests</span>${icon('right')}</a><a class="cr-go" href="#/project?id=${it.project_id}&tab=client&cv=approvals"><span>Approvals and files</span>${icon('right')}</a><a class="cr-go" href="#/project?id=${it.project_id}&tab=assets"><span>Their assets</span>${icon('right')}</a></div></section>
       </aside>`;
     }
-    return html`<div class="page-h ibx-h"><div><h1>Client inbox</h1><p class="sub">Everything clients sent that still needs someone from Amplify, oldest first.</p></div>${stats}</div>
-      ${filters}<div class="ws ws-ibx${it ? '' : ' none'}"><div class="ws-q">${queue}</div><div class="ws-c">${center}</div>${it ? html`<div class="ws-r">${rail}</div>` : ''}</div>`;
+    const mob = html`<div class="cmob" role="tablist" aria-label="Show">${[['c', it && !it.private ? 'Reply' : 'Open', ''], ['q', 'Waiting', items.length], ['r', 'About', '']].filter(([k]) => it || k === 'q').map(([k, n, x]) => html`<button type="button" role="tab" data-act="ct-mob" data-v="${k}" aria-selected="${String((it ? ibxMob : 'q') === k)}">${n}${x ? html`<span>${x}</span>` : ''}</button>`)}</div>`;
+    return html`${head}${mob}<div class="ws ws2 ibx2${it ? '' : ' ibx2-0'}" data-m="${it ? ibxMob : 'q'}"><div class="ws-q">${queue}</div><div class="ws-c">${center}</div><div class="ws-r">${rail}</div></div>`;
+  },
+  after(view, d) {
+    for (const box of view.querySelectorAll('.ibx2 .chat-box[data-thread]')) {
+      if (box.classList.contains('chat')) continue;
+      const chat = mountChat(box, { threadId: Number(box.dataset.thread), clientName: box.dataset.cs, orgShort: String(S.settings.org_name || '').split(' ')[0], onRead: () => S.refresh() });
+      if (d.presence) chat.setPresence({ staff: new Set(d.presence.staff.filter((x) => x.online).map((x) => x.id)), clients: new Map(d.presence.clients.map((x) => [x.id, x])) });
+    }
   },
 };
+let ibxMob = 'c', ibxLast = null;
+document.addEventListener('click', (e) => { const t = e.target.closest && e.target.closest('[data-act="ct-mob"]'); if (t && document.querySelector('.ibx2')) ibxMob = t.dataset.v; }, true);
+document.addEventListener('change', (e) => { if (e.target.matches && e.target.matches('[data-ibxc]')) { const q = new URLSearchParams(location.hash.split('?')[1] || ''); if (e.target.value) q.set('c', e.target.value); else q.delete('c'); location.hash = `#/inbox?${q}`; } });
 actions['ibx-pick'] = (el) => {
-  for (const b of document.querySelectorAll('.ws .qr.on')) b.classList.remove('on');
-  const row = document.querySelector(`.ws .qr[data-key="${CSS.escape(el.dataset.key)}"]`); if (row) row.classList.add('on');
+  for (const b of document.querySelectorAll('.ibx2 .cq-need.on')) b.classList.remove('on');
+  const row = document.querySelector(`.ibx2 .cq-need[data-key="${CSS.escape(el.dataset.key)}"]`); if (row) row.classList.add('on');
   const q = new URLSearchParams(location.hash.split('?')[1] || ''); q.set('i', el.dataset.key);
+  ibxMob = 'c'; const ws = document.querySelector('.ibx2'); if (ws) ws.dataset.m = 'c';
   location.hash = `#/inbox?${q}`;
-  toPane();
 };
+actions['ibx-remind'] = async (el) => { el.disabled = true; try { const r = await post('/api/client-inbox/remind', { key: el.dataset.key }); toast(`Reminded ${String(r.to || '').split(' ')[0]}`); } catch (e) { toast(errMsg(e), true); } finally { el.disabled = false; } };
+actions['ibx-dm'] = async (el) => { el.disabled = true; try { const r = await post(`/api/chat/projects/${el.dataset.pid}/direct`, { client_user_id: Number(el.dataset.id) }); location.hash = `#/project?id=${el.dataset.pid}&tab=client&ct=${r.id}`; } catch (e) { el.disabled = false; toast(errMsg(e), true); } };
 const clientMark = (name, id, size) => html`<span class="cmark" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.36)}px;background:${avColor(1000 + id)}" aria-hidden="true">${marks(name)}</span>`;
 const staffAv = (p, size) => html`<span class="avatar sm" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.4)}px;background:${avColor(p.id)}" aria-hidden="true">${initials(p.name)}</span>`;
 actions['ibx-reply'] = async (f) => {

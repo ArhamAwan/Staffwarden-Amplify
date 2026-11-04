@@ -640,8 +640,10 @@ module.exports = (ctx) => {
         const waiting = db.prepare("SELECT * FROM chat_messages WHERE thread_id = ? AND author_kind = 'client' AND deleted_at IS NULL AND id > ? ORDER BY id").all(th.id, lastStaff);
         if (!waiting.length) continue;
         const last = waiting[waiting.length - 1];
-        items.push({ ...base, kind: 'msg', key: `m${th.id}`, thread_id: th.id, direct: th.kind === 'direct', since: waiting[0].created_at, from: who('client', last.author_id),
-          text: last.body || (last.voice_secs != null ? `Voice message · ${Math.floor(last.voice_secs / 60)}:${String(last.voice_secs % 60).padStart(2, '0')}` : last.file_name || ''), count: waiting.length,
+        // a direct chat belongs to its two people: others see that it waits, never what it says
+        const shut = th.kind === 'direct' && th.staff_id !== user.id;
+        items.push({ ...base, kind: 'msg', key: `m${th.id}`, thread_id: th.id, direct: th.kind === 'direct', private: shut, since: waiting[0].created_at, from: who('client', last.author_id),
+          text: shut ? `Direct message to ${staffName(th.staff_id).split(' ')[0]}` : last.body || (last.voice_secs != null ? `Voice message · ${Math.floor(last.voice_secs / 60)}:${String(last.voice_secs % 60).padStart(2, '0')}` : last.file_name || ''), count: waiting.length,
           owner_id: th.kind === 'direct' ? th.staff_id : p.lead_id });
       }
       // requests nobody has answered (no reply, no estimate), or where the client wrote last in the thread
@@ -690,6 +692,18 @@ module.exports = (ctx) => {
     waits.sort((x, y) => x - y);
     const median = waits.length ? Math.round(waits[Math.floor(waits.length / 2)] / 60000) : null;
     return { items, summary: { waiting: items.length, clients: new Set(items.map((i) => i.client_id)).size, late: items.filter((i) => i.level === 'late').length, late_clients: [...new Set(items.filter((i) => i.level === 'late').map((i) => i.client))], typical_reply_min: median, answered_today: answered.n, answered_by: answered.w } };
+  });
+
+  // a nudge to whoever should answer something a client is waiting on (managers, for someone else's item)
+  route('POST', '/api/client-inbox/remind', ({ user, body }) => {
+    need(user.kind !== 'client', 403, 'Not allowed');
+    const it = inboxFor(user).find((x) => x.key === String(body.key || ''));
+    need(it, 404, 'That was answered already');
+    need(it.owner_id && it.owner_id !== user.id, 400, 'Nobody else is down to answer this');
+    need(ctx.isManager(user), 403, 'Only managers can send reminders');
+    const first = it.from ? it.from.name.split(' ')[0] : it.client;
+    ctx.notify.notify(it.owner_id, { kind: 'client_message', title: `${first} from ${it.client} is waiting on you`, body: `${it.private ? 'Your direct chat' : it.text}. Waiting ${Math.round(it.waited_min / 60)}h.`, link: it.kind === 'msg' ? `#/project?id=${it.project_id}&tab=client&ct=${it.thread_id}` : `#/inbox?i=${it.key}`, actor: user, dedupe: `ibxremind:${it.key}:${clockNow() - (clockNow() % 3600000)}` });
+    return { ok: true, to: staffName(it.owner_id) };
   });
 
   // =================================================================================================
