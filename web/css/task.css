@@ -273,9 +273,9 @@
   .tk:not([data-m="details"]) .tk-meta{display:none}
   .tk[data-m="work"] .tk-rail,.tk[data-m="details"] .tk-rail{display:none}
   .tk[data-m="work"] .tk-main > .tk-md{display:none}
-  .tk[data-m="details"] .tk-main > :not(header):not(.tk-md):not(.tk-mtabs){display:none}
-  .tk[data-m="talk"] .tk-main > :not(header):not(.tk-mtabs){display:none}
-  .tk[data-m="talk"] .tk-stages{display:none}
+  .tk[data-m="details"] .tk-main > :not(header):not(.tk-md):not(.tk-mtabs):not(.tk-next){display:none}
+  .tk[data-m="talk"] .tk-main > :not(header):not(.tk-mtabs):not(.tk-next){display:none}
+  .tk[data-m="talk"] .tk-path{display:none}
   .tk-pop.tk-float{position:static;width:100%;margin-top:10px}
   .tk-stagewrap{flex-direction:column;align-items:stretch}
   .tk-stage{align-self:center}
@@ -286,3 +286,46 @@
 }
 .tk-stage .tk-shot,.tk-slider .tk-shot{margin:0;box-shadow:none}
 .tk-cmodes{flex-wrap:wrap}.tk-cmode{white-space:nowrap}
+
+/* ---------- simpler: one "what happens next" box, a read-only stage line, fewer details up top ---------- */
+.tk-header{display:flex;flex-direction:column;gap:12px}
+.tk-head{grid-template-columns:minmax(0,1fr) auto}
+.tk-next{display:flex;align-items:center;gap:16px 24px;flex-wrap:wrap;padding:18px 20px;border-radius:20px;border:1px solid rgba(155,123,255,.45);background:linear-gradient(135deg,rgba(124,92,240,.22),rgba(124,92,240,.08))}
+.tk-next.tk-n-wait{border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.04)}
+.tk-next.tk-n-fix{border-color:rgba(247,181,68,.5);background:linear-gradient(135deg,rgba(247,181,68,.16),rgba(247,181,68,.05))}
+.tk-next.tk-n-done{border-color:rgba(61,214,140,.45);background:linear-gradient(135deg,rgba(61,214,140,.16),rgba(61,214,140,.04))}
+.tk-nt{display:flex;flex-direction:column;gap:4px;flex:1 1 320px;min-width:0}
+.tk-nt b{font-size:19px;line-height:1.3;color:#fff}
+.tk-nt span{font-size:15px;line-height:1.5;color:#D9D3F2}
+.tk-n-fix .tk-nt span{color:#F1DDB3}
+.tk-n-done .tk-nt span{color:#B9E9D2}
+.tk-next .tk-acts{flex-wrap:wrap}
+.tk-next .tk-btn{height:46px;padding:0 20px;font-size:15px}
+.tk-path{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13.5px;font-weight:600;color:#8E87B5}
+.tk-path li{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.tk-path li i{width:8px;height:8px;border-radius:99px;border:1.5px solid currentColor;box-sizing:border-box}
+.tk-path li.tk-past{color:#8DEBBE}
+.tk-path li.tk-cur{color:#fff}
+.tk-path li.tk-cur i{background:#9B7BFF;border-color:#9B7BFF;box-shadow:0 0 0 4px rgba(155,123,255,.25)}
+.tk-path li + li::before{content:'';width:14px;height:1.5px;background:rgba(255,255,255,.18);margin-right:12px}
+.tk-morebtn{height:48px;padding:0 14px;border-radius:14px;border:1px dashed rgba(255,255,255,.18);background:transparent;color:#ABA4CE;font:600 13.5px 'Instrument Sans',sans-serif;display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.tk-morebtn[aria-expanded="true"] svg{transform:rotate(180deg)}
+.tk-teamonly{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border-radius:9px;font-size:12.5px;font-weight:600;color:#ABA4CE;cursor:pointer;white-space:nowrap}
+.tk-teamonly input{accent-color:#F7B544;margin:0}
+.tk-teamonly:has(input:checked){background:rgba(247,181,68,.14);color:#FFD58A}
+.tk-upd{background:rgba(139,92,246,.16);color:#D9CCFF}
+.tk-upd span{flex:1}
+.tk-addwrap{display:flex}
+.tk-addmenu{position:relative}
+.tk-addmenu > summary{list-style:none;border-style:dashed}
+.tk-addmenu > summary::-webkit-details-marker{display:none}
+.tk-addmenu .tk-menu{left:0;right:auto;width:300px}
+@media (max-width:760px){.tk-next{padding:16px}.tk-nt b{font-size:17px}.tk-addmenu .tk-menu{bottom:auto;top:calc(100% + 6px)}}
+.tk-fbl summary{cursor:pointer;font-size:13.5px;font-weight:600;color:#FFD58A;min-height:28px;display:flex;align-items:center}.tk-fbl p{margin-top:6px}
+.tk-teamonly{position:relative;border:1px solid rgba(255,255,255,.14)}
+.tk-teamonly input{position:absolute;opacity:0;width:1px;height:1px}
+.tk-teamonly:has(input:focus-visible){outline:2px solid #9B7BFF;outline-offset:2px}
+.tk-teamonly:has(input:checked){border-color:rgba(247,181,68,.5)}
+.tk-pathm{display:none;margin:0;font-size:14px;color:#ABA4CE}
+.tk-pathm b{color:#fff}
+@media (max-width:760px){.tk-path{display:none}.tk-pathm{display:block}.tk[data-m="talk"] .tk-pathm{display:none}}

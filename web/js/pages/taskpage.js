@@ -53,8 +53,8 @@ const verOf = (t, p) => (fileOf(t, p.file_id) || {}).version || 1;
 const chainName = (t, chainId) => { const c = chainsOf(t).find((x) => x.id === chainId); return c ? c.label : 'Work'; };
 
 // ---------- per-task view state (kept across live refreshes) ----------
-const ui = { id: null, tab: 'all', mode: 'comment', shown: new Set(), sel: null, ver: null, page: 1, pin: null, draft: null, compare: null, cmode: 'side', mtab: 'work', replyPin: null, open: false, wantPin: null };
-const FRESH = () => ({ tab: 'all', mode: 'comment', shown: new Set(), sel: null, ver: null, page: 1, pin: null, draft: null, compare: null, cmode: 'side', mtab: 'work', replyPin: null, open: false });
+const ui = { id: null, tab: 'talk', mode: 'comment', shown: new Set(), sel: null, ver: null, page: 1, pin: null, draft: null, compare: null, cmode: 'side', mtab: 'work', replyPin: null, open: false, wantPin: null };
+const FRESH = () => ({ tab: 'talk', mode: 'comment', shown: new Set(), sel: null, ver: null, page: 1, pin: null, draft: null, compare: null, cmode: 'side', mtab: 'work', replyPin: null, open: false });
 const pdfDocs = new Map(), pdfPages = new Map();
 let cur = null;
 const imgCache = new Map();
@@ -148,48 +148,74 @@ function page(t, projects) {
 }
 
 function head(t, r) {
-  const acts = [];
-  const btn = (act, label, cls = '', extra = '') => html`<button type="button" class="tk-btn ${cls}" data-act="${act}" ${raw(extra)}>${label}</button>`;
-  if (t.assignee_id == null && t.project_id && t.status !== 'done') acts.push(btn('tk-pickup', 'Assign to me', 'tk-pri'));
-  if (t.status === 'in_review' && r.approver) acts.push(btn('tk-ask', 'Ask for changes', 'tk-warn'), btn('tk-approve', html`${I('check', 16, 2.6)}Approve`, 'tk-ok'));
-  else if (r.mine && t.status === 'todo') acts.push(btn('tk-stage', html`${I('play', 16)}Start working`, 'tk-pri', 'data-v="in_progress"'));
-  else if (r.mine && t.status === 'in_progress') acts.push(t.needs_review && !r.approver
-    ? btn('tk-stage', html`${t.review_rounds ? `Send round ${t.review_rounds + 1} to ${first(t.approver.names[0]) || 'review'}` : `Send to ${first(t.approver.names[0]) || 'a manager'} for review`}${I('arrow', 16, 2.2)}`, 'tk-pri', 'data-v="in_review"')
-    : btn('tk-stage', html`${I('check', 16, 2.6)}Mark done`, 'tk-ok', 'data-v="done"'));
-  else if (r.mine && t.status === 'in_review') acts.push(btn('tk-stage', 'Take back from review', '', 'data-v="in_progress"'));
-  else if (t.status !== 'done' && t.status !== 'in_review' && (r.approver || (r.manage && !t.needs_review))) acts.push(btn('tk-stage', html`${I('check', 16, 2.6)}Mark done`, 'tk-ok', 'data-v="done"'));
-  if (t.status === 'done') { if (r.manage || r.mine) acts.push(btn('tk-followup', 'Make a follow-up task')); if (r.reopen) acts.push(btn('tk-stage', 'Reopen', '', 'data-v="todo"')); }
-  acts.push(moreMenu(t, r));
-
-  return html`<header style="display:flex;flex-direction:column;gap:14px">
+  return html`<header class="tk-header">
     <div class="tk-crumbs"><a href="#/tasks">${I('back', 16)}Tasks</a>${t.key ? html`<b>${t.key}</b>` : ''}${t.project ? html`<span aria-hidden="true">·</span><a href="#/project?id=${t.project_id}">${t.project}</a>` : ''}</div>
     <div class="tk-head">
       ${r.change ? html`<textarea class="tk-title" data-tf="title" rows="1" maxlength="200" aria-label="Task title">${t.title}</textarea>` : html`<h1>${t.title}</h1>`}
-      <div class="tk-acts">${acts}</div>
+      ${moreMenu(t, r)}
     </div>
-    ${phoneSub(t, r)}
-    ${stages(t, r)}
+    ${stages(t)}
     ${chips(t, r)}
-  </header>`;
+  </header>
+  ${nextStep(t, r)}`;
 }
 
-function stages(t, r) {
+// The one box that says, in plain words, what happens next and who does it, with the button for it.
+function nextStep(t, r) {
+  const btn = (act, label, cls = '', extra = '') => html`<button type="button" class="tk-btn ${cls}" data-act="${act}" ${raw(extra)}>${label}</button>`;
+  const ap = first(t.approver.names[0]) || 'your manager';
+  const doer = first(t.assignee) || 'Someone';
+  const fb = [...t.comments].reverse().find((c) => c.kind === 'feedback');
+  const todo = openPins(t).length + t.checks.filter((c) => !c.checked).length;
+  let tone = 'you', title = '', text = '';
+  const acts = [];
+  if (t.status === 'done') {
+    const ev = [...t.events].reverse().find((e) => e.kind === 'approved' || e.kind === 'completed');
+    tone = 'done'; title = ev && ev.kind === 'approved' ? `Done. ${first(ev.user)} approved it.` : 'Done';
+    text = `${t.completed_at ? relTime(t.completed_at) : ''}${t.due_day && t.completed_at && t.completed_at.slice(0, 10) <= t.due_day ? ' · on time' : t.due_day && t.completed_at ? ' · after the deadline' : ''}`;
+    if (r.manage || r.mine) acts.push(btn('tk-followup', 'Make a follow-up task'));
+    if (r.reopen) acts.push(btn('tk-stage', 'Reopen', '', 'data-v="todo"'));
+  } else if (t.assignee_id == null) {
+    tone = 'wait'; title = 'Nobody is doing this yet';
+    text = t.project_id ? 'Anyone in the project can pick it up.' : '';
+    if (t.project_id) acts.push(btn('tk-pickup', 'Assign to me', 'tk-pri'));
+  } else if (t.status === 'in_review') {
+    if (r.approver && !r.mine) {
+      title = 'Your turn: check the work';
+      text = `${doer} sent it${t.submitted_at ? ` ${relTime(t.submitted_at)}` : ''}. Look at the files below. Click a picture to leave a comment on it.`;
+      acts.push(btn('tk-ask', 'Ask for changes', 'tk-warn'), btn('tk-approve', html`${I('check', 16, 2.6)}Approve`, 'tk-ok'));
+    } else {
+      tone = 'wait'; title = r.mine ? `Waiting for ${ap} to check it` : `${doer} sent it to ${ap} to check`;
+      text = r.mine ? 'You’ll get a notification when they approve it or ask for changes.' : '';
+      if (r.mine) acts.push(btn('tk-stage', 'Take it back', '', 'data-v="in_progress"'));
+    }
+  } else if (r.mine) {
+    if (t.status === 'todo') { title = 'Your turn: start when you’re ready'; text = t.description ? 'Read what to do below.' : ''; acts.push(btn('tk-stage', html`${I('play', 16)}Start working`, 'tk-pri', 'data-v="in_progress"')); }
+    else {
+      if (t.review_rounds && fb) {
+        tone = 'fix'; title = `${first(fb.user)} asked for changes`;
+        const note = fb.body.split('\n\nStill to do:')[0].replace(/^Still to do:[\s\S]*$/, '');
+        text = `${note ? `“${note}” ` : ''}${todo ? `Fix the ${plural(todo, 'thing')} below, then send it back.` : 'Make the changes, then send it back.'}`;
+      } else { title = 'Your turn: do the work'; text = t.needs_review && !r.approver ? `When it’s ready, add your files below and send it to ${ap} to check.` : 'Mark it done when you finish.'; }
+      acts.push(t.needs_review && !r.approver
+        ? btn('tk-stage', html`${t.review_rounds ? `Send it back to ${ap}` : `Send to ${ap} to check`}${I('arrow', 16, 2.2)}`, 'tk-pri', 'data-v="in_review"')
+        : btn('tk-stage', html`${I('check', 16, 2.6)}Mark done`, 'tk-ok', 'data-v="done"'));
+    }
+  } else {
+    tone = 'wait'; title = t.status === 'todo' ? `${doer} hasn’t started yet` : `${doer} is working on it`;
+    if (r.approver || (r.manage && !t.needs_review)) acts.push(btn('tk-stage', html`${I('check', 16, 2.6)}Mark done`, '', 'data-v="done"'));
+  }
+  return html`<section class="tk-next tk-n-${tone}" aria-label="What happens next">
+    <div class="tk-nt"><b>${title}</b>${text ? html`<span>${text}</span>` : ''}</div>
+    ${acts.length ? html`<div class="tk-acts">${acts}</div>` : ''}
+  </section>`;
+}
+
+// where the task is: read only, so nobody wonders which pill to press
+function stages(t) {
   const list = t.needs_review ? STAGES : STAGES.filter(([k]) => k !== 'in_review');
   const idx = list.findIndex(([k]) => k === t.status);
-  const can = (k) => {
-    if (k === t.status) return true;
-    if (k === 'done') return r.approver || (!t.needs_review && (r.mine || r.manage));
-    if (k === 'in_review') return t.status === 'in_progress' && r.mine;
-    if (t.status === 'in_review') return r.approver || r.mine;
-    return r.mine || r.manage || r.approver;
-  };
-  const why = (k) => (k === 'done' ? `${approverName(t)} approves this one` : k === 'in_review' ? 'Sent from In progress, by the person doing it' : 'Not yours to move');
-  const items = list.map(([k, n], i) => {
-    const cls = k === t.status ? (k === 'done' ? 'tk-end' : 'tk-now') : i < idx ? 'tk-done' : '';
-    const ok = can(k);
-    return html`${i ? html`<li class="tk-sep${i <= idx ? ' tk-g' : ''}" aria-hidden="true"></li>` : ''}<li><button type="button" class="tk-st ${cls}" data-act="tk-stage" data-v="${k}" ${raw(k === t.status ? 'aria-current="step"' : '')} ${raw(ok ? '' : `aria-disabled="true" title="${esc(why(k))}"`)}>${i < idx || (k === 'done' && t.status === 'done') ? I('check', 14, 2.6) : ''}${n}</button></li>`;
-  });
-  return html`<ol class="tk-stages" aria-label="Stage">${items}</ol>`;
+  return html`<p class="tk-pathm">Step ${idx + 1} of ${list.length}: <b>${list[idx][1]}</b></p><ol class="tk-path" aria-label="Stage">${list.map(([k, n], i) => html`<li class="${i < idx || (t.status === 'done' && i === idx) ? 'tk-past' : i === idx ? 'tk-cur' : ''}" ${raw(i === idx ? 'aria-current="step"' : '')}>${i < idx || (t.status === 'done' && i === idx) ? I('check', 13, 2.8) : html`<i aria-hidden="true"></i>`}${n}</li>`)}</ol>`;
 }
 
 function chips(t, r) {
@@ -204,7 +230,6 @@ function chips(t, r) {
   if (t.needs_review) out.push(html`<span class="tk-chip tk-flat">${t.approver.ids[0] ? av(t.approver.ids[0], t.approver.names[0], false) : ''}<span class="tk-l"><small>Approves${t.approver.why === 'project lead' ? ' · project lead' : ''}</small><b>${approverName(t)}</b></span></span>`);
   else out.push(html`<span class="tk-chip tk-np tk-flat"><span class="tk-l"><small>Approval</small><b>Not needed</b></span></span>`);
   // waiting for the approver
-  if (t.status === 'in_review' && t.submitted_at && r.approver) out.push(html`<span class="tk-chip tk-amber tk-np tk-flat"><span class="tk-l"><small>Waiting for you</small><b>${relTime(t.submitted_at).replace(/ ago$/, '')}</b></span></span>`);
   // due
   if (t.status !== 'done') {
     const today = todayIn((S.me.tz_offset_min ?? S.settings.tz_offset_min) - (S.me.day_start_min || 0));
@@ -213,13 +238,13 @@ function chips(t, r) {
       ? html`<label class="tk-chip tk-np${t.overdue || t.due_today ? ' tk-amber' : ''}"><span class="tk-l"><small>${t.overdue ? 'Overdue' : 'Due'}</small><b>${label}</b></span><input type="date" data-tf="due_day" value="${t.due_day || ''}" aria-label="Due date"></label>`
       : html`<span class="tk-chip tk-np tk-flat${t.overdue || t.due_today ? ' tk-amber' : ''}"><span class="tk-l"><small>${t.overdue ? 'Overdue' : 'Due'}</small><b>${label}</b></span></span>`);
   }
+  const keep = out.length;
   // priority
   out.push(r.change
     ? html`<label class="tk-chip tk-np${t.priority === 'urgent' ? ' tk-red' : ''}"><span class="tk-l"><small>Priority</small><b>${PRIORITY[t.priority]}</b></span><select data-tf="priority" aria-label="Priority">${Object.entries(PRIORITY).map(([v, n]) => html`<option value="${v}" ${raw(v === t.priority ? 'selected' : '')}>${n}</option>`)}</select></label>`
     : html`<span class="tk-chip tk-np tk-flat"><span class="tk-l"><small>Priority</small><b>${PRIORITY[t.priority]}</b></span></span>`);
   // time
   if (t.estimate_min || t.tracked_secs) out.push(html`<button type="button" class="tk-chip tk-np" data-act="tk-estimate" ${raw(r.change ? '' : 'disabled')}><span class="tk-l"><small>${t.estimate_min ? 'Estimate' : 'Tracked'}</small><b>${t.estimate_min ? `${dur(t.estimate_min * 60)}${t.tracked_secs ? ` · ${dur(t.tracked_secs)} used` : ''}` : dur(t.tracked_secs)}</b></span></button>`);
-  if (t.review_rounds && t.status !== 'done') out.push(html`<span class="tk-chip tk-np tk-flat"><span class="tk-l"><small>Round</small><b>${t.review_rounds + 1}</b></span></span>`);
   if (t.recurrence !== 'none' || ui.shown.has('repeat')) out.push(r.change
     ? html`<label class="tk-chip tk-np"><span class="tk-l"><small>Repeats</small><b>${RECUR[t.recurrence]}</b></span><select data-tf="recurrence" aria-label="Repeats">${Object.entries(RECUR).map(([v, n]) => html`<option value="${v}" ${raw(v === t.recurrence ? 'selected' : '')}>${n}</option>`)}</select></label>`
     : html`<span class="tk-chip tk-np tk-flat"><span class="tk-l"><small>Repeats</small><b>${RECUR[t.recurrence]}</b></span></span>`);
@@ -227,7 +252,10 @@ function chips(t, r) {
     ? html`<label class="tk-chip tk-np"><span class="tk-l"><small>Milestone</small><b>${(t.milestones.find((m) => m.id === t.milestone_id) || {}).title || 'None'}</b></span><select data-tf="milestone_id" aria-label="Milestone"><option value="">None</option>${t.milestones.map((m) => html`<option value="${m.id}" ${raw(m.id === t.milestone_id ? 'selected' : '')}>${m.title}</option>`)}</select></label>`
     : html`<span class="tk-chip tk-np tk-flat"><span class="tk-l"><small>Milestone</small><b>${(t.milestones.find((m) => m.id === t.milestone_id) || {}).title || 'None'}</b></span></span>`);
   if (t.client) out.push(html`<span class="tk-chip tk-np tk-flat"><span class="tk-l"><small>Client</small><b>${t.client_sees ? `${t.client} sees this task` : 'Team only'}</b></span></span>`);
-  return html`<div class="tk-meta tk-md">${out}</div>`;
+  // the rest waits behind one button, so the top of the page stays short
+  const extra = out.slice(keep);
+  const open = ui.more || matchMedia('(max-width: 760px)').matches;
+  return html`<div class="tk-meta tk-md">${out.slice(0, keep)}${open ? extra : ''}${extra.length && !matchMedia('(max-width: 760px)').matches ? html`<button type="button" class="tk-morebtn" data-act="tk-moredet" aria-expanded="${String(!!ui.more)}">${ui.more ? 'Fewer details' : `More details`}${I('chev', 14, 2.4)}</button>` : ''}</div>`;
 }
 
 function moreMenu(t, r) {
@@ -254,8 +282,9 @@ function liveStrip(t) {
 
 // ---------- the brief, the checks, the work ----------
 function brief(t, r) {
-  return html`<section class="tk-card tk-md"><h2>What and why</h2>
-    ${r.change ? html`<label class="tk-sr" for="tk-desc">What and why</label><textarea id="tk-desc" class="tk-desc" data-tf="description" maxlength="10000" placeholder="What needs doing, and why. Paste links and screenshots too.">${t.description}</textarea>` : html`<p class="tk-p">${t.description || 'No details yet.'}</p>`}
+  if (!r.change && !t.description) return '';
+  return html`<section class="tk-card tk-md"><h2>What to do</h2>
+    ${r.change ? html`<label class="tk-sr" for="tk-desc">What and why</label><textarea id="tk-desc" class="tk-desc" data-tf="description" maxlength="10000" placeholder="What needs doing, and why">${t.description}</textarea>` : html`<p class="tk-p">${t.description || 'No details yet.'}</p>`}
     <p class="tk-small tk-muted" style="margin:0">Written by ${t.creator || 'someone'}${t.created_at ? ` · ${relTime(t.created_at)}` : ''}</p>
   </section>`;
 }
@@ -263,11 +292,11 @@ function brief(t, r) {
 function checksCard(t, r, { tick = false } = {}) {
   if (!t.checks.length && !ui.shown.has('checks')) return '';
   const done = t.checks.filter((c) => c.checked).length;
-  return html`<section class="tk-card"><div class="tk-ch"><h2>Done when</h2><span class="tk-small tk-muted">${t.checks.length ? `${done} of ${t.checks.length}${t.needs_review ? ` · ${first(t.approver.names[0]) || 'the approver'} ticks these` : ''}` : 'What has to be true before it’s done'}</span></div>
+  return html`<section class="tk-card"><div class="tk-ch"><h2>Checklist</h2><span class="tk-small tk-muted">${t.checks.length ? `${done} of ${t.checks.length}${t.needs_review ? ` · ${first(t.approver.names[0]) || 'the approver'} ticks these before approving` : ''}` : 'What has to be true before it’s done'}</span></div>
     <ul class="tk-checks">${t.checks.map((c) => html`<li class="tk-check" data-k="ck${c.id}">${tick
       ? html`<input type="checkbox" data-act="tk-tick" data-id="${c.id}" ${raw(c.checked ? 'checked' : '')} aria-label="${c.title}" style="accent-color:#3DD68C">`
       : html`<span class="tk-box" aria-hidden="true" style="${c.checked ? 'background:#3DD68C;border-color:#3DD68C' : ''}"></span>`}<span style="flex:1">${c.title}${c.checked && c.checked_by ? html` <span class="tk-small tk-muted">· ticked by ${first(c.checked_by)}</span>` : ''}</span>${r.edit && !c.checked && !tick ? html`<button type="button" class="tk-x-btn" data-act="tk-delcheck" data-id="${c.id}" aria-label="Remove ${c.title}">${I('x', 14)}</button>` : ''}</li>`)}</ul>
-    ${r.edit ? html`<form class="tk-row" data-tk-form="check"><label class="tk-sr" for="tk-nc">Add a check</label><input id="tk-nc" class="tk-in" name="title" maxlength="200" placeholder="Add a check, like “Works on a phone”" required><button type="submit" class="tk-btn tk-sm" style="height:40px">Add</button></form>` : ''}
+    ${r.edit ? html`<form class="tk-row" data-tk-form="check"><label class="tk-sr" for="tk-nc">Add a check</label><input id="tk-nc" class="tk-in" name="title" maxlength="200" placeholder="Add an item, like “Works on a phone”" required><button type="submit" class="tk-btn tk-sm" style="height:40px">Add</button></form>` : ''}
   </section>`;
 }
 
@@ -305,39 +334,40 @@ function chainItem(t, c, r, { canAdd = true } = {}) {
 function filesCard(t, r, title) {
   const chains = chainsOf(t);
   if (!chains.length && !t.links.length && !ui.shown.has('files') && t.status === 'todo') return '';
-  return html`<section class="tk-card"><div class="tk-ch"><h2>${title}</h2><span class="tk-small tk-muted">${t.status === 'todo' ? '' : t.needs_review ? `${first(t.approver.names[0]) || 'The approver'} sees these when reviewing and can pin comments on pictures and PDFs` : ''}</span></div>
+  return html`<section class="tk-card"><div class="tk-ch"><h2>${title}</h2><span class="tk-small tk-muted">${t.status === 'todo' ? '' : t.needs_review ? `${first(t.approver.names[0]) || 'The approver'} looks at these when checking your work` : ''}</span></div>
     ${chains.length || t.links.length ? html`<ul class="tk-list">${t.links.map((w) => linkItem(t, w, r))}${chains.map((c) => chainItem(t, c, r))}</ul>` : ''}
     ${r.edit ? html`<form class="tk-row" data-tk-form="link"><label class="tk-sr" for="tk-nl">Add a link</label><input id="tk-nl" class="tk-in" name="url" type="url" inputmode="url" placeholder="Paste a link: a pull request, a page, a doc" required><button type="submit" class="tk-btn tk-sm" style="height:40px">Add</button></form>
       <label class="tk-drop" style="cursor:pointer">Drop a file here, paste a screenshot, or <u>pick a file</u> (up to 50 MB)<input type="file" data-tk-file hidden></label>` : ''}
   </section>`;
 }
 
-function workCards(t, r) {
-  const two = [checksCard(t, r), filesCard(t, r, t.status === 'todo' ? 'Files and links' : 'Work to show')].filter((x) => x);
+function workCards(t, r, changes) {
+  // while changes are asked, the checklist is already in “What to change”
+  const two = [changes ? '' : checksCard(t, r), filesCard(t, r, 'Files and links')].filter((x) => x);
   const steps = stepsCard(t, r);
   return html`${steps && two.length ? html`<div class="tk-g2">${steps}${two[0]}</div>${two.slice(1)}` : html`${steps}${two.length === 2 ? html`<div class="tk-g2">${two}</div>` : two}`}`;
 }
 
 function addRow(t, r, projects) {
   if (!r.edit && !r.mine) return '';
-  const b = (key, icon, label) => html`<button type="button" class="tk-add" data-act="tk-show" data-v="${key}">${I(icon, 16)}${label}</button>`;
+  const b = (key, icon, label, sub) => html`<button type="button" class="tk-mi" data-act="tk-show" data-v="${key}">${I(icon, 16)}<span class="tk-x">${label}<span>${sub}</span></span></button>`;
   const out = [];
-  if (!(t.steps_list || []).length && !ui.shown.has('steps')) out.push(b('steps', 'steps', 'Steps'));
-  if (!t.checks.length && !ui.shown.has('checks') && r.edit) out.push(b('checks', 'shield', 'Done when'));
-  if (t.status === 'todo' && !t.files.length && !t.links.length && !ui.shown.has('files') && r.edit) out.push(b('files', 'clip', 'Files or links'));
-  if (r.edit && !t.count) out.push(b('count', 'layers', 'A count'));
-  if (r.change && !t.estimate_min) out.push(b('estimate', 'clock', 'Estimate'));
-  if (r.change && t.recurrence === 'none' && !ui.shown.has('repeat')) out.push(b('repeat', 'repeat', 'Repeat'));
-  if (r.change && t.milestones.length && !t.milestone_id && !ui.shown.has('milestone')) out.push(b('milestone', 'flag', 'Milestone'));
+  if (!(t.steps_list || []).length && !ui.shown.has('steps')) out.push(b('steps', 'steps', 'Steps', 'Break the work into smaller pieces'));
+  if (!t.checks.length && !ui.shown.has('checks') && r.edit) out.push(b('checks', 'shield', 'Checklist', t.needs_review ? `What ${first(t.approver.names[0]) || 'the approver'} checks before approving` : 'What has to be true when it’s done'));
+  if (t.status === 'todo' && !t.files.length && !t.links.length && !ui.shown.has('files') && r.edit) out.push(b('files', 'clip', 'Files or links', 'Pictures, PDFs, documents, links'));
+  if (r.edit && !t.count) out.push(b('count', 'layers', 'A number to reach', 'Like “20 calls” or “5 posts”'));
+  if (r.change && !t.estimate_min) out.push(b('estimate', 'clock', 'Time estimate', 'How long it should take'));
+  if (r.change && t.recurrence === 'none' && !ui.shown.has('repeat')) out.push(b('repeat', 'repeat', 'Repeat', 'Every day, week or month'));
+  if (r.change && t.milestones.length && !t.milestone_id && !ui.shown.has('milestone')) out.push(b('milestone', 'flag', 'Milestone', 'Group it with related work'));
   void projects;
-  return out.length ? html`<div class="tk-addrow tk-md" aria-label="Add to this task"><span>Add to this task</span>${out}</div>` : '';
+  return out.length ? html`<div class="tk-md tk-addwrap"><details class="tk-more tk-addmenu"><summary class="tk-btn">${I('plus', 16, 2.4)}Add to this task</summary><div class="tk-menu" role="menu">${out}</div></details></div>` : '';
 }
 
 // ---------- a count ("12 of 20 called") and how it went ----------
 function countCard(t, r) {
   const c = t.count, pct = Math.min(100, Math.round((100 * c.done) / c.target));
   const can = r.edit && t.status !== 'done';
-  return html`<section class="tk-card tk-count"><div class="tk-ch"><h2>How far</h2>${can ? html`<button type="button" class="tk-lnk tk-small" data-act="tk-count">Change</button>` : ''}</div>
+  return html`<section class="tk-card tk-count"><div class="tk-ch"><h2>Progress</h2>${can ? html`<button type="button" class="tk-lnk tk-small" data-act="tk-count">Change</button>` : ''}</div>
     <div class="tk-cnt">
       <div class="tk-cntn"><b>${c.done}</b><span>of ${c.target}${c.unit ? ` ${c.unit}` : ''}</span></div>
       ${can ? html`<div class="tk-cntb"><button type="button" class="tk-btn" data-act="tk-bump" data-v="-1" ${raw(c.done ? '' : 'disabled')} aria-label="One less">− 1</button><button type="button" class="tk-btn tk-pri" data-act="tk-bump" data-v="1">+ 1${c.unit ? ` ${c.unit}` : ''}</button></div>` : ''}
@@ -418,7 +448,7 @@ function viewer(t, r, { close = false } = {}) {
     body = html`${tools}
       ${file.note && file.version > 1 ? html`<p class="tk-vnote"><b>${first(file.user)} with V${file.version}:</b> ${file.note}</p>` : ''}
       ${pinnable(file) ? html`${isPdf(file) ? pageNav(file) : ''}${stage(t, file, r, { page: isPdf(file) ? ui.page : 1 })}
-        <p class="tk-hint">${matchMedia('(hover: none)').matches ? 'Tap' : 'Click'} anywhere on the ${isPdf(file) ? 'page' : 'picture'} to pin a comment there. Only the team sees pins.</p>`
+        <p class="tk-hint">${matchMedia('(hover: none)').matches ? 'Tap' : 'Click'} the ${isPdf(file) ? 'page' : 'picture'} to leave a comment on that spot.</p>`
         : html`<div class="tk-linkcard">${thumb(t, file)}<span class="tk-t"><b>${file.name}</b><span>${kb(file.size)}</span></span><button type="button" class="tk-btn tk-sm" data-act="tk-file" data-id="${file.id}" data-name="${file.name}">${I('dl', 16)}Download</button></div>`}
       ${earlier.length ? html`<div class="tk-earlier"><span class="tk-small tk-muted">Still open from earlier versions</span>${earlier.map((p) => html`<button type="button" class="tk-pinrow" data-act="tk-goto" data-id="${p.id}"><span class="tk-pn">${p.num}</span><span>V${verOf(t, p)} · ${p.body}</span></button>`)}</div>` : ''}`;
   }
@@ -464,7 +494,7 @@ function reviewView(t, r) {
 function reviewExtras(t, r) {
   return html`${t.count ? '' : ''}${stepsCard(t, r)}
   ${!r.approver ? checksCard(t, r) : ''}
-  ${t.description ? html`<section class="tk-card tk-md"><h2>What and why</h2><p class="tk-p" style="white-space:pre-line">${t.description}</p></section>` : ''}`;
+  ${t.description ? html`<section class="tk-card tk-md"><h2>What to do</h2><p class="tk-p" style="white-space:pre-line">${t.description}</p></section>` : ''}`;
 }
 
 // ---------- changes asked: a to-do list made from the feedback ----------
@@ -475,13 +505,10 @@ function changesView(t, r) {
   const by = fb ? fb.user : approverName(t);
   const note = fb ? fb.body.split('\n\nStill to do:')[0].replace(/^Still to do:[\s\S]*$/, '') : '';
   const n = open.length + pins.length + (note ? 1 : 0);
-  return html`<section class="tk-banner tk-amber">
-    ${fb ? av(fb.user_id, fb.user, false) : ''}
-    <div style="display:flex;flex-direction:column;gap:4px;flex:1 1 260px;min-width:0"><b style="font-size:17px">${first(by)} asked for ${n ? plural(n, 'change') : 'changes'}</b>${note ? html`<span class="tk-feedtext" style="color:#F1DDB3">“${note}”</span>` : ''}${fb ? html`<span class="tk-small" style="color:#F1DDB3">${relTime(fb.created_at)}${pins.length ? ` · fix the pins, then send round ${t.review_rounds + 1}` : ''}</span>` : ''}</div>
-  </section>
-  ${open.length || pins.length ? html`<section class="tk-card"><div class="tk-ch"><h2>What to change</h2><span class="tk-small tk-muted">${pins.length ? 'Open pins and unticked checks' : `The checks ${first(by)} left unticked`}</span></div>
-    <ul class="tk-list">${pins.map((p) => html`<li class="tk-item" data-k="op${p.id}"><span class="tk-pn">${p.num}</span><span class="tk-t"><b>${p.body}</b><span>${chainName(t, p.chain_id)} · V${verOf(t, p)} · ${first(p.user)}${p.replies.length ? ` · ${plural(p.replies.length, 'reply', 'replies')}` : ''}</span></span><button type="button" class="tk-btn tk-sm" data-act="tk-goto" data-id="${p.id}">Go to pin</button>${t.is_mine || r.manage ? html`<button type="button" class="tk-btn tk-sm tk-ok" data-act="tk-resolve" data-id="${p.id}" data-v="1">${I('check', 15, 2.6)}Fixed</button>` : ''}</li>`)}
-      ${open.map((c) => html`<li class="tk-item" data-k="oc${c.id}"><span class="tk-tag">Done when</span><span class="tk-t"><b>${c.title}</b></span></li>`)}</ul></section>` : ''}
+  void n; void by; void note;
+  return html`${open.length || pins.length ? html`<section class="tk-card"><div class="tk-ch"><h2>What to change</h2><span class="tk-small tk-muted">Mark each one fixed as you go</span></div>
+    <ul class="tk-list">${pins.map((p) => html`<li class="tk-item" data-k="op${p.id}"><span class="tk-pn">${p.num}</span><span class="tk-t"><b>${p.body}</b><span>${chainName(t, p.chain_id)} · V${verOf(t, p)} · ${first(p.user)}${p.replies.length ? ` · ${plural(p.replies.length, 'reply', 'replies')}` : ''}</span></span><button type="button" class="tk-btn tk-sm" data-act="tk-goto" data-id="${p.id}">Go to pin</button>${t.is_mine || r.manage ? html`<button type="button" class="tk-btn tk-sm tk-ok" data-act="tk-resolve" data-id="${p.id}" data-v="1">${I('check', 15, 2.6)}Mark fixed</button>` : ''}</li>`)}
+      ${open.map((c) => html`<li class="tk-item" data-k="oc${c.id}"><span class="tk-tag">Checklist</span><span class="tk-t"><b>${c.title}</b></span></li>`)}</ul></section>` : ''}
   ${brief(t, r)}`;
 }
 
@@ -490,35 +517,25 @@ function doneView(t, r) {
   const ap = [...t.events].reverse().find((e) => e.kind === 'approved' || e.kind === 'completed');
   const steps = t.steps_list || [];
   const tiles = [
-    ...(t.count ? [['How far', `${t.count.done} of ${t.count.target}`, t.count.unit || 'done']] : []),
+    ...(t.count ? [['Progress', `${t.count.done} of ${t.count.target}`, t.count.unit || 'done']] : []),
     ...(t.tracked_secs ? [['Time on it', dur(t.tracked_secs), `${t.estimate_min ? `of a ${dur(t.estimate_min * 60)} estimate, ` : ''}in ${plural(t.sessions, 'session')}`]] : []),
     ...(t.needs_review ? [['Rounds', String(t.review_rounds + 1), t.review_rounds ? `${plural(t.review_rounds, 'time')} sent back` : 'approved first time']] : []),
     ...(t.pins.length ? [['Pins', `${t.pins.filter((p) => p.resolved).length} of ${t.pins.length}`, 'fixed']] : []),
     ...(steps.length ? [['Steps', `${steps.filter((x) => x.done).length} of ${steps.length}`, 'done']] : []),
-    ...(t.checks.length ? [['Done when', `${t.checks.filter((c) => c.checked).length} of ${t.checks.length}`, 'ticked']] : []),
+    ...(t.checks.length ? [['Checklist', `${t.checks.filter((c) => c.checked).length} of ${t.checks.length}`, 'ticked']] : []),
   ].slice(0, 4);
   const chains = chainsOf(t);
-  return html`<section class="tk-banner tk-ok">
-    <span style="width:48px;height:48px;border-radius:99px;background:#3DD68C;color:#062016;display:flex;align-items:center;justify-content:center;flex:none">${I('check', 24, 2.8)}</span>
-    <div style="display:flex;flex-direction:column;gap:4px;min-width:0"><b style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:30px;line-height:1.1">${ap && ap.kind === 'approved' ? `Approved by ${ap.user}` : 'Done'}</b><span style="font-size:14.5px;color:#B9E9D2">${t.completed_at ? relTime(t.completed_at) : ''}${t.due_day && t.completed_at && t.completed_at.slice(0, 10) <= t.due_day ? ' · on time' : t.due_day ? ' · after the deadline' : ''}</span></div>
-  </section>
-  ${tiles.length ? html`<div class="tk-g4">${tiles.map(([a, b, c]) => html`<div class="tk-tile"><span>${a}</span><b>${b}</b><span>${c}</span></div>`)}</div>` : ''}
+  void ap;
+  return html`${tiles.length ? html`<div class="tk-g4">${tiles.map(([a, b, c]) => html`<div class="tk-tile"><span>${a}</span><b>${b}</b><span>${c}</span></div>`)}</div>` : ''}
   ${t.outcome ? html`<section class="tk-card"><h2>How it went</h2><p class="tk-p" style="white-space:pre-line">${t.outcome}</p></section>` : ''}
-  ${chains.length || t.links.length ? html`<section class="tk-card"><div class="tk-ch"><h2>What was handed in</h2></div><ul class="tk-list">${t.links.map((w) => linkItem(t, w, { manage: false }))}${chains.map((c) => chainItem(t, c, r, { canAdd: false }))}</ul></section>` : ''}
-  ${t.description ? html`<section class="tk-card tk-md"><h2>What and why</h2><p class="tk-p" style="white-space:pre-line">${t.description}</p></section>` : ''}`;
+  ${chains.length || t.links.length ? html`<section class="tk-card"><div class="tk-ch"><h2>Files and links</h2></div><ul class="tk-list">${t.links.map((w) => linkItem(t, w, { manage: false }))}${chains.map((c) => chainItem(t, c, r, { canAdd: false }))}</ul></section>` : ''}
+  ${t.description ? html`<section class="tk-card tk-md"><h2>What to do</h2><p class="tk-p" style="white-space:pre-line">${t.description}</p></section>` : ''}`;
 }
 
 // ---------- on a phone: Work, Conversation and Details as tabs ----------
 function phoneTabs(t) {
-  const n = t.comments.length + t.pins.length;
-  return html`<div class="tk-mtabs" role="tablist" aria-label="Show">${[['work', 'Work'], ['talk', 'Conversation'], ['details', 'Details']].map(([k, label]) => html`<button type="button" role="tab" aria-selected="${String(ui.mtab === k)}" data-act="tk-mtab" data-v="${k}">${label}${k === 'talk' && n ? html`<span class="tk-n">${n}</span>` : ''}</button>`)}</div>`;
-}
-function phoneSub(t, r) {
-  let s = '';
-  if (t.status === 'in_review' && t.submitted_at) s = `${first(t.assignee) || 'They'} sent it for review${r.approver ? ` · waiting for you ${relTime(t.submitted_at).replace(/ ago$/, '')}` : ''}`;
-  else if (t.status === 'in_progress' && t.review_rounds) s = `Round ${t.review_rounds + 1} · ${plural(openPins(t).length + t.checks.filter((c) => !c.checked).length, 'change')} to make`;
-  else if (t.assignee) s = `${t.assignee}${t.due_day ? ` · due ${dayShort(t.due_day)}` : ''}`;
-  return s ? html`<p class="tk-msub">${s}</p>` : '';
+  const n = openPins(t).length;
+  return html`<div class="tk-mtabs" role="tablist" aria-label="Show">${[['work', 'Work'], ['talk', 'Comments'], ['details', 'Details']].map(([k, label]) => html`<button type="button" role="tab" aria-selected="${String(ui.mtab === k)}" data-act="tk-mtab" data-v="${k}">${label}${k === 'talk' && n ? html`<span class="tk-n">${n}</span>` : ''}</button>`)}</div>`;
 }
 
 // ---------- the side panel: deciding, and the conversation ----------
@@ -529,8 +546,9 @@ function rail(t, r) {
   // pin events show as the pin itself; repeats of the same event fold into one line below
   const events = t.events.filter((e) => !['edited', 'member', 'pin'].includes(e.kind)).map((e) => ({ at: e.at, e }));
   let items = [...comments, ...pins, ...events];
-  if (ui.tab === 'feedback') items = items.filter((x) => x.p || (x.c && x.c.kind === 'feedback') || (x.e && /^(sent_back|approved|check_|pin_)/.test(x.e.kind)));
-  else if (ui.tab === 'activity') items = events;
+  // Comments: what people wrote (comments, pins, feedback). Activity: everything that happened.
+  if (ui.tab === 'activity') items = events;
+  else items = [...comments, ...pins];
   items.sort((a, b) => a.at.localeCompare(b.at));
   // the same person doing the same thing a few times in a row reads as one line
   items = items.reduce((out, x) => {
@@ -540,16 +558,16 @@ function rail(t, r) {
     }
     out.push({ ...x }); return out;
   }, []);
-  const fbCount = t.comments.filter((c) => c.kind === 'feedback').length + openPins(t).length;
+  const fbCount = openPins(t).length;
   const feed = items.map((x) => (x.p ? pinItem(t, x.p, r) : x.c ? commentItem(t, x.c, r) : html`<li class="tk-ev" data-k="e${x.e.at}${x.e.kind}"><i style="background:${/approved|completed/.test(x.e.kind) ? '#3DD68C' : /sent_back/.test(x.e.kind) ? '#F7B544' : /submitted/.test(x.e.kind) ? '#9B7BFF' : '#8E87B5'}"></i><span><b>${x.e.user || 'Someone'}</b> ${x.n ? `${MANY[x.e.kind](x.n)}: ${x.details.join(' · ')}` : `${EVENT[x.e.kind] || x.e.kind}${x.e.detail && !/^(sent_back|submitted)$/.test(x.e.kind) ? `: ${x.e.detail}` : ''}`} · ${relTime(x.last || x.e.at)}</span></li>`));
   return html`<aside class="tk-rail" aria-label="${deciding ? 'Decide and conversation' : 'Conversation'}">
-    ${deciding ? html`<section class="tk-decide" aria-label="Done when"><div class="tk-ch"><h3>Done when</h3><span class="tk-small tk-muted">${t.checks.filter((c) => c.checked).length} of ${t.checks.length}</span></div>
+    ${deciding ? html`<section class="tk-decide" aria-label="Checklist"><div class="tk-ch"><h3>Checklist</h3><span class="tk-small tk-muted">${t.checks.filter((c) => c.checked).length} of ${t.checks.length}</span></div>
       <ul class="tk-checks">${t.checks.map((c) => html`<li data-k="dk${c.id}"><label class="tk-check tk-ok"><input type="checkbox" data-act="tk-tick" data-id="${c.id}" ${raw(c.checked ? 'checked' : '')}>${c.title}</label></li>`)}</ul>
-      <span class="tk-small tk-muted">Anything left unticked goes back with Ask for changes.</span></section>` : ''}
-    <div class="tk-rh">${deciding ? '' : html`<h2>Conversation</h2>`}
-      <div class="tk-tabs" role="tablist" aria-label="Show">${[['all', 'Everything'], ['feedback', 'Feedback'], ['activity', 'Activity']].map(([k, n]) => html`<button type="button" class="tk-tab" role="tab" aria-selected="${String(ui.tab === k)}" data-act="tk-tab" data-v="${k}">${n}${k === 'feedback' && fbCount ? html`<span class="tk-n">${fbCount}</span>` : ''}</button>`)}</div>
+      <span class="tk-small tk-muted">Tick what’s right. Anything left unticked goes back when you ask for changes.</span></section>` : ''}
+    <div class="tk-rh">
+      <div class="tk-tabs" role="tablist" aria-label="Show">${[['talk', 'Comments'], ['activity', 'Activity']].map(([k, n]) => html`<button type="button" class="tk-tab" role="tab" aria-selected="${String(ui.tab === k)}" data-act="tk-tab" data-v="${k}">${n}${k === 'talk' && fbCount ? html`<span class="tk-n" title="${plural(fbCount, 'pin')} still open">${fbCount}</span>` : ''}</button>`)}</div>
     </div>
-    <ol class="tk-feed">${feed.length ? feed : html`<li class="tk-small tk-muted">${ui.tab === 'feedback' ? 'No feedback yet.' : 'Nothing here yet. Write the first comment below.'}</li>`}</ol>
+    <ol class="tk-feed">${feed.length ? feed : html`<li class="tk-small tk-muted">${ui.tab === 'activity' ? 'Nothing has happened yet.' : 'No comments yet. Write one below.'}</li>`}</ol>
     ${composer(t, r)}
   </aside>`;
 }
@@ -565,11 +583,18 @@ function pinItem(t, p, r) {
   </li>`;
 }
 
+// review feedback: the reviewer's note, and the list folded away (the same list is on the page)
+function feedbackBody(body) {
+  const [note, rest] = String(body).split(/(?:^|\n\n)Still to do:\n/);
+  const items = rest ? rest.split('\n').filter(Boolean) : [];
+  return html`${note ? html`<p class="tk-feedtext">${note}</p>` : ''}${items.length ? html`<details class="tk-fbl"><summary>${plural(items.length, 'thing')} to fix</summary><p class="tk-feedtext">${items.join('\n')}</p></details>` : ''}`;
+}
+
 function commentItem(t, c, r) {
   const kind = c.kind === 'update' ? 'progress update' : c.kind === 'feedback' ? 'asked for changes' : '';
   const body = html`<li class="tk-cm${c.kind === 'feedback' ? ' tk-fb' : ''}" data-k="c${c.id}">${av(c.user_id || c.client_user_id, c.user)}<div class="tk-w">
     <div class="tk-by"><b>${c.user || 'Someone'}</b>${relTime(c.created_at)}${kind ? html` · <span class="tk-kind">${kind}</span>` : ''}${c.from_client ? html` · <span class="tk-kind">${t.client || 'Client'}</span>` : ''}${c.team_only && c.kind !== 'feedback' ? html` · <span class="tk-kind">team only</span>` : ''}${c.user_id === S.me.id || r.manage ? html` <button type="button" class="tk-lnk" style="font-size:12px;min-height:0;color:#8E87B5" data-act="tk-delc" data-id="${c.id}">Delete</button>` : ''}</div>
-    ${c.body ? html`<p class="tk-feedtext">${c.body}</p>` : ''}
+    ${c.kind === 'feedback' ? feedbackBody(c.body) : c.body ? html`<p class="tk-feedtext">${c.body}</p>` : ''}
     ${c.file ? html`<button type="button" class="tk-lnk" style="min-height:0" data-act="tk-cfile" data-url="${c.file.url}" data-name="${c.file.name}">${I('clip', 14)} ${c.file.name}</button>` : ''}
   </div></li>`;
   return body;
@@ -577,28 +602,30 @@ function commentItem(t, c, r) {
 
 function composer(t, r) {
   const modes = [['comment', 'Comment'], ['update', 'Progress update'], ...(t.client && t.client_sees ? [['team', 'Team only']] : [])];
-  if (!modes.some(([k]) => k === ui.mode)) ui.mode = 'comment';
+  if (!modes.some(([k]) => k === ui.mode) && ui.mode !== 'update') ui.mode = 'comment';
   const canAsk = t.status === 'in_review' && r.approver;
   const rp = ui.replyPin ? t.pins.find((p) => p.id === ui.replyPin) : null;
   if (ui.replyPin && !rp) ui.replyPin = null;
   return html`<form class="tk-comp" data-tk-form="comment" aria-label="Write in the conversation">
     <div class="tk-cbox">
       ${rp ? html`<div class="tk-replying"><span class="tk-pn">${rp.num}</span><span>Replying on pin ${rp.num} · ${chainName(t, rp.chain_id)} · team only</span><button type="button" class="tk-x-btn" data-act="tk-reply" data-id="0" aria-label="Stop replying on the pin">${I('x', 14)}</button></div>`
-        : html`<div class="tk-cmodes" role="tablist" aria-label="Kind of message">${modes.map(([k, n]) => html`<button type="button" class="tk-cmode" role="tab" aria-selected="${String(ui.mode === k)}" data-act="tk-mode" data-v="${k}">${k === 'team' ? I('lock', 13, 2.2) : ''}${n}</button>`)}</div>`}
+        : ui.mode === 'update' ? html`<div class="tk-replying tk-upd"><span>Posting as a progress update</span><button type="button" class="tk-x-btn" data-act="tk-mode" data-v="comment" aria-label="Post as a normal comment">${I('x', 14)}</button></div>` : ''}
       <div class="tk-cin">
         <label for="tk-c" class="tk-sr">Write a comment</label>
-        <textarea id="tk-c" name="body" rows="2" maxlength="4000" placeholder="${rp ? `Reply on pin ${rp.num}` : ui.mode === 'update' ? 'How it’s going: what’s done, what’s next' : ui.mode === 'team' ? `Only the team sees this, never ${t.client}` : 'Write a comment, @ to mention'}"></textarea>
+        <textarea id="tk-c" name="body" rows="2" maxlength="4000" placeholder="${rp ? `Reply on pin ${rp.num}` : ui.mode === 'update' ? 'How it’s going: what’s done, what’s next' : ui.mode === 'team' ? `Only the team sees this, never ${t.client}` : 'Write a comment'}"></textarea>
         <div class="tk-tools">
-          <details class="tk-more"><summary class="tk-ti" aria-label="Turn into a step, a check or a new task">${I('plus')}</summary><div class="tk-menu tk-cmenu" role="menu"><div class="tk-mlab">Turn what you wrote into</div>
+          <details class="tk-more"><summary class="tk-ti" aria-label="More: progress update, step, checklist item or new task">${I('plus')}</summary><div class="tk-menu tk-cmenu" role="menu">
+            <button type="button" class="tk-mi" data-act="tk-mode" data-v="update">${I('layers', 16)}<span class="tk-x">Post as a progress update<span>What’s done and what’s next</span></span></button>
+            <div class="tk-mlab">Turn what you wrote into</div>
             <button type="button" class="tk-mi" data-act="tk-as" data-v="step">${I('steps', 16)}<span class="tk-x">A step<span>Added to the steps on this task</span></span></button>
-            ${r.edit ? html`<button type="button" class="tk-mi" data-act="tk-as" data-v="check">${I('shield', 16)}<span class="tk-x">A “Done when” check<span>The approver ticks it to approve</span></span></button>` : ''}
+            ${r.edit ? html`<button type="button" class="tk-mi" data-act="tk-as" data-v="check">${I('shield', 16)}<span class="tk-x">A checklist item<span>${first(t.approver.names[0]) || 'The approver'} ticks it before approving</span></span></button>` : ''}
             <button type="button" class="tk-mi" data-act="tk-as" data-v="task">${I('plus', 16)}<span class="tk-x">A new task<span>In the same project</span></span></button></div></details>
           <label class="tk-ti" aria-label="Attach a file" title="Attach a file">${I('clip')}<input type="file" data-tk-file hidden></label>
-          <button type="button" class="tk-ti" aria-label="Mention someone" data-act="tk-at">${I('at')}</button>
+          ${t.client && t.client_sees ? html`<label class="tk-teamonly" title="Only the team sees it, never ${t.client}"><input type="checkbox" data-tk-team ${raw(ui.mode === 'team' ? 'checked' : '')}>${I('lock', 13, 2.2)}Team only</label>` : ''}
           <span class="tk-send"><button type="submit">Send</button>${canAsk ? html`<details class="tk-more" style="display:flex"><summary aria-label="More ways to send" style="height:34px;width:30px;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#7C5CF0,#9B7BFF);color:#fff;border-left:1px solid rgba(255,255,255,.28);cursor:pointer">${I('chev', 14, 2.4)}</summary><div class="tk-menu" role="menu" style="bottom:calc(100% + 6px);top:auto"><button type="button" class="tk-mi" data-act="tk-sendask">${I('up', 16)}<span class="tk-x">Send and ask for changes<span>Sends it back with this note and the unticked checks</span></span></button></div></details>` : ''}</span>
         </div>
       </div>
-      <div class="tk-chint">Enter to send · Shift + Enter for a new line · paste a screenshot to add it</div>
+      <div class="tk-chint">Press Enter to send</div>
     </div>
   </form>`;
 }
@@ -653,10 +680,11 @@ actions['tk-delfile'] = run(async (el) => { if (!(await confirmBox({ title: Numb
 actions['tk-dellink'] = run(async (el) => { await del(`/api/tasks/${T().id}/links/${el.dataset.id}`); done(); });
 actions['tk-delc'] = run(async (el) => { if (!(await confirmBox({ title: 'Delete this comment?', message: 'It is removed for everyone.', confirm: 'Delete', danger: true }))) return; await del(`/api/tasks/${T().id}/comments/${el.dataset.id}`); done(); });
 actions['tk-tab'] = (el) => { ui.tab = el.dataset.v; S.refresh(); };
-actions['tk-mode'] = (el) => { ui.mode = el.dataset.v; S.refresh(); };
+actions['tk-mode'] = (el) => { ui.mode = el.dataset.v; closeMenus(); S.refresh(); setTimeout(() => document.getElementById('tk-c')?.focus(), 60); };
 actions['tk-view'] = (el) => { ui.view = el.dataset.v; S.refresh(); };
 actions['tk-show'] = (el) => {
   const k = el.dataset.v;
+  closeMenus();
   if (k === 'estimate') return actions['tk-estimate']();
   if (k === 'count') return actions['tk-count']();
   ui.shown.add(k); S.refresh();
@@ -671,7 +699,7 @@ actions['tk-as'] = run(async (el) => {
   else if (el.dataset.v === 'check') await post(`/api/tasks/${t.id}/checks`, { title: text.slice(0, 200) });
   else { const n = await post('/api/tasks', { title: text.slice(0, 200), project_id: t.project_id || null }); toast(`${n.key || 'New task'} made`); }
   ta.value = ''; delete ta.dataset.dirty;
-  done(el.dataset.v === 'step' ? 'Added as a step' : el.dataset.v === 'check' ? 'Added as a “Done when” check' : null);
+  done(el.dataset.v === 'step' ? 'Added as a step' : el.dataset.v === 'check' ? 'Added to the checklist' : null);
 });
 actions['tk-estimate'] = () => {
   const t = T();
@@ -757,6 +785,7 @@ document.addEventListener('change', async (e) => {
     return;
   }
   if (e.target.matches('[data-tk-file]') && e.target.files[0]) { const file = e.target.files[0], ver = e.target.dataset.ver; e.target.value = ''; if (ver) newVersion(file, Number(ver)); else await upload(file); return; }
+  if (e.target.matches('[data-tk-team]')) { ui.mode = e.target.checked ? 'team' : 'comment'; return; }
   if (e.target.matches('[data-tk-cmp]')) { ui[e.target.dataset.tkCmp === 'a' ? 'cmpA' : 'cmpB'] = Number(e.target.value); S.refresh(); }
 });
 document.addEventListener('click', (e) => {
@@ -917,3 +946,5 @@ async function pdfPage(fid, page) {
   const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
   return URL.createObjectURL(blob);
 }
+
+actions['tk-moredet'] = () => { ui.more = !ui.more; S.refresh(); };
