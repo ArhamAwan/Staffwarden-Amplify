@@ -12,7 +12,8 @@ const { need, str, optStr, int } = require('../lib/http');
 const STATUSES = ['todo', 'in_progress', 'in_review', 'done'];
 const PRIORITIES = ['urgent', 'high', 'normal', 'low'];
 const RECUR = ['none', 'daily', 'weekdays', 'weekly', 'monthly'];
-const MAX_FILE = 5 * 1024 * 1024;
+const MAX_FILE = 5 * 1024 * 1024;        // sent as JSON (base64)
+const MAX_UPLOAD = 50 * 1024 * 1024;     // sent as the file itself (bigger designs, videos, PDFs)
 
 module.exports = (ctx) => {
   const { db, cfg, route, emit, audit, isManager, canSee, calc, nowIso, clockNow, T, projectVisible, isProjectLead, ensureProjectMember, nextTaskNumber, getProject } = ctx;
@@ -47,7 +48,9 @@ module.exports = (ctx) => {
   // ---------- notifications ----------
   const N = ctx.notify;
   const label = (t) => { const p = t.project_id ? getProject(t.project_id) : null; return p && t.number ? `${p.key}-${t.number} ${t.title}` : t.title; };
+  const label_ = label;
   const link = (t) => `#/tasks?task=${t.id}`;
+  const pinLink = (t, pin) => `#/task?id=${t.id}&pin=${pin}`;
   // ---------- who approves ----------
   // The manager assigned to the project (its lead). When the lead is the one doing the task, or there is no
   // project or lead, the person's own managers. The owner can always approve. Nobody approves their own
@@ -211,7 +214,7 @@ module.exports = (ctx) => {
     const due = nextDue(t.due_day, t.recurrence);
     const id = Number(db.prepare(`INSERT INTO tasks (title, description, project_id, number, assignee_id, created_by, priority, due_day, estimate_min, recurrence, recurred_from, position, created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(t.title, t.description, t.project_id, t.project_id ? nextTaskNumber(t.project_id) : null, t.assignee_id, t.created_by, t.priority, due, t.estimate_min, t.recurrence, t.id, t.position, nowIso()).lastInsertRowid);
-    db.prepare('UPDATE tasks SET needs_review = ? WHERE id = ?').run(t.needs_review ?? null, id);
+    db.prepare('UPDATE tasks SET needs_review = ?, count_target = ?, count_done = ?, count_unit = ? WHERE id = ?').run(t.needs_review ?? null, t.count_target ?? null, t.count_target != null ? 0 : null, t.count_unit ?? null, id);
     for (const c of db.prepare('SELECT title, position FROM task_checks WHERE task_id = ? ORDER BY position, id').all(t.id)) db.prepare('INSERT INTO task_checks (task_id, title, position, created_by, created_at) VALUES (?,?,?,?,?)').run(id, c.title, c.position, actorId, nowIso());
     event(id, actorId, 'created', `Repeats ${t.recurrence}; next copy of #${t.id}`);
     return id;
@@ -313,12 +316,14 @@ module.exports = (ctx) => {
         .map(({ file, file_name, file_type, file_size, ...c }) => ({ ...c, team_only: !!c.team_only, from_client: !!c.client_user_id, file: file ? { name: file_name, type: file_type, size: file_size, url: `/api/portal/comment-files/${c.id}` } : null })),
       steps_list: db.prepare('SELECT id, title, done_at FROM task_steps WHERE task_id = ? ORDER BY position, id').all(t.id).map((x) => ({ id: x.id, title: x.title, done: !!x.done_at })),
       milestones: t.project_id ? db.prepare('SELECT id, title, done_at FROM milestones WHERE project_id = ? ORDER BY position, id').all(t.project_id) : [],
-      files: db.prepare('SELECT f.id, f.name, f.mime, f.size, f.created_at, f.user_id, u.name AS user FROM task_files f LEFT JOIN users u ON u.id = f.user_id WHERE f.task_id = ? ORDER BY f.id').all(t.id),
+      files: db.prepare('SELECT f.id, f.name, f.mime, f.size, f.created_at, f.user_id, u.name AS user, COALESCE(f.chain_id, f.id) AS chain_id, f.version, f.label, f.note, f.round FROM task_files f LEFT JOIN users u ON u.id = f.user_id WHERE f.task_id = ? ORDER BY f.id').all(t.id),
+      pins: pinsOf(t.id), count: countOf(t), outcome: t.outcome || null,
       events: db.prepare('SELECT e.kind, e.at, e.detail, u.name AS user FROM task_events e LEFT JOIN users u ON u.id = e.user_id WHERE e.task_id = ? ORDER BY e.at, e.id').all(t.id),
       sessions: db.prepare('SELECT COUNT(*) n FROM time_entries WHERE task_id = ?').get(t.id).n,
       approver: (() => { const a = approversOf(t); return { ids: a.ids, names: a.ids.map(nameOf).filter(Boolean), why: a.why }; })(),
       can_approve: canApprove(user, t), needs_review: needsReview(t), needs_review_set: t.needs_review == null ? null : !!t.needs_review,
       can_set_review: user.role === 'owner' || leads(user, t), can_edit: canEditTask(user, t),
+      can_change: manages(user, t) || (t.created_by === user.id && (t.assignee_id === user.id || t.assignee_id == null)),
       checks: checksOf(t.id), links: linksOf(t.id), live: liveOf(t, user),
     };
   });
@@ -394,9 +399,11 @@ module.exports = (ctx) => {
     need(t.status === 'in_review', 409, 'This task is not waiting for review');
     // the note can be left out when unticked "Done when" checks say what's missing
     const open = db.prepare('SELECT title FROM task_checks WHERE task_id = ? AND checked_at IS NULL ORDER BY position, id').all(t.id).map((c) => c.title);
+    const pins = db.prepare('SELECT p.num, p.body, COALESCE(f.label, f.name) AS what FROM task_pins p JOIN task_files f ON f.id = p.file_id WHERE p.task_id = ? AND p.resolved_at IS NULL ORDER BY p.chain_id, p.num').all(t.id)
+      .map((p) => `${p.what}, pin ${p.num}: ${p.body.length > 120 ? `${p.body.slice(0, 117)}…` : p.body}`);
     let note = optStr(body.note, 'note', 2000);
-    need(note || open.length, 400, 'Say what needs to change');
-    if (open.length) note = `${note ? `${note}\n\n` : ''}Still to do:\n${open.map((x) => `• ${x}`).join('\n')}`;
+    need(note || open.length || pins.length, 400, 'Say what needs to change');
+    if (open.length || pins.length) note = `${note ? `${note}\n\n` : ''}Still to do:\n${[...open, ...pins].map((x) => `• ${x}`).join('\n')}`;
     const after = changeStatus(t, 'in_progress', user, note);
     notify(after);
     return shape([after])[0];
@@ -443,21 +450,61 @@ module.exports = (ctx) => {
     return { ok: true };
   });
 
-  // ---------- files ----------
-  route('POST', '/api/tasks/:id/files', ({ user, params, body }) => {
-    const t = loadVisible(user, params.id);
-    const name = str(body.name, 'name', 200).replace(/[\\/\0]/g, '_');
-    const buf = Buffer.from(str(body.data_base64, 'data_base64', ctx.MAX_BODY), 'base64');
+  // ---------- files, and new versions of the same piece of work ----------
+  const ROUND = (t) => t.review_rounds + 1;
+  function saveFile(user, t, { name, mime, buf, versionOf, label, note }) {
+    need(canEditTask(user, t) || canApprove(user, t), 403, 'Only the people on this task can add files');
     need(buf.length > 0, 400, 'The file is empty');
-    need(buf.length <= MAX_FILE, 413, 'Files can be at most 5 MB');
-    const mime = typeof body.mime === 'string' && /^[\w.+-]+\/[\w.+-]+$/.test(body.mime) ? body.mime : 'application/octet-stream';
+    name = String(name).replace(/[\\/\0]/g, '_').slice(0, 200) || 'file';
+    mime = typeof mime === 'string' && /^[\w.+-]+\/[\w.+-]+$/.test(mime) ? mime : 'application/octet-stream';
+    let chain = null, version = 1;
+    if (versionOf != null && versionOf !== '') {
+      const prev = db.prepare('SELECT * FROM task_files WHERE id = ? AND task_id = ?').get(Number(versionOf), t.id);
+      need(prev, 404, 'The earlier version is not on this task');
+      chain = prev.chain_id || prev.id;
+      version = db.prepare('SELECT COALESCE(MAX(version), 0) + 1 v FROM task_files WHERE task_id = ? AND chain_id = ?').get(t.id, chain).v;
+      label = label || db.prepare('SELECT label FROM task_files WHERE chain_id = ? AND label IS NOT NULL ORDER BY version DESC LIMIT 1').get(chain)?.label || null;
+    }
     const file = `${t.id}-${crypto.randomBytes(8).toString('hex')}`;
     fs.writeFileSync(path.join(fileDir, file), buf);
-    const id = Number(db.prepare('INSERT INTO task_files (task_id, user_id, name, mime, size, file, created_at) VALUES (?,?,?,?,?,?,?)').run(t.id, user.id, name, mime, buf.length, file, nowIso()).lastInsertRowid);
-    event(t.id, user.id, 'file', name);
-    tell(watchersOf(t), 'task_file', t, user, `${user.name} attached a file to ${label(t)}`, name);
+    const id = Number(db.prepare('INSERT INTO task_files (task_id, user_id, name, mime, size, file, created_at, version, label, note, round) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+      .run(t.id, user.id, name, mime, buf.length, file, nowIso(), version, label ? String(label).slice(0, 80) : null, note ? String(note).slice(0, 1000) : null, ROUND(t)).lastInsertRowid);
+    db.prepare('UPDATE task_files SET chain_id = ? WHERE id = ?').run(chain || id, id);
+    const what = label || name;
+    if (version > 1) {
+      event(t.id, user.id, 'version', `V${version} of ${what}`);
+      tell(watchersOf(t).concat(t.status === 'in_review' ? reviewersOf(t) : []), 'task_file', t, user, `${user.name} added V${version} of ${what} on ${label_(t)}`, note || null);
+    } else {
+      event(t.id, user.id, 'file', name);
+      tell(watchersOf(t), 'task_file', t, user, `${user.name} attached a file to ${label_(t)}`, name);
+    }
+    db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(nowIso(), t.id);
     notify(t);
-    return { id, name, size: buf.length };
+    return { id, name, size: buf.length, version, chain_id: chain || id };
+  }
+  route('POST', '/api/tasks/:id/files', ({ user, params, body }) => {
+    const t = loadVisible(user, params.id);
+    const buf = Buffer.from(str(body.data_base64, 'data_base64', ctx.MAX_BODY), 'base64');
+    need(buf.length <= MAX_FILE, 413, 'Files over 5 MB are sent another way. Update the page and try again.');
+    return saveFile(user, t, { name: str(body.name, 'name', 200), mime: body.mime, buf, versionOf: body.version_of, label: optStr(body.label, 'label', 80), note: optStr(body.note, 'note', 1000) });
+  });
+  // the file itself as the body, with its name and the rest in the address: up to 50 MB
+  route('POST', '/api/tasks/:id/upload', ({ user, params, body, query }) => {
+    const t = loadVisible(user, params.id);
+    const q = (k, max) => { const v = query.get(k); return v == null || v === '' ? null : String(v).slice(0, max); };
+    need(q('name', 200), 400, 'name is required');
+    return saveFile(user, t, { name: q('name', 200), mime: q('mime', 100), buf: body, versionOf: q('version_of', 20), label: q('label', 80), note: q('note', 1000) });
+  }, { raw: MAX_UPLOAD });
+  // rename a piece of work ("Static 1"); every version takes the name
+  route('PATCH', '/api/tasks/:id/files/:fid', ({ user, params, body }) => {
+    const t = loadVisible(user, params.id);
+    const f = db.prepare('SELECT * FROM task_files WHERE id = ? AND task_id = ?').get(Number(params.fid), t.id);
+    need(f, 404, 'File not found');
+    need(canEditTask(user, t), 403, 'Only the people on this task can rename work');
+    if ('label' in body) db.prepare('UPDATE task_files SET label = ? WHERE task_id = ? AND chain_id = ?').run(optStr(body.label, 'label', 80) || null, t.id, f.chain_id || f.id);
+    if ('note' in body) { need(f.user_id === user.id || manages(user, t), 403, 'Only the person who added it can change its note'); db.prepare('UPDATE task_files SET note = ? WHERE id = ?').run(optStr(body.note, 'note', 1000) || null, f.id); }
+    notify(t);
+    return { ok: true };
   });
   route('GET', '/api/tasks/:id/files/:fid', ({ user, params, query }) => {
     const t = loadVisible(user, params.id);
@@ -542,6 +589,101 @@ module.exports = (ctx) => {
     notify(t);
     return linksOf(t.id);
   });
+
+  // ---------- comments pinned to a spot on a picture or a PDF page ----------
+  // Pins are for the team: a client never sees them (the portal reads none of this).
+  const pinsOf = (id) => {
+    const reps = new Map();
+    for (const r of db.prepare('SELECT r.id, r.pin_id, r.user_id, u.name AS user, r.body, r.created_at FROM task_pin_replies r JOIN task_pins p ON p.id = r.pin_id LEFT JOIN users u ON u.id = r.user_id WHERE p.task_id = ? ORDER BY r.id').all(id)) {
+      if (!reps.has(r.pin_id)) reps.set(r.pin_id, []);
+      reps.get(r.pin_id).push({ id: r.id, user_id: r.user_id, user: r.user, body: r.body, created_at: r.created_at });
+    }
+    return db.prepare('SELECT p.*, u.name AS user, rb.name AS resolved_by_name FROM task_pins p LEFT JOIN users u ON u.id = p.user_id LEFT JOIN users rb ON rb.id = p.resolved_by WHERE p.task_id = ? ORDER BY p.chain_id, p.num').all(id)
+      .map((p) => ({ id: p.id, file_id: p.file_id, chain_id: p.chain_id, page: p.page, x: p.x, y: p.y, num: p.num, user_id: p.user_id, user: p.user, body: p.body, round: p.round, created_at: p.created_at,
+        resolved: !!p.resolved_at, resolved_at: p.resolved_at, resolved_by: p.resolved_by_name || null, replies: reps.get(p.id) || [] }));
+  };
+  const pinOf = (t, pid) => { const p = db.prepare('SELECT * FROM task_pins WHERE id = ? AND task_id = ?').get(Number(pid), t.id); need(p, 404, 'That pin is not on this task'); return p; };
+  const workName = (f) => f.label || f.name;
+  route('POST', '/api/tasks/:id/pins', ({ user, params, body }) => {
+    const t = loadVisible(user, params.id);
+    const f = db.prepare('SELECT * FROM task_files WHERE id = ? AND task_id = ?').get(Number(body.file_id), t.id);
+    need(f, 404, 'Pick a picture or a PDF on this task');
+    need(/^image\/(png|jpeg|webp|gif)$/.test(f.mime || '') || f.mime === 'application/pdf', 400, 'Pins go on pictures and PDFs');
+    const num01 = (v, k) => { need(typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1, 400, `${k} must be between 0 and 1`); return Math.round(v * 10000) / 10000; };
+    const x = num01(body.x, 'x'), y = num01(body.y, 'y');
+    const page = body.page == null ? 1 : int(Number(body.page), 'page', 1, 5000);
+    const text = str(body.body, 'body', 2000);
+    const chain = f.chain_id || f.id;
+    need(db.prepare('SELECT COUNT(*) n FROM task_pins WHERE task_id = ?').get(t.id).n < 300, 400, 'A task can have at most 300 pins');
+    const num = db.prepare('SELECT COALESCE(MAX(num), 0) + 1 n FROM task_pins WHERE task_id = ? AND chain_id = ?').get(t.id, chain).n;
+    const id = Number(db.prepare('INSERT INTO task_pins (task_id, file_id, chain_id, page, x, y, num, user_id, body, round, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+      .run(t.id, f.id, chain, page, x, y, num, user.id, text, ROUND(t), nowIso()).lastInsertRowid);
+    event(t.id, user.id, 'pin', `${workName(f)}, pin ${num}`);
+    N.notify(watchersOf(t), { kind: 'task_comment', title: `${user.name} pinned a comment on ${workName(f)} in ${label_(t)}`, body: text.slice(0, 200), link: pinLink(t, id), actor: user });
+    db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(nowIso(), t.id);
+    notify(t, { teamOnly: true });
+    return pinsOf(t.id).find((p) => p.id === id);
+  });
+  route('POST', '/api/tasks/:id/pins/:pid/replies', ({ user, params, body }) => {
+    const t = loadVisible(user, params.id);
+    const p = pinOf(t, params.pid);
+    const text = str(body.body, 'body', 2000);
+    db.prepare('INSERT INTO task_pin_replies (pin_id, user_id, body, created_at) VALUES (?,?,?,?)').run(p.id, user.id, text, nowIso());
+    const others = db.prepare('SELECT DISTINCT user_id FROM task_pin_replies WHERE pin_id = ?').all(p.id).map((r) => r.user_id);
+    N.notify([p.user_id, t.assignee_id, ...others], { kind: 'task_comment', title: `${user.name} replied on pin ${p.num} in ${label_(t)}`, body: text.slice(0, 200), link: pinLink(t, p.id), actor: user });
+    notify(t, { teamOnly: true });
+    return pinsOf(t.id).find((x) => x.id === p.id);
+  });
+  // fixed or reopened: by whoever pinned it, the person doing the task, the approver or their manager
+  route('PATCH', '/api/tasks/:id/pins/:pid', ({ user, params, body }) => {
+    const t = loadVisible(user, params.id);
+    const p = pinOf(t, params.pid);
+    if ('body' in body) { need(p.user_id === user.id, 403, 'Only the person who pinned it can change what it says'); db.prepare('UPDATE task_pins SET body = ? WHERE id = ?').run(str(body.body, 'body', 2000), p.id); }
+    if ('resolved' in body) {
+      need(p.user_id === user.id || t.assignee_id === user.id || canApprove(user, t) || manages(user, t), 403, 'Only the person who pinned it, the person doing the task or the approver can mark it fixed');
+      db.prepare('UPDATE task_pins SET resolved_at = ?, resolved_by = ? WHERE id = ?').run(body.resolved ? nowIso() : null, body.resolved ? user.id : null, p.id);
+      const f = db.prepare('SELECT * FROM task_files WHERE id = ?').get(p.file_id);
+      event(t.id, user.id, body.resolved ? 'pin_resolved' : 'pin_reopened', `${f ? workName(f) : 'Work'}, pin ${p.num}`);
+      if (p.user_id !== user.id) N.notify(p.user_id, { kind: 'task_comment', title: `${user.name} ${body.resolved ? 'marked pin' : 'reopened pin'} ${p.num} ${body.resolved ? 'as fixed' : ''} in ${label_(t)}`.replace(/\s+/g, ' '), body: p.body.slice(0, 200), link: pinLink(t, p.id), actor: user });
+    }
+    notify(t, { teamOnly: true });
+    return pinsOf(t.id).find((x) => x.id === p.id);
+  });
+  route('DELETE', '/api/tasks/:id/pins/:pid', ({ user, params }) => {
+    const t = loadVisible(user, params.id);
+    const p = pinOf(t, params.pid);
+    need(p.user_id === user.id || manages(user, t), 403, 'Only the person who pinned it can remove it');
+    db.prepare('DELETE FROM task_pins WHERE id = ?').run(p.id);
+    notify(t, { teamOnly: true });
+    return { ok: true };
+  });
+
+  // ---------- a count ("12 of 20 called") and how it went ----------
+  route('POST', '/api/tasks/:id/progress', ({ user, params, body }) => {
+    const t = loadVisible(user, params.id);
+    need(canEditTask(user, t), 403, 'Only the people on this task can update it');
+    const set = {};
+    if ('count_target' in body) {
+      if (body.count_target === null || body.count_target === '') Object.assign(set, { count_target: null, count_done: null, count_unit: null });
+      else { set.count_target = int(Number(body.count_target), 'count_target', 1, 1000000); if (t.count_done == null) set.count_done = 0; }
+    }
+    if ('count_unit' in body && set.count_target !== null) set.count_unit = optStr(body.count_unit, 'count_unit', 40) || null;
+    if ('count_done' in body) {
+      need(t.count_target != null || set.count_target != null, 400, 'Add a count first');
+      set.count_done = int(Number(body.count_done), 'count_done', 0, 1000000);
+    }
+    if ('outcome' in body) set.outcome = optStr(body.outcome, 'outcome', 2000) || null;
+    need(Object.keys(set).length, 400, 'Nothing to change');
+    set.updated_at = nowIso();
+    const keys = Object.keys(set);
+    db.prepare(`UPDATE tasks SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => set[k]), t.id);
+    const after = getTask(t.id);
+    if ('count_target' in set) event(t.id, user.id, 'count', set.count_target == null ? 'Removed the count' : `Counting to ${set.count_target}${after.count_unit ? ` ${after.count_unit}` : ''}`);
+    if ('outcome' in set && set.outcome) event(t.id, user.id, 'outcome', set.outcome.slice(0, 140));
+    notify(after);
+    return { count: countOf(after), outcome: after.outcome || null };
+  });
+  const countOf = (t) => (t.count_target == null ? null : { target: t.count_target, done: t.count_done || 0, unit: t.count_unit || null });
 
   // ---------- who is working on it right now: for that person, their managers and the approver ----------
   function liveOf(t, user) {

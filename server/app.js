@@ -440,7 +440,7 @@ function createApp(opts = {}) {
   const route = (method, pattern, handler, o = {}) => {
     const keys = [];
     const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; }) + '$');
-    routes.push({ method, re, keys, handler, client: !!o.client });
+    routes.push({ method, re, keys, handler, client: !!o.client, raw: o.raw || 0 });
   };
 
   // The visitor's address. Behind Caddy every request arrives from this machine, so the address Caddy
@@ -476,6 +476,16 @@ function createApp(opts = {}) {
   for (const f of ['auth', 'people', 'projects', 'tasks', 'performance', 'timer', 'capture', 'views', 'timeoff', 'admin', 'notifications', 'explain', 'hr', 'payroll', 'clients', 'portal', 'chat', 'portal2', 'team', 'shift', 'gifs', 'dev', 'leaderboard', 'shiftreport']) require(`./routes/${f}`)(ctx);
 
   // ---------- server ----------
+  // a file sent as it is (not as JSON), for uploads bigger than a JSON body allows
+  async function readRaw(req, limit) {
+    const tooBig = new HttpError(413, `Files can be at most ${Math.round(limit / 1048576)} MB`);
+    if (Number(req.headers['content-length']) > limit) { req.resume(); throw tooBig; }
+    const chunks = []; let size = 0;
+    // past the limit the rest is read and dropped, so the browser gets the answer instead of a cut connection
+    for await (const c of req) { size += c.length; if (size <= limit) chunks.push(c); }
+    if (size > limit) throw tooBig;
+    return Buffer.concat(chunks);
+  }
   async function readBody(req) {
     const chunks = []; let size = 0;
     for await (const c of req) {
@@ -585,7 +595,7 @@ function createApp(opts = {}) {
       const user = isLogin ? null : authUser(req);
       if (user && user.kind === 'client') need(r.client, 403, 'Not available in the client portal');
       if (user && user.preview) need(req.method === 'GET', 403, 'This is a preview. Nothing you do here is sent.');
-      const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readBody(req) : {};
+      const body = r.raw ? await readRaw(req, r.raw) : ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readBody(req) : {};
       const out = await r.handler({ req, user, body, params, query: url.searchParams });
       if (out && out.sse) {
         // marked as already encoded, so a proxy in front (Caddy's "encode gzip") passes every event through

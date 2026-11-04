@@ -3,7 +3,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 // Schema v2. Fresh installs and v1 databases go through the same path: the v1 tables are created
 // if missing, then migrate() adds everything v2 needs without touching existing rows.
-const SCHEMA_VERSION = 27;
+const SCHEMA_VERSION = 28;
 
 function hasColumn(db, table, col) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
@@ -83,6 +83,7 @@ function openDb(file = ':memory:') {
 function migrate(db) {
   const version = db.prepare('PRAGMA user_version').get().user_version;
   if (version >= SCHEMA_VERSION) return;
+  if (version === 27) return migrateV28(db);
   if (version === 26) return migrateV27(db);
   if (version === 25) return migrateV26(db);
   if (version === 24) return migrateV25(db);
@@ -1047,6 +1048,41 @@ function migrateV27(db) {
       id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
       user_id INTEGER, url TEXT NOT NULL, title TEXT, created_at TEXT NOT NULL)`);
     db.exec('CREATE INDEX IF NOT EXISTS idx_links_task ON task_links(task_id, id)');
+    db.exec('PRAGMA user_version = 27');
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  migrateV28(db);
+}
+
+// Versions of a piece of work (V1, V2…), comments pinned to a spot on a picture or a PDF page,
+// and a count for tasks measured in numbers ("12 of 20 called") with a note on how it went.
+function migrateV28(db) {
+  db.exec('BEGIN');
+  try {
+    addColumn(db, 'task_files', 'chain_id', 'INTEGER');     // every version of one piece of work shares the first version's id
+    addColumn(db, 'task_files', 'version', 'INTEGER NOT NULL DEFAULT 1');
+    addColumn(db, 'task_files', 'label', 'TEXT');           // "Static 1", "Payslip"; the file name when empty
+    addColumn(db, 'task_files', 'note', 'TEXT');            // what changed in this version
+    addColumn(db, 'task_files', 'round', 'INTEGER');        // the review round it was handed in for
+    db.exec('UPDATE task_files SET chain_id = id WHERE chain_id IS NULL');
+    db.exec(`CREATE TABLE IF NOT EXISTS task_pins (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      file_id INTEGER NOT NULL REFERENCES task_files(id) ON DELETE CASCADE, chain_id INTEGER NOT NULL,
+      page INTEGER NOT NULL DEFAULT 1, x REAL NOT NULL, y REAL NOT NULL, num INTEGER NOT NULL,
+      user_id INTEGER, body TEXT NOT NULL, round INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+      resolved_at TEXT, resolved_by INTEGER)`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_pins_task ON task_pins(task_id, chain_id, num)');
+    db.exec(`CREATE TABLE IF NOT EXISTS task_pin_replies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, pin_id INTEGER NOT NULL REFERENCES task_pins(id) ON DELETE CASCADE,
+      user_id INTEGER, body TEXT NOT NULL, created_at TEXT NOT NULL)`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_pinr_pin ON task_pin_replies(pin_id, id)');
+    addColumn(db, 'tasks', 'count_target', 'INTEGER');
+    addColumn(db, 'tasks', 'count_done', 'INTEGER');
+    addColumn(db, 'tasks', 'count_unit', 'TEXT');
+    addColumn(db, 'tasks', 'outcome', 'TEXT');
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {

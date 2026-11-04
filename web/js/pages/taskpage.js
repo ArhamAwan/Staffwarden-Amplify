@@ -4,7 +4,7 @@
 // Approval: the project lead approves (their manager when the lead is doing it, or the person's manager
 // with no project); the owner always can. Review feedback is team only and never reaches a client.
 import { html, raw, esc, dur, plural, dayShort, todayIn, addDays, initials, avColor, relTime, callName } from '../util.js';
-import { get, post, patch, del, download, fileUrl, fileBase64 } from '../api.js';
+import { get, post, patch, put, del, download, fileUrl, fileBytes, fileBase64, getToken } from '../api.js';
 import { S, actions, toast, errMsg, openModal, confirmBox } from '../ui.js';
 import { isMgr, loadPeople } from '../parts.js';
 import { assigneeOptions, PRIORITY } from './tasks.js';
@@ -12,7 +12,7 @@ import { assigneeOptions, PRIORITY } from './tasks.js';
 const RECUR = { none: 'Does not repeat', daily: 'Every day', weekdays: 'Every weekday', weekly: 'Every week', monthly: 'Every month' };
 const MANY = { check_added: (n) => `added ${n} “Done when” checks`, check_ticked: (n) => `ticked ${n} checks`, check_unticked: (n) => `unticked ${n} checks`, file: (n) => `added ${n} files`, link: (n) => `added ${n} links` };
 const STAGES = [['todo', 'To do'], ['in_progress', 'In progress'], ['in_review', 'In review'], ['done', 'Done']];
-const EVENT = { member: 'added a project member', created: 'made this task', status: 'moved it', submitted: 'sent it for review', sent_back: 'asked for changes', approved: 'approved it', completed: 'marked it done', reopened: 'reopened it', withdrawn: 'took it back from review', assigned: 'reassigned it', due: 'changed the deadline', edited: 'edited', file: 'added a file', link: 'added a link', check_added: 'added a “Done when” check', check_ticked: 'ticked', check_unticked: 'unticked' };
+const EVENT = { member: 'added a project member', created: 'made this task', status: 'moved it', submitted: 'sent it for review', sent_back: 'asked for changes', approved: 'approved it', completed: 'marked it done', reopened: 'reopened it', withdrawn: 'took it back from review', assigned: 'reassigned it', due: 'changed the deadline', edited: 'edited', file: 'added a file', link: 'added a link', check_added: 'added a “Done when” check', check_ticked: 'ticked', check_unticked: 'unticked', version: 'added', pin: 'pinned a comment on', pin_resolved: 'marked fixed', pin_reopened: 'reopened', count: 'set a count', outcome: 'wrote how it went' };
 
 // ---------- icons ----------
 const P = {
@@ -26,6 +26,7 @@ const P = {
   flag: '<path d="M5 21V4h11l-2 4 2 4H5"/>', repeat: '<path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4"/>', clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
   move: '<path d="M3 7h13l-3-3M21 17H8l3 3"/>', eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>', lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  pin: '<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>', layers: '<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>', cmp: '<rect x="3" y="5" width="8" height="14" rx="1.5"/><rect x="13" y="5" width="8" height="14" rx="1.5"/>', minus: '<path d="M5 12h14"/>', pen: '<path d="M4 20h4L19 9l-4-4L4 16v4z"/>', reply: '<path d="M10 8L4 13l6 5"/><path d="M4 13h10a6 6 0 0 1 6 6"/>', prev: '<path d="M15 6l-6 6 6 6"/>', next: '<path d="M9 6l6 6-6 6"/>',
   dl: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>', up: '<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>', task: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
 };
 const I = (n, s = 18, sw = 2) => {
@@ -36,9 +37,25 @@ const I = (n, s = 18, sw = 2) => {
 const av = (id, name, small = true) => html`<span class="tk-av${small ? ' tk-s' : ''}" style="background:${avColor(id)}" aria-hidden="true">${initials(name || '?')}</span>`;
 const first = (n) => callName(n);
 const isImg = (f) => /^image\/(png|jpeg|webp|gif)$/.test(f.mime || '');
+const isPdf = (f) => f.mime === 'application/pdf' || /\.pdf$/i.test(f.name || '');
+const pinnable = (f) => isImg(f) || isPdf(f);
+const kb = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+const hm = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
+// every version of one piece of work, oldest first
+function chainsOf(t) {
+  const m = new Map();
+  for (const f of t.files) { const k = f.chain_id || f.id; if (!m.has(k)) m.set(k, []); m.get(k).push(f); }
+  return [...m.entries()].map(([id, vs]) => { vs.sort((a, b) => a.version - b.version); const latest = vs[vs.length - 1]; return { id, versions: vs, latest, label: latest.label || latest.name }; });
+}
+const openPins = (t, chainId = null) => t.pins.filter((p) => !p.resolved && (chainId == null || p.chain_id === chainId));
+const fileOf = (t, id) => t.files.find((f) => f.id === id);
+const verOf = (t, p) => (fileOf(t, p.file_id) || {}).version || 1;
+const chainName = (t, chainId) => { const c = chainsOf(t).find((x) => x.id === chainId); return c ? c.label : 'Work'; };
 
 // ---------- per-task view state (kept across live refreshes) ----------
-const ui = { id: null, tab: 'all', mode: 'comment', shown: new Set(), view: null };
+const ui = { id: null, tab: 'all', mode: 'comment', shown: new Set(), sel: null, ver: null, page: 1, pin: null, draft: null, compare: null, cmode: 'side', mtab: 'work', replyPin: null, open: false, wantPin: null };
+const FRESH = () => ({ tab: 'all', mode: 'comment', shown: new Set(), sel: null, ver: null, page: 1, pin: null, draft: null, compare: null, cmode: 'side', mtab: 'work', replyPin: null, open: false });
+const pdfDocs = new Map(), pdfPages = new Map();
 let cur = null;
 const imgCache = new Map();
 const fileSrc = (t, f) => `/api/tasks/${t.id}/files/${f.id}?inline=1`;
@@ -47,13 +64,21 @@ export default {
   title: 'Task',
   async load(q) {
     const id = Number(q.get('id'));
+    if (q.get('pin')) ui.wantPin = Number(q.get('pin'));
     const [t, projects] = await Promise.all([get(`/api/tasks/${id}`), get('/api/projects')]);
     if (isMgr()) await loadPeople().catch(() => {});
     return { t, projects };
   },
   render({ t, projects }) {
-    if (ui.id !== t.id) Object.assign(ui, { id: t.id, tab: 'all', mode: 'comment', shown: new Set(), view: null });
+    if (ui.id !== t.id) Object.assign(ui, { id: t.id, ...FRESH() });
     cur = { t, projects };
+    // opened from a pin's notification: show that pin
+    if (ui.wantPin) {
+      const p = t.pins.find((x) => x.id === ui.wantPin);
+      if (p) Object.assign(ui, { sel: `c${p.chain_id}`, ver: p.file_id, page: p.page, pin: p.id, open: true, compare: null, mtab: 'work', scrollPin: true });
+      ui.wantPin = null;
+      history.replaceState(null, '', `#/task?id=${t.id}`);
+    }
     return page(t, projects);
   },
   after(view) {
@@ -64,8 +89,24 @@ export default {
       imgCache.set(p, null);
       fileUrl(p).then((u) => { imgCache.set(p, u); for (const i of document.querySelectorAll(`img[data-tkimg="${CSS.escape(p)}"]`)) i.src = u; }).catch(() => imgCache.delete(p));
     }
+    // PDF pages are drawn once into pictures, so pins sit on them like on any picture
+    for (const img of view.querySelectorAll('img[data-tkpdf]')) {
+      const key = `pdf:${img.dataset.tkpdf}`;
+      if (imgCache.get(key)) { if (img.getAttribute('src') !== imgCache.get(key)) img.src = imgCache.get(key); continue; }
+      if (imgCache.has(key)) continue;
+      imgCache.set(key, null);
+      const [fid, pg] = img.dataset.tkpdf.split(':').map(Number);
+      const known = pdfPages.has(fid);
+      pdfPage(fid, pg).then((u) => { imgCache.set(key, u); for (const i of document.querySelectorAll(`img[data-tkpdf="${img.dataset.tkpdf}"]`)) i.src = u; if (!known) S.refresh(); })
+        .catch(() => { imgCache.delete(key); for (const i of document.querySelectorAll(`img[data-tkpdf="${img.dataset.tkpdf}"]`)) i.closest('.tk-stage')?.classList.add('tk-bad'); });
+    }
+    if (ui.scrollPin) { ui.scrollPin = false; setTimeout(() => document.querySelector('.tk-mark.tk-on')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 400); }
+    const pd = view.querySelector('#tk-pd'); if (pd && ui.draft && !ui.draft.focused) { ui.draft.focused = true; pd.focus(); }
     const ti = view.querySelector('.tk-title[data-tf]');
-    if (ti) { ti.style.height = 'auto'; ti.style.height = `${ti.scrollHeight}px`; }
+    const fit = () => { if (ti && ti.isConnected) { ti.style.height = 'auto'; ti.style.height = `${ti.scrollHeight}px`; } };
+    fit();
+    // again once the title font has loaded, since it changes how many lines the title takes
+    if (ti && document.fonts && document.fonts.load) document.fonts.load(`400 ${getComputedStyle(ti).fontSize} 'Instrument Serif'`).then(fit, () => {});
   },
 };
 
@@ -73,7 +114,7 @@ export default {
 function roles(t) {
   const mine = t.is_mine || (t.assignee_id == null && t.created_by === S.me.id);
   return {
-    mine, approver: t.can_approve, manage: t.can_manage, edit: t.can_edit,
+    mine, approver: t.can_approve, manage: t.can_manage, edit: t.can_edit, change: t.can_change,
     reopen: t.status === 'done' && (t.can_manage || t.can_approve || t.created_by === S.me.id),
   };
 }
@@ -84,16 +125,23 @@ function page(t, projects) {
   const r = roles(t);
   const stage = t.status;
   const changes = stage === 'in_progress' && t.review_rounds > 0;
+  if (ui.compare && !chainsOf(t).some((c) => c.id === ui.compare && c.versions.length > 1)) ui.compare = null;
+  const showViewer = !ui.compare && stage !== 'in_review' && ui.open && (t.files.length || t.links.length);
   const main = html`
     ${head(t, r)}
+    ${phoneTabs(t)}
     ${t.live ? liveStrip(t) : ''}
-    ${stage === 'done' ? doneView(t) : ''}
+    ${ui.compare ? compareView(t, r) : ''}
+    ${showViewer ? viewer(t, r, { close: true }) : ''}
+    ${stage === 'done' ? doneView(t, r) : ''}
     ${changes ? changesView(t, r) : ''}
-    ${stage === 'in_review' ? reviewView(t, r) : ''}
+    ${stage === 'in_review' && !ui.compare ? reviewView(t, r) : ''}
+    ${stage === 'in_review' && ui.compare ? reviewExtras(t, r) : ''}
     ${stage !== 'done' && stage !== 'in_review' && !changes ? brief(t, r) : ''}
+    ${stage !== 'done' && t.count ? countCard(t, r) : ''}
     ${stage !== 'done' && stage !== 'in_review' ? workCards(t, r, changes) : ''}
     ${stage !== 'done' && stage !== 'in_review' ? addRow(t, r, projects) : ''}`;
-  return html`<div class="tk" data-k="tk${t.id}">
+  return html`<div class="tk" data-k="tk${t.id}" data-m="${ui.mtab}">
     <main class="tk-main">${main}</main>
     ${rail(t, r)}
   </div>`;
@@ -116,9 +164,10 @@ function head(t, r) {
   return html`<header style="display:flex;flex-direction:column;gap:14px">
     <div class="tk-crumbs"><a href="#/tasks">${I('back', 16)}Tasks</a>${t.key ? html`<b>${t.key}</b>` : ''}${t.project ? html`<span aria-hidden="true">·</span><a href="#/project?id=${t.project_id}">${t.project}</a>` : ''}</div>
     <div class="tk-head">
-      ${r.edit ? html`<textarea class="tk-title" data-tf="title" rows="1" maxlength="200" aria-label="Task title">${t.title}</textarea>` : html`<h1>${t.title}</h1>`}
+      ${r.change ? html`<textarea class="tk-title" data-tf="title" rows="1" maxlength="200" aria-label="Task title">${t.title}</textarea>` : html`<h1>${t.title}</h1>`}
       <div class="tk-acts">${acts}</div>
     </div>
+    ${phoneSub(t, r)}
     ${stages(t, r)}
     ${chips(t, r)}
   </header>`;
@@ -160,31 +209,31 @@ function chips(t, r) {
   if (t.status !== 'done') {
     const today = todayIn((S.me.tz_offset_min ?? S.settings.tz_offset_min) - (S.me.day_start_min || 0));
     const label = !t.due_day ? 'No deadline' : t.due_day === today ? 'Today' : t.due_day === addDays(today, 1) ? 'Tomorrow' : dayShort(t.due_day);
-    out.push(r.edit
+    out.push(r.change
       ? html`<label class="tk-chip tk-np${t.overdue || t.due_today ? ' tk-amber' : ''}"><span class="tk-l"><small>${t.overdue ? 'Overdue' : 'Due'}</small><b>${label}</b></span><input type="date" data-tf="due_day" value="${t.due_day || ''}" aria-label="Due date"></label>`
       : html`<span class="tk-chip tk-np tk-flat${t.overdue || t.due_today ? ' tk-amber' : ''}"><span class="tk-l"><small>${t.overdue ? 'Overdue' : 'Due'}</small><b>${label}</b></span></span>`);
   }
   // priority
-  out.push(r.edit
+  out.push(r.change
     ? html`<label class="tk-chip tk-np${t.priority === 'urgent' ? ' tk-red' : ''}"><span class="tk-l"><small>Priority</small><b>${PRIORITY[t.priority]}</b></span><select data-tf="priority" aria-label="Priority">${Object.entries(PRIORITY).map(([v, n]) => html`<option value="${v}" ${raw(v === t.priority ? 'selected' : '')}>${n}</option>`)}</select></label>`
     : html`<span class="tk-chip tk-np tk-flat"><span class="tk-l"><small>Priority</small><b>${PRIORITY[t.priority]}</b></span></span>`);
   // time
-  if (t.estimate_min || t.tracked_secs) out.push(html`<button type="button" class="tk-chip tk-np" data-act="tk-estimate" ${raw(r.edit ? '' : 'disabled')}><span class="tk-l"><small>${t.estimate_min ? 'Estimate' : 'Tracked'}</small><b>${t.estimate_min ? `${dur(t.estimate_min * 60)}${t.tracked_secs ? ` · ${dur(t.tracked_secs)} used` : ''}` : dur(t.tracked_secs)}</b></span></button>`);
+  if (t.estimate_min || t.tracked_secs) out.push(html`<button type="button" class="tk-chip tk-np" data-act="tk-estimate" ${raw(r.change ? '' : 'disabled')}><span class="tk-l"><small>${t.estimate_min ? 'Estimate' : 'Tracked'}</small><b>${t.estimate_min ? `${dur(t.estimate_min * 60)}${t.tracked_secs ? ` · ${dur(t.tracked_secs)} used` : ''}` : dur(t.tracked_secs)}</b></span></button>`);
   if (t.review_rounds && t.status !== 'done') out.push(html`<span class="tk-chip tk-np tk-flat"><span class="tk-l"><small>Round</small><b>${t.review_rounds + 1}</b></span></span>`);
-  if (t.recurrence !== 'none' || ui.shown.has('repeat')) out.push(r.edit
+  if (t.recurrence !== 'none' || ui.shown.has('repeat')) out.push(r.change
     ? html`<label class="tk-chip tk-np"><span class="tk-l"><small>Repeats</small><b>${RECUR[t.recurrence]}</b></span><select data-tf="recurrence" aria-label="Repeats">${Object.entries(RECUR).map(([v, n]) => html`<option value="${v}" ${raw(v === t.recurrence ? 'selected' : '')}>${n}</option>`)}</select></label>`
     : html`<span class="tk-chip tk-np tk-flat"><span class="tk-l"><small>Repeats</small><b>${RECUR[t.recurrence]}</b></span></span>`);
-  if ((t.milestone_id || ui.shown.has('milestone')) && t.milestones.length) out.push(r.edit
+  if ((t.milestone_id || ui.shown.has('milestone')) && t.milestones.length) out.push(r.change
     ? html`<label class="tk-chip tk-np"><span class="tk-l"><small>Milestone</small><b>${(t.milestones.find((m) => m.id === t.milestone_id) || {}).title || 'None'}</b></span><select data-tf="milestone_id" aria-label="Milestone"><option value="">None</option>${t.milestones.map((m) => html`<option value="${m.id}" ${raw(m.id === t.milestone_id ? 'selected' : '')}>${m.title}</option>`)}</select></label>`
     : html`<span class="tk-chip tk-np tk-flat"><span class="tk-l"><small>Milestone</small><b>${(t.milestones.find((m) => m.id === t.milestone_id) || {}).title || 'None'}</b></span></span>`);
   if (t.client) out.push(html`<span class="tk-chip tk-np tk-flat"><span class="tk-l"><small>Client</small><b>${t.client_sees ? `${t.client} sees this task` : 'Team only'}</b></span></span>`);
-  return html`<div class="tk-meta">${out}</div>`;
+  return html`<div class="tk-meta tk-md">${out}</div>`;
 }
 
 function moreMenu(t, r) {
   const items = [];
   const mi = (act, icon, label, sub = '', cls = '') => html`<button type="button" class="tk-mi ${cls}" data-act="${act}">${I(icon, 16)}<span class="tk-x">${label}${sub ? html`<span>${sub}</span>` : ''}</span></button>`;
-  if (r.edit) items.push(mi('tk-move', 'move', 'Move to another project'));
+  if (r.change) items.push(mi('tk-move', 'move', 'Move to another project'));
   items.push(mi('tk-copy', 'task', 'Make a copy'));
   if (t.client && r.manage) items.push(mi('tk-who', 'eye', 'Who sees it', `${t.client_sees ? `${t.client} sees it now` : 'Only the team sees it now'}`));
   if (t.can_set_review) items.push(html`<div class="tk-mlab">Project lead and owner</div>`, mi('tk-approval', 'shield', 'Approval', t.needs_review ? `${approverName(t)} approves it. Turn it off for this task` : 'Off for this task. Turn it on'));
@@ -205,8 +254,8 @@ function liveStrip(t) {
 
 // ---------- the brief, the checks, the work ----------
 function brief(t, r) {
-  return html`<section class="tk-card"><h2>What and why</h2>
-    ${r.edit ? html`<label class="tk-sr" for="tk-desc">What and why</label><textarea id="tk-desc" class="tk-desc" data-tf="description" maxlength="10000" placeholder="What needs doing, and why. Paste links and screenshots too.">${t.description}</textarea>` : html`<p class="tk-p">${t.description || 'No details yet.'}</p>`}
+  return html`<section class="tk-card tk-md"><h2>What and why</h2>
+    ${r.change ? html`<label class="tk-sr" for="tk-desc">What and why</label><textarea id="tk-desc" class="tk-desc" data-tf="description" maxlength="10000" placeholder="What needs doing, and why. Paste links and screenshots too.">${t.description}</textarea>` : html`<p class="tk-p">${t.description || 'No details yet.'}</p>`}
     <p class="tk-small tk-muted" style="margin:0">Written by ${t.creator || 'someone'}${t.created_at ? ` · ${relTime(t.created_at)}` : ''}</p>
   </section>`;
 }
@@ -234,30 +283,38 @@ function stepsCard(t, r) {
   </section>`;
 }
 
-function workItem(t, w, r) {
-  if (w.kind === 'link') {
-    const gh = /github\.com$/.test(w.host) && /\/pull\/\d+/.test(w.url);
-    return html`<li class="tk-item" data-k="ln${w.id}"><span class="tk-thumb ${gh ? 'tk-pr' : 'tk-ln'}" aria-hidden="true">${I(gh ? 'pr' : 'globe', 20)}</span><span class="tk-t"><a href="${w.url}" target="_blank" rel="noopener noreferrer" style="color:#F2EFFF;font-weight:600;font-size:14.5px">${w.title || w.host}</a><span>Link · ${w.host}${w.user ? ` · ${first(w.user)}` : ''}</span></span>${w.user_id === S.me.id || r.manage ? html`<button type="button" class="tk-x-btn" data-act="tk-dellink" data-id="${w.id}" aria-label="Remove link">${I('x', 14)}</button>` : ''}</li>`;
-  }
-  const f = w;
-  return html`<li class="tk-item" data-k="fl${f.id}">${isImg(f) ? html`<img class="tk-thumbimg" alt="" data-tkimg="${fileSrc(t, f)}" ${raw(imgCache.get(fileSrc(t, f)) ? `src="${imgCache.get(fileSrc(t, f))}"` : '')}>` : html`<span class="tk-thumb tk-doc" aria-hidden="true"><i style="width:80%"></i><i style="width:60%"></i><i style="width:70%"></i></span>`}
-    <span class="tk-t"><button type="button" class="tk-lnk" style="color:#F2EFFF;font-size:14.5px;text-align:left;min-height:0" data-act="tk-file" data-id="${f.id}" data-name="${f.name}">${f.name}</button><span>${isImg(f) ? 'Picture' : 'File'} · ${Math.max(1, Math.round(f.size / 1024))} KB${f.user ? ` · ${first(f.user)}` : ''}</span></span>
-    ${f.user_id === S.me.id || r.manage ? html`<button type="button" class="tk-x-btn" data-act="tk-delfile" data-id="${f.id}" aria-label="Remove ${f.name}">${I('x', 14)}</button>` : ''}</li>`;
+function linkItem(t, w, r) {
+  const gh = /github\.com$/.test(w.host) && /\/pull\/\d+/.test(w.url);
+  return html`<li class="tk-item" data-k="ln${w.id}"><span class="tk-thumb ${gh ? 'tk-pr' : 'tk-ln'}" aria-hidden="true">${I(gh ? 'pr' : 'globe', 20)}</span><span class="tk-t"><a href="${w.url}" target="_blank" rel="noopener noreferrer" style="color:#F2EFFF;font-weight:600;font-size:14.5px">${w.title || w.host}</a><span>Link · ${w.host}${w.user ? ` · ${first(w.user)}` : ''}</span></span>${r.manage || w.user_id === S.me.id ? html`<button type="button" class="tk-x-btn" data-act="tk-dellink" data-id="${w.id}" aria-label="Remove link">${I('x', 14)}</button>` : ''}</li>`;
+}
+const thumb = (t, f) => (isImg(f) ? html`<img class="tk-thumbimg" alt="" data-tkimg="${fileSrc(t, f)}" ${raw(imgCache.get(fileSrc(t, f)) ? `src="${imgCache.get(fileSrc(t, f))}"` : '')}>`
+  : isPdf(f) ? html`<img class="tk-thumbimg tk-pdfthumb" alt="" data-tkpdf="${f.id}:1" ${raw(imgCache.get(`pdf:${f.id}:1`) ? `src="${imgCache.get(`pdf:${f.id}:1`)}"` : '')}>`
+    : html`<span class="tk-thumb tk-doc" aria-hidden="true"><i style="width:80%"></i><i style="width:60%"></i><i style="width:70%"></i></span>`);
+// one piece of work: its latest version, how many versions, and the pins still open on it
+function chainItem(t, c, r, { canAdd = true } = {}) {
+  const f = c.latest, open = openPins(t, c.id).length;
+  const meta = [isImg(f) ? 'Picture' : isPdf(f) ? 'PDF' : 'File', kb(f.size), c.versions.length > 1 ? `V${f.version}` : '', f.user ? first(f.user) : ''].filter(Boolean).join(' · ');
+  return html`<li class="tk-item" data-k="ch${c.id}">${thumb(t, f)}
+    <span class="tk-t">${pinnable(f)
+      ? html`<button type="button" class="tk-lnk tk-open" data-act="tk-open" data-v="c${c.id}">${c.label}</button>`
+      : html`<button type="button" class="tk-lnk tk-open" data-act="tk-file" data-id="${f.id}" data-name="${f.name}">${c.label}</button>`}
+      <span>${meta}${open ? html` · <b class="tk-amber-t">${plural(open, 'open pin')}</b>` : ''}</span></span>
+    ${canAdd && (r.edit || r.approver) ? html`<label class="tk-btn tk-sm tk-ver" title="Upload a new version of ${c.label}">${I('up', 15)}<span>New version</span><input type="file" data-tk-file data-ver="${f.id}" hidden></label>` : ''}
+    ${canAdd && (f.user_id === S.me.id || r.manage) ? html`<button type="button" class="tk-x-btn" data-act="tk-delfile" data-id="${f.id}" data-v="${c.versions.length}" aria-label="Remove ${c.label}${c.versions.length > 1 ? `, V${f.version}` : ''}">${I('x', 14)}</button>` : ''}</li>`;
 }
 function filesCard(t, r, title) {
-  const work = [...t.links.map((l) => ({ ...l, kind: 'link' })), ...t.files];
-  if (!work.length && !ui.shown.has('files') && t.status === 'todo') return '';
-  return html`<section class="tk-card"><div class="tk-ch"><h2>${title}</h2><span class="tk-small tk-muted">${t.status === 'todo' ? (work.length || '') : t.needs_review ? `${first(t.approver.names[0]) || 'The approver'} sees these when reviewing` : ''}</span></div>
-    ${work.length ? html`<ul class="tk-list">${work.map((w) => workItem(t, w, r))}</ul>` : ''}
+  const chains = chainsOf(t);
+  if (!chains.length && !t.links.length && !ui.shown.has('files') && t.status === 'todo') return '';
+  return html`<section class="tk-card"><div class="tk-ch"><h2>${title}</h2><span class="tk-small tk-muted">${t.status === 'todo' ? '' : t.needs_review ? `${first(t.approver.names[0]) || 'The approver'} sees these when reviewing and can pin comments on pictures and PDFs` : ''}</span></div>
+    ${chains.length || t.links.length ? html`<ul class="tk-list">${t.links.map((w) => linkItem(t, w, r))}${chains.map((c) => chainItem(t, c, r))}</ul>` : ''}
     ${r.edit ? html`<form class="tk-row" data-tk-form="link"><label class="tk-sr" for="tk-nl">Add a link</label><input id="tk-nl" class="tk-in" name="url" type="url" inputmode="url" placeholder="Paste a link: a pull request, a page, a doc" required><button type="submit" class="tk-btn tk-sm" style="height:40px">Add</button></form>
-      <label class="tk-drop" style="cursor:pointer">Drop a file here, paste a screenshot, or <u>pick a file</u> (up to 5 MB)<input type="file" data-tk-file hidden></label>` : ''}
+      <label class="tk-drop" style="cursor:pointer">Drop a file here, paste a screenshot, or <u>pick a file</u> (up to 50 MB)<input type="file" data-tk-file hidden></label>` : ''}
   </section>`;
 }
 
-function workCards(t, r, changes) {
+function workCards(t, r) {
   const two = [checksCard(t, r), filesCard(t, r, t.status === 'todo' ? 'Files and links' : 'Work to show')].filter((x) => x);
   const steps = stepsCard(t, r);
-  void changes;
   return html`${steps && two.length ? html`<div class="tk-g2">${steps}${two[0]}</div>${two.slice(1)}` : html`${steps}${two.length === 2 ? html`<div class="tk-g2">${two}</div>` : two}`}`;
 }
 
@@ -268,75 +325,211 @@ function addRow(t, r, projects) {
   if (!(t.steps_list || []).length && !ui.shown.has('steps')) out.push(b('steps', 'steps', 'Steps'));
   if (!t.checks.length && !ui.shown.has('checks') && r.edit) out.push(b('checks', 'shield', 'Done when'));
   if (t.status === 'todo' && !t.files.length && !t.links.length && !ui.shown.has('files') && r.edit) out.push(b('files', 'clip', 'Files or links'));
-  if (r.edit && !t.estimate_min) out.push(b('estimate', 'clock', 'Estimate'));
-  if (r.edit && t.recurrence === 'none' && !ui.shown.has('repeat')) out.push(b('repeat', 'repeat', 'Repeat'));
-  if (r.edit && t.milestones.length && !t.milestone_id && !ui.shown.has('milestone')) out.push(b('milestone', 'flag', 'Milestone'));
+  if (r.edit && !t.count) out.push(b('count', 'layers', 'A count'));
+  if (r.change && !t.estimate_min) out.push(b('estimate', 'clock', 'Estimate'));
+  if (r.change && t.recurrence === 'none' && !ui.shown.has('repeat')) out.push(b('repeat', 'repeat', 'Repeat'));
+  if (r.change && t.milestones.length && !t.milestone_id && !ui.shown.has('milestone')) out.push(b('milestone', 'flag', 'Milestone'));
   void projects;
-  return out.length ? html`<div class="tk-addrow" aria-label="Add to this task"><span>Add to this task</span>${out}</div>` : '';
+  return out.length ? html`<div class="tk-addrow tk-md" aria-label="Add to this task"><span>Add to this task</span>${out}</div>` : '';
+}
+
+// ---------- a count ("12 of 20 called") and how it went ----------
+function countCard(t, r) {
+  const c = t.count, pct = Math.min(100, Math.round((100 * c.done) / c.target));
+  const can = r.edit && t.status !== 'done';
+  return html`<section class="tk-card tk-count"><div class="tk-ch"><h2>How far</h2>${can ? html`<button type="button" class="tk-lnk tk-small" data-act="tk-count">Change</button>` : ''}</div>
+    <div class="tk-cnt">
+      <div class="tk-cntn"><b>${c.done}</b><span>of ${c.target}${c.unit ? ` ${c.unit}` : ''}</span></div>
+      ${can ? html`<div class="tk-cntb"><button type="button" class="tk-btn" data-act="tk-bump" data-v="-1" ${raw(c.done ? '' : 'disabled')} aria-label="One less">− 1</button><button type="button" class="tk-btn tk-pri" data-act="tk-bump" data-v="1">+ 1${c.unit ? ` ${c.unit}` : ''}</button></div>` : ''}
+    </div>
+    <div class="tk-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${c.target}" aria-valuenow="${c.done}" aria-label="How far"><i style="width:${pct}%"></i></div>
+    ${can || t.outcome ? html`<div class="field" style="margin:4px 0 0"><label class="f" for="tk-oc">How it went</label>${can ? html`<textarea id="tk-oc" class="tk-in tk-oc" data-tko maxlength="2000" rows="2" placeholder="What came of it: booked, sorted, still to follow up">${t.outcome || ''}</textarea><span class="tk-small tk-muted">Shown on the task when it’s done.</span>` : html`<p class="tk-p">${t.outcome}</p>`}</div>` : ''}
+  </section>`;
+}
+
+// ---------- the work, big: versions, pins and pages ----------
+function selected(t) {
+  const chains = chainsOf(t);
+  let key = ui.sel;
+  if (!key || (key[0] === 'c' && !chains.some((c) => `c${c.id}` === key)) || (key[0] === 'l' && !t.links.some((l) => `l${l.id}` === key))) {
+    const c = chains.find((x) => pinnable(x.latest)) || chains[0];
+    key = c ? `c${c.id}` : t.links[0] ? `l${t.links[0].id}` : null;
+  }
+  const chain = key && key[0] === 'c' ? chains.find((c) => `c${c.id}` === key) : null;
+  const link = key && key[0] === 'l' ? t.links.find((l) => `l${l.id}` === key) : null;
+  const file = chain ? chain.versions.find((v) => v.id === ui.ver) || chain.latest : null;
+  return { chains, key, chain, link, file };
+}
+function pinMarks(t, f, page, { live = true } = {}) {
+  return t.pins.filter((p) => p.file_id === f.id && p.page === page).map((p) => html`<button type="button" class="tk-mark${p.resolved ? ' tk-fixed' : ''}${ui.pin === p.id ? ' tk-on' : ''}" style="left:${p.x * 100}%;top:${p.y * 100}%" ${raw(live ? `data-act="tk-pinsel" data-id="${p.id}"` : 'tabindex="-1"')} aria-label="Pin ${p.num}${p.resolved ? ', fixed' : ''}: ${esc(p.body.slice(0, 80))}">${p.num}</button>`);
+}
+function pinCard(t, p, r, { float = true } = {}) {
+  const can = p.user_id === S.me.id || t.is_mine || r.approver || r.manage;
+  const side = p.x > 0.58 ? `right:calc(${(1 - p.x) * 100}% + 20px)` : `left:calc(${p.x * 100}% + 20px)`;
+  return html`<div class="tk-pop${float ? ' tk-float' : ''}" style="${float ? `${side};top:clamp(0px, calc(${p.y * 100}% - 24px), calc(100% - 120px))` : ''}" role="dialog" aria-label="Pin ${p.num}" data-k="pop${p.id}">
+    <div class="tk-poph"><span class="tk-pn${p.resolved ? ' tk-g' : ''}">${p.num}</span><b>Pin ${p.num} · ${p.resolved ? 'fixed' : 'open'}</b><span class="tk-tag">${I('lock', 12, 2.2)}Team only</span><button type="button" class="tk-x-btn" data-act="tk-pinsel" data-id="0" aria-label="Close">${I('x', 14)}</button></div>
+    <div class="tk-cm">${av(p.user_id, p.user)}<div class="tk-w"><div class="tk-by"><b>${p.user || 'Someone'}</b>${hm(p.created_at)}${verOf(t, p) > 1 || chainsOf(t).find((c) => c.id === p.chain_id)?.versions.length > 1 ? ` · on V${verOf(t, p)}` : ''}</div><p class="tk-feedtext">${p.body}</p></div></div>
+    ${p.replies.map((x) => html`<div class="tk-cm tk-rep" data-k="pr${x.id}">${av(x.user_id, x.user)}<div class="tk-w"><div class="tk-by"><b>${x.user || 'Someone'}</b>${hm(x.created_at)}</div><p class="tk-feedtext">${x.body}</p></div></div>`)}
+    <div class="tk-popa"><button type="button" class="tk-btn tk-sm" data-act="tk-reply" data-id="${p.id}">${I('reply', 15)}Reply on pin ${p.num}</button>
+      ${can ? html`<button type="button" class="tk-btn tk-sm ${p.resolved ? '' : 'tk-ok'}" data-act="tk-resolve" data-id="${p.id}" data-v="${p.resolved ? '0' : '1'}">${p.resolved ? 'Reopen' : html`${I('check', 15, 2.6)}Mark fixed`}</button>` : ''}
+      ${p.user_id === S.me.id || r.manage ? html`<button type="button" class="tk-lnk tk-small" data-act="tk-delpin" data-id="${p.id}" style="margin-left:auto;color:#8E87B5">Remove</button>` : ''}</div>
+  </div>`;
+}
+function draftCard(d) {
+  const side = d.x > 0.58 ? `right:calc(${(1 - d.x) * 100}% + 20px)` : `left:calc(${d.x * 100}% + 20px)`;
+  return html`<form class="tk-pop tk-float tk-draft" data-tk-form="pin" style="${side};top:clamp(0px, calc(${d.y * 100}% - 24px), calc(100% - 150px))" aria-label="Pin a comment here">
+    <label class="f" for="tk-pd">Pin a comment here</label>
+    <textarea id="tk-pd" name="body" rows="3" maxlength="2000" required placeholder="What should change at this spot?"></textarea>
+    <div class="tk-popa"><span class="tk-tag">${I('lock', 12, 2.2)}Team only</span><button type="button" class="tk-btn tk-sm" data-act="tk-undraft" style="margin-left:auto">Cancel</button><button type="submit" class="tk-btn tk-sm tk-pri">Pin it</button></div>
+  </form>`;
+}
+// a picture or a PDF page, with its pins; click to pin
+function stage(t, f, r, { live = true, page = 1 } = {}) {
+  const pdf = isPdf(f);
+  const src = pdf ? null : fileSrc(t, f);
+  const img = pdf
+    ? html`<img class="tk-shot" alt="${f.name}, page ${page}" data-tkpdf="${f.id}:${page}" ${raw(imgCache.get(`pdf:${f.id}:${page}`) ? `src="${imgCache.get(`pdf:${f.id}:${page}`)}"` : '')}>`
+    : html`<img class="tk-shot" alt="${f.name}" data-tkimg="${src}" ${raw(imgCache.get(src) ? `src="${imgCache.get(src)}"` : '')}>`;
+  const sel = live && ui.pin ? t.pins.find((p) => p.id === ui.pin && p.file_id === f.id && p.page === page) : null;
+  const d = live && ui.draft && ui.draft.fid === f.id && ui.draft.page === page ? ui.draft : null;
+  return html`<div class="tk-stagewrap"><div class="tk-stage${live ? ' tk-live-st' : ''}" ${raw(live ? `data-act="tk-pinat" data-fid="${f.id}" data-page="${page}"` : '')}>${img}${pinMarks(t, f, page, { live })}${d ? html`<span class="tk-mark tk-new" style="left:${d.x * 100}%;top:${d.y * 100}%" aria-hidden="true">+</span>` : ''}</div>
+    ${sel ? pinCard(t, sel, r) : ''}${d ? draftCard(d) : ''}</div>`;
+}
+function pageNav(f) {
+  const n = pdfPages.get(f.id);
+  return html`<div class="tk-pages" aria-label="Pages"><button type="button" class="tk-btn tk-sm tk-icon" data-act="tk-page" data-v="-1" ${raw(ui.page > 1 ? '' : 'disabled')} aria-label="Previous page">${I('prev', 16)}</button><span>Page ${ui.page}${n ? ` of ${n}` : ''}</span><button type="button" class="tk-btn tk-sm tk-icon" data-act="tk-page" data-v="1" ${raw(!n || ui.page < n ? '' : 'disabled')} aria-label="Next page">${I('next', 16)}</button></div>`;
+}
+function viewer(t, r, { close = false } = {}) {
+  const { chains, key, chain, link, file } = selected(t);
+  if (file && isPdf(file) && pdfPages.get(file.id) && ui.page > pdfPages.get(file.id)) ui.page = 1;
+  const tabs = [...chains.map((c) => { const n = openPins(t, c.id).length; return html`<button type="button" class="tk-ftab" role="tab" aria-selected="${String(key === `c${c.id}`)}" data-act="tk-sel" data-v="c${c.id}">${I(isImg(c.latest) ? 'img' : 'clip', 16)}${c.label}${n ? html`<span class="tk-pn">${n}</span>` : ''}</button>`; }),
+    ...t.links.map((l) => html`<button type="button" class="tk-ftab" role="tab" aria-selected="${String(key === `l${l.id}`)}" data-act="tk-sel" data-v="l${l.id}">${I(/github/.test(l.host) ? 'pr' : 'globe', 16)}${l.title || l.host}</button>`)];
+  let body;
+  if (!key) body = html`<p class="tk-empty">${first(t.assignee) || 'They'} sent this without files or links. Check the steps and the conversation.</p>`;
+  else if (link) body = html`<a class="tk-linkcard" href="${link.url}" target="_blank" rel="noopener noreferrer"><span class="tk-thumb ${/github/.test(link.host) ? 'tk-pr' : 'tk-ln'}" aria-hidden="true">${I(/github/.test(link.host) ? 'pr' : 'globe', 22)}</span><span class="tk-t"><b>${link.title || link.host}</b><span>Opens ${link.host} in a new tab</span></span>${I('arrow', 18)}</a>`;
+  else {
+    const vers = chain.versions.length > 1 ? html`<div class="tk-vers" role="group" aria-label="Versions">${chain.versions.map((v) => html`<button type="button" class="tk-ver-b" aria-pressed="${String(v.id === file.id)}" data-act="tk-ver" data-id="${v.id}">V${v.version}${v === chain.latest ? ' · latest' : ''}</button>`)}</div>` : '';
+    const tools = html`<div class="tk-vtools">${vers}
+      ${chain.versions.length > 1 && pinnable(file) ? html`<button type="button" class="tk-btn tk-sm" data-act="tk-compare" data-v="${chain.id}">${I('cmp', 15)}Compare</button>` : ''}
+      ${r.edit || r.approver ? html`<label class="tk-btn tk-sm" title="Upload a new version of ${chain.label}">${I('up', 15)}New version<input type="file" data-tk-file data-ver="${chain.latest.id}" hidden></label>` : ''}
+      <button type="button" class="tk-btn tk-sm tk-icon" data-act="tk-file" data-id="${file.id}" data-name="${file.name}" aria-label="Download ${file.name}" title="Download">${I('dl', 16)}</button>
+      ${r.edit ? html`<button type="button" class="tk-btn tk-sm tk-icon" data-act="tk-rename" data-id="${file.id}" aria-label="Rename ${chain.label}" title="Rename">${I('pen', 15)}</button>` : ''}</div>`;
+    const earlier = chain.versions.length > 1 ? openPins(t, chain.id).filter((p) => p.file_id !== file.id) : [];
+    body = html`${tools}
+      ${file.note && file.version > 1 ? html`<p class="tk-vnote"><b>${first(file.user)} with V${file.version}:</b> ${file.note}</p>` : ''}
+      ${pinnable(file) ? html`${isPdf(file) ? pageNav(file) : ''}${stage(t, file, r, { page: isPdf(file) ? ui.page : 1 })}
+        <p class="tk-hint">${matchMedia('(hover: none)').matches ? 'Tap' : 'Click'} anywhere on the ${isPdf(file) ? 'page' : 'picture'} to pin a comment there. Only the team sees pins.</p>`
+        : html`<div class="tk-linkcard">${thumb(t, file)}<span class="tk-t"><b>${file.name}</b><span>${kb(file.size)}</span></span><button type="button" class="tk-btn tk-sm" data-act="tk-file" data-id="${file.id}" data-name="${file.name}">${I('dl', 16)}Download</button></div>`}
+      ${earlier.length ? html`<div class="tk-earlier"><span class="tk-small tk-muted">Still open from earlier versions</span>${earlier.map((p) => html`<button type="button" class="tk-pinrow" data-act="tk-goto" data-id="${p.id}"><span class="tk-pn">${p.num}</span><span>V${verOf(t, p)} · ${p.body}</span></button>`)}</div>` : ''}`;
+  }
+  return html`<section class="tk-viewer" aria-label="Work to show" data-k="viewer">
+    ${tabs.length || close ? html`<div class="tk-vhead">${tabs.length ? html`<div class="tk-ftabs" role="tablist" aria-label="Work to show">${tabs}</div>` : ''}${close ? html`<button type="button" class="tk-btn tk-sm" data-act="tk-close" style="margin-left:auto">Close</button>` : ''}</div>` : ''}
+    ${body}
+    ${t.status === 'in_review' && r.mine ? html`<p class="tk-hint">${approverName(t)} is reviewing this. You can still add a comment or a new version.</p>` : ''}
+  </section>`;
+}
+
+// ---------- compare two versions ----------
+function compareView(t, r) {
+  const c = chainsOf(t).find((x) => x.id === ui.compare);
+  const vs = c.versions;
+  const a = vs.find((v) => v.id === ui.cmpA) || vs[vs.length - 2], b = vs.find((v) => v.id === ui.cmpB) || vs[vs.length - 1];
+  const pick = (which, v) => html`<label class="tk-vpick"><span class="tk-sr">${which === 'a' ? 'Left' : 'Right'} version</span><select data-tk-cmp="${which}">${vs.map((x) => html`<option value="${x.id}" ${raw(x.id === v.id ? 'selected' : '')}>V${x.version} · ${hm(x.created_at)}</option>`)}</select><span>Round ${v.round || 1}${v === c.latest ? ' · latest' : ''}</span></label>`;
+  const pg = isPdf(b) ? ui.page : 1;
+  const side = html`<div class="tk-cmpgrid"><div>${pick('a', a)}${stage(t, a, r, { live: false, page: pg })}</div><div>${pick('b', b)}${stage(t, b, r, { live: false, page: pg })}</div></div>`;
+  const srcOf = (f) => (isPdf(f) ? `pdf:${f.id}:${pg}` : fileSrc(t, f));
+  const im = (f, cls) => (isPdf(f) ? html`<img class="tk-shot ${cls}" alt="V${f.version}" data-tkpdf="${f.id}:${pg}" ${raw(imgCache.get(srcOf(f)) ? `src="${imgCache.get(srcOf(f))}"` : '')}>` : html`<img class="tk-shot ${cls}" alt="V${f.version}" data-tkimg="${srcOf(f)}" ${raw(imgCache.get(srcOf(f)) ? `src="${imgCache.get(srcOf(f))}"` : '')}>`);
+  const slide = html`<div class="tk-cmprow">${pick('a', a)}${pick('b', b)}</div>
+    <div class="tk-stagewrap"><div class="tk-slider" style="--cut:${ui.cut ?? 50}%">${im(a, 'tk-sa')}${im(b, 'tk-sb')}<i class="tk-cutline" aria-hidden="true"></i></div></div>
+    <label class="tk-cutr"><span class="tk-sr">Slide between V${a.version} and V${b.version}</span><span>V${a.version}</span><input type="range" min="0" max="100" value="${ui.cut ?? 50}" data-tk-cut><span>V${b.version}</span></label>`;
+  const pins = t.pins.filter((p) => p.chain_id === c.id);
+  const rounds = [...new Set(pins.map((p) => p.round).concat(vs.map((v) => v.round || 1)))].sort((x, y) => x - y);
+  return html`<section class="tk-viewer tk-cmp" aria-label="Compare versions" data-k="cmp">
+    <div class="tk-vhead"><button type="button" class="tk-btn tk-sm" data-act="tk-uncompare">${I('back', 15)}${t.status === 'in_review' ? 'Back to review' : 'Back'}</button><b class="tk-cmpt">${c.label}</b>
+      <div class="tk-seg" role="group" aria-label="How to compare"><button type="button" aria-pressed="${String(ui.cmode === 'side')}" data-act="tk-cmode" data-v="side">Side by side</button><button type="button" aria-pressed="${String(ui.cmode === 'slide')}" data-act="tk-cmode" data-v="slide">Slider</button></div></div>
+    ${isPdf(b) ? pageNav(b) : ''}
+    ${ui.cmode === 'slide' ? slide : side}
+  </section>
+  <section class="tk-card"><div class="tk-ch"><h2>What changed in V${b.version}</h2></div>
+    ${b.note ? html`<div class="tk-cm">${av(b.user_id, b.user)}<div class="tk-w"><div class="tk-by"><b>${b.user || 'Someone'}</b>with V${b.version}</div><p class="tk-feedtext">${b.note}</p></div></div>` : html`<p class="tk-small tk-muted" style="margin:0">${first(b.user) || 'They'} didn’t say what changed.</p>`}
+    ${pins.length ? html`<ul class="tk-list">${pins.map((p) => { const v = verOf(t, p); const st = p.resolved ? 'is fixed' : v === b.version ? `is new on V${v}` : `is still open from V${v}`; return html`<li class="tk-item" data-k="cp${p.id}"><span class="tk-pn${p.resolved ? ' tk-g' : ''}">${p.num}</span><span class="tk-t"><b>Pin ${p.num} ${st}</b><span>“${p.body.length > 90 ? `${p.body.slice(0, 87)}…` : p.body}”</span></span><button type="button" class="tk-lnk tk-small" data-act="tk-goto" data-id="${p.id}">Go to pin</button></li>`; })}</ul>` : ''}
+    <p class="tk-small tk-muted" style="margin:0"><b>Rounds:</b> ${rounds.map((n) => { const k = pins.filter((p) => p.round === n).length; return n === t.review_rounds + 1 && t.status !== 'done' ? `round ${n} is open now${k ? ` with ${plural(k, 'pin')}` : ''}` : `round ${n} asked for ${plural(k, 'change')}`; }).join(' · ')}</p>
+  </section>`;
 }
 
 // ---------- review: the work, big ----------
 function reviewView(t, r) {
-  const work = [...t.files.map((f) => ({ ...f, kind: 'file', key: `f${f.id}` })), ...t.links.map((l) => ({ ...l, kind: 'link', key: `l${l.id}` }))];
-  const sel = work.find((w) => w.key === ui.view) || work.find((w) => w.kind === 'file' && isImg(w)) || work[0];
-  const tabs = work.map((w) => html`<button type="button" class="tk-ftab" role="tab" aria-selected="${String(sel && w.key === sel.key)}" data-act="tk-view" data-v="${w.key}">${w.kind === 'link' ? I(/github/.test(w.host) ? 'pr' : 'globe', 16) : I(isImg(w) ? 'img' : 'clip', 16)}${w.kind === 'link' ? w.title || w.host : w.name}</button>`);
-  let body;
-  if (!sel) body = html`<p class="tk-empty">${first(t.assignee) || 'They'} sent this without files or links. Check the steps and the conversation.</p>`;
-  else if (sel.kind === 'link') body = html`<a class="tk-linkcard" href="${sel.url}" target="_blank" rel="noopener noreferrer"><span class="tk-thumb ${/github/.test(sel.host) ? 'tk-pr' : 'tk-ln'}" aria-hidden="true">${I(/github/.test(sel.host) ? 'pr' : 'globe', 22)}</span><span class="tk-t"><b>${sel.title || sel.host}</b><span>Opens ${sel.host} in a new tab</span></span>${I('arrow', 18)}</a>`;
-  else if (isImg(sel)) body = html`<img class="tk-shot" alt="${sel.name}" data-tkimg="${fileSrc(t, sel)}" ${raw(imgCache.get(fileSrc(t, sel)) ? `src="${imgCache.get(fileSrc(t, sel))}"` : '')}>`;
-  else body = html`<div class="tk-linkcard"><span class="tk-thumb tk-doc" aria-hidden="true"><i style="width:80%"></i><i style="width:60%"></i><i style="width:70%"></i></span><span class="tk-t"><b>${sel.name}</b><span>${Math.max(1, Math.round(sel.size / 1024))} KB</span></span><button type="button" class="tk-btn tk-sm" data-act="tk-file" data-id="${sel.id}" data-name="${sel.name}">${I('dl', 16)}Download</button></div>`;
-  return html`<section class="tk-viewer" aria-label="Work to show">
-    ${work.length ? html`<div class="tk-ftabs" role="tablist" aria-label="Work to show">${tabs}</div>` : ''}
-    ${body}
-    ${r.mine ? html`<p class="tk-hint">${approverName(t)} is reviewing this. You can still add a comment.</p>` : ''}
-  </section>
-  ${stepsCard(t, r)}
+  return html`${viewer(t, r)}${reviewExtras(t, r)}`;
+}
+function reviewExtras(t, r) {
+  return html`${t.count ? '' : ''}${stepsCard(t, r)}
   ${!r.approver ? checksCard(t, r) : ''}
-  ${t.description ? html`<section class="tk-card"><h2>What and why</h2><p class="tk-p" style="white-space:pre-line">${t.description}</p></section>` : ''}`;
+  ${t.description ? html`<section class="tk-card tk-md"><h2>What and why</h2><p class="tk-p" style="white-space:pre-line">${t.description}</p></section>` : ''}`;
 }
 
 // ---------- changes asked: a to-do list made from the feedback ----------
 function changesView(t, r) {
   const fb = [...t.comments].reverse().find((c) => c.kind === 'feedback');
   const open = t.checks.filter((c) => !c.checked);
+  const pins = openPins(t);
   const by = fb ? fb.user : approverName(t);
   const note = fb ? fb.body.split('\n\nStill to do:')[0].replace(/^Still to do:[\s\S]*$/, '') : '';
+  const n = open.length + pins.length + (note ? 1 : 0);
   return html`<section class="tk-banner tk-amber">
     ${fb ? av(fb.user_id, fb.user, false) : ''}
-    <div style="display:flex;flex-direction:column;gap:4px;flex:1 1 260px;min-width:0"><b style="font-size:17px">${first(by)} asked for ${open.length ? plural(open.length + (note ? 1 : 0), 'change') : 'changes'}</b>${note ? html`<span class="tk-feedtext" style="color:#F1DDB3">“${note}”</span>` : ''}${fb ? html`<span class="tk-small" style="color:#F1DDB3">${relTime(fb.created_at)}</span>` : ''}</div>
+    <div style="display:flex;flex-direction:column;gap:4px;flex:1 1 260px;min-width:0"><b style="font-size:17px">${first(by)} asked for ${n ? plural(n, 'change') : 'changes'}</b>${note ? html`<span class="tk-feedtext" style="color:#F1DDB3">“${note}”</span>` : ''}${fb ? html`<span class="tk-small" style="color:#F1DDB3">${relTime(fb.created_at)}${pins.length ? ` · fix the pins, then send round ${t.review_rounds + 1}` : ''}</span>` : ''}</div>
   </section>
-  ${open.length ? html`<section class="tk-card"><div class="tk-ch"><h2>What to change</h2><span class="tk-small tk-muted">The checks ${first(by)} left unticked</span></div>
-    <ul class="tk-list">${open.map((c) => html`<li class="tk-item" data-k="oc${c.id}"><span class="tk-tag">Done when</span><span class="tk-t"><b>${c.title}</b></span></li>`)}</ul></section>` : ''}
+  ${open.length || pins.length ? html`<section class="tk-card"><div class="tk-ch"><h2>What to change</h2><span class="tk-small tk-muted">${pins.length ? 'Open pins and unticked checks' : `The checks ${first(by)} left unticked`}</span></div>
+    <ul class="tk-list">${pins.map((p) => html`<li class="tk-item" data-k="op${p.id}"><span class="tk-pn">${p.num}</span><span class="tk-t"><b>${p.body}</b><span>${chainName(t, p.chain_id)} · V${verOf(t, p)} · ${first(p.user)}${p.replies.length ? ` · ${plural(p.replies.length, 'reply', 'replies')}` : ''}</span></span><button type="button" class="tk-btn tk-sm" data-act="tk-goto" data-id="${p.id}">Go to pin</button>${t.is_mine || r.manage ? html`<button type="button" class="tk-btn tk-sm tk-ok" data-act="tk-resolve" data-id="${p.id}" data-v="1">${I('check', 15, 2.6)}Fixed</button>` : ''}</li>`)}
+      ${open.map((c) => html`<li class="tk-item" data-k="oc${c.id}"><span class="tk-tag">Done when</span><span class="tk-t"><b>${c.title}</b></span></li>`)}</ul></section>` : ''}
   ${brief(t, r)}`;
 }
 
 // ---------- done: what happened ----------
-function doneView(t) {
+function doneView(t, r) {
   const ap = [...t.events].reverse().find((e) => e.kind === 'approved' || e.kind === 'completed');
   const steps = t.steps_list || [];
   const tiles = [
+    ...(t.count ? [['How far', `${t.count.done} of ${t.count.target}`, t.count.unit || 'done']] : []),
     ...(t.tracked_secs ? [['Time on it', dur(t.tracked_secs), `${t.estimate_min ? `of a ${dur(t.estimate_min * 60)} estimate, ` : ''}in ${plural(t.sessions, 'session')}`]] : []),
     ...(t.needs_review ? [['Rounds', String(t.review_rounds + 1), t.review_rounds ? `${plural(t.review_rounds, 'time')} sent back` : 'approved first time']] : []),
+    ...(t.pins.length ? [['Pins', `${t.pins.filter((p) => p.resolved).length} of ${t.pins.length}`, 'fixed']] : []),
     ...(steps.length ? [['Steps', `${steps.filter((x) => x.done).length} of ${steps.length}`, 'done']] : []),
     ...(t.checks.length ? [['Done when', `${t.checks.filter((c) => c.checked).length} of ${t.checks.length}`, 'ticked']] : []),
-  ];
-  const work = [...t.links.map((l) => ({ ...l, kind: 'link' })), ...t.files];
+  ].slice(0, 4);
+  const chains = chainsOf(t);
   return html`<section class="tk-banner tk-ok">
     <span style="width:48px;height:48px;border-radius:99px;background:#3DD68C;color:#062016;display:flex;align-items:center;justify-content:center;flex:none">${I('check', 24, 2.8)}</span>
     <div style="display:flex;flex-direction:column;gap:4px;min-width:0"><b style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:30px;line-height:1.1">${ap && ap.kind === 'approved' ? `Approved by ${ap.user}` : 'Done'}</b><span style="font-size:14.5px;color:#B9E9D2">${t.completed_at ? relTime(t.completed_at) : ''}${t.due_day && t.completed_at && t.completed_at.slice(0, 10) <= t.due_day ? ' · on time' : t.due_day ? ' · after the deadline' : ''}</span></div>
   </section>
-  <div class="tk-g4">${tiles.map(([a, b, c]) => html`<div class="tk-tile"><span>${a}</span><b>${b}</b><span>${c}</span></div>`)}</div>
-  ${work.length ? html`<section class="tk-card"><div class="tk-ch"><h2>What was handed in</h2></div><ul class="tk-g3" style="list-style:none;margin:0;padding:0">${work.map((w) => workItem(t, w, { manage: false }))}</ul></section>` : ''}
-  ${t.description ? html`<section class="tk-card"><h2>What and why</h2><p class="tk-p" style="white-space:pre-line">${t.description}</p></section>` : ''}`;
+  ${tiles.length ? html`<div class="tk-g4">${tiles.map(([a, b, c]) => html`<div class="tk-tile"><span>${a}</span><b>${b}</b><span>${c}</span></div>`)}</div>` : ''}
+  ${t.outcome ? html`<section class="tk-card"><h2>How it went</h2><p class="tk-p" style="white-space:pre-line">${t.outcome}</p></section>` : ''}
+  ${chains.length || t.links.length ? html`<section class="tk-card"><div class="tk-ch"><h2>What was handed in</h2></div><ul class="tk-list">${t.links.map((w) => linkItem(t, w, { manage: false }))}${chains.map((c) => chainItem(t, c, r, { canAdd: false }))}</ul></section>` : ''}
+  ${t.description ? html`<section class="tk-card tk-md"><h2>What and why</h2><p class="tk-p" style="white-space:pre-line">${t.description}</p></section>` : ''}`;
+}
+
+// ---------- on a phone: Work, Conversation and Details as tabs ----------
+function phoneTabs(t) {
+  const n = t.comments.length + t.pins.length;
+  return html`<div class="tk-mtabs" role="tablist" aria-label="Show">${[['work', 'Work'], ['talk', 'Conversation'], ['details', 'Details']].map(([k, label]) => html`<button type="button" role="tab" aria-selected="${String(ui.mtab === k)}" data-act="tk-mtab" data-v="${k}">${label}${k === 'talk' && n ? html`<span class="tk-n">${n}</span>` : ''}</button>`)}</div>`;
+}
+function phoneSub(t, r) {
+  let s = '';
+  if (t.status === 'in_review' && t.submitted_at) s = `${first(t.assignee) || 'They'} sent it for review${r.approver ? ` · waiting for you ${relTime(t.submitted_at).replace(/ ago$/, '')}` : ''}`;
+  else if (t.status === 'in_progress' && t.review_rounds) s = `Round ${t.review_rounds + 1} · ${plural(openPins(t).length + t.checks.filter((c) => !c.checked).length, 'change')} to make`;
+  else if (t.assignee) s = `${t.assignee}${t.due_day ? ` · due ${dayShort(t.due_day)}` : ''}`;
+  return s ? html`<p class="tk-msub">${s}</p>` : '';
 }
 
 // ---------- the side panel: deciding, and the conversation ----------
 function rail(t, r) {
   const deciding = t.status === 'in_review' && r.approver && t.checks.length;
   const comments = t.comments.map((c) => ({ at: c.created_at, c }));
-  const events = t.events.filter((e) => !['edited', 'member'].includes(e.kind)).map((e) => ({ at: e.at, e }));
-  let items = [...comments, ...events];
-  if (ui.tab === 'feedback') items = items.filter((x) => (x.c && x.c.kind === 'feedback') || (x.e && /^(sent_back|approved|check_)/.test(x.e.kind)));
+  const pins = t.pins.map((p) => ({ at: p.created_at, p }));
+  // pin events show as the pin itself; repeats of the same event fold into one line below
+  const events = t.events.filter((e) => !['edited', 'member', 'pin'].includes(e.kind)).map((e) => ({ at: e.at, e }));
+  let items = [...comments, ...pins, ...events];
+  if (ui.tab === 'feedback') items = items.filter((x) => x.p || (x.c && x.c.kind === 'feedback') || (x.e && /^(sent_back|approved|check_|pin_)/.test(x.e.kind)));
   else if (ui.tab === 'activity') items = events;
   items.sort((a, b) => a.at.localeCompare(b.at));
   // the same person doing the same thing a few times in a row reads as one line
@@ -347,8 +540,8 @@ function rail(t, r) {
     }
     out.push({ ...x }); return out;
   }, []);
-  const fbCount = t.comments.filter((c) => c.kind === 'feedback').length;
-  const feed = items.map((x) => (x.c ? commentItem(t, x.c, r) : html`<li class="tk-ev" data-k="e${x.e.at}${x.e.kind}"><i style="background:${/approved|completed/.test(x.e.kind) ? '#3DD68C' : /sent_back/.test(x.e.kind) ? '#F7B544' : /submitted/.test(x.e.kind) ? '#9B7BFF' : '#8E87B5'}"></i><span><b>${x.e.user || 'Someone'}</b> ${x.n ? `${MANY[x.e.kind](x.n)}: ${x.details.join(' · ')}` : `${EVENT[x.e.kind] || x.e.kind}${x.e.detail && !/^(sent_back|submitted)$/.test(x.e.kind) ? `: ${x.e.detail}` : ''}`} · ${relTime(x.last || x.e.at)}</span></li>`));
+  const fbCount = t.comments.filter((c) => c.kind === 'feedback').length + openPins(t).length;
+  const feed = items.map((x) => (x.p ? pinItem(t, x.p, r) : x.c ? commentItem(t, x.c, r) : html`<li class="tk-ev" data-k="e${x.e.at}${x.e.kind}"><i style="background:${/approved|completed/.test(x.e.kind) ? '#3DD68C' : /sent_back/.test(x.e.kind) ? '#F7B544' : /submitted/.test(x.e.kind) ? '#9B7BFF' : '#8E87B5'}"></i><span><b>${x.e.user || 'Someone'}</b> ${x.n ? `${MANY[x.e.kind](x.n)}: ${x.details.join(' · ')}` : `${EVENT[x.e.kind] || x.e.kind}${x.e.detail && !/^(sent_back|submitted)$/.test(x.e.kind) ? `: ${x.e.detail}` : ''}`} · ${relTime(x.last || x.e.at)}</span></li>`));
   return html`<aside class="tk-rail" aria-label="${deciding ? 'Decide and conversation' : 'Conversation'}">
     ${deciding ? html`<section class="tk-decide" aria-label="Done when"><div class="tk-ch"><h3>Done when</h3><span class="tk-small tk-muted">${t.checks.filter((c) => c.checked).length} of ${t.checks.length}</span></div>
       <ul class="tk-checks">${t.checks.map((c) => html`<li data-k="dk${c.id}"><label class="tk-check tk-ok"><input type="checkbox" data-act="tk-tick" data-id="${c.id}" ${raw(c.checked ? 'checked' : '')}>${c.title}</label></li>`)}</ul>
@@ -359,6 +552,17 @@ function rail(t, r) {
     <ol class="tk-feed">${feed.length ? feed : html`<li class="tk-small tk-muted">${ui.tab === 'feedback' ? 'No feedback yet.' : 'Nothing here yet. Write the first comment below.'}</li>`}</ol>
     ${composer(t, r)}
   </aside>`;
+}
+
+function pinItem(t, p, r) {
+  const multi = chainsOf(t).find((c) => c.id === p.chain_id)?.versions.length > 1;
+  const can = p.user_id === S.me.id || t.is_mine || r.approver || r.manage;
+  return html`<li class="tk-pinit${p.resolved ? ' tk-res' : ''}${ui.pin === p.id ? ' tk-on' : ''}" data-k="fp${p.id}">
+    <div class="tk-pinh"><span class="tk-pn${p.resolved ? ' tk-g' : ''}">${p.num}</span><span>${chainName(t, p.chain_id)}${multi ? ` · ${p.resolved ? `from V${verOf(t, p)}` : `V${verOf(t, p)}`}` : ''}${isPdf(fileOf(t, p.file_id) || {}) ? ` · page ${p.page}` : ''} · ${p.resolved ? 'fixed' : 'open'}</span><button type="button" class="tk-lnk tk-small" data-act="tk-goto" data-id="${p.id}">Go to pin</button></div>
+    <p class="tk-feedtext"><b>${first(p.user)}:</b> ${p.body}</p>
+    ${p.replies.map((x) => html`<p class="tk-feedtext tk-rep" data-k="fr${x.id}"><b>${first(x.user)}:</b> ${x.body}</p>`)}
+    <div class="tk-popa"><button type="button" class="tk-lnk tk-small" data-act="tk-reply" data-id="${p.id}">Reply</button>${can ? html`<button type="button" class="tk-lnk tk-small" data-act="tk-resolve" data-id="${p.id}" data-v="${p.resolved ? '0' : '1'}">${p.resolved ? 'Reopen' : 'Mark fixed'}</button>` : ''}<span class="tk-small tk-muted" style="margin-left:auto">${relTime(p.created_at)}</span></div>
+  </li>`;
 }
 
 function commentItem(t, c, r) {
@@ -375,12 +579,15 @@ function composer(t, r) {
   const modes = [['comment', 'Comment'], ['update', 'Progress update'], ...(t.client && t.client_sees ? [['team', 'Team only']] : [])];
   if (!modes.some(([k]) => k === ui.mode)) ui.mode = 'comment';
   const canAsk = t.status === 'in_review' && r.approver;
+  const rp = ui.replyPin ? t.pins.find((p) => p.id === ui.replyPin) : null;
+  if (ui.replyPin && !rp) ui.replyPin = null;
   return html`<form class="tk-comp" data-tk-form="comment" aria-label="Write in the conversation">
     <div class="tk-cbox">
-      <div class="tk-cmodes" role="tablist" aria-label="Kind of message">${modes.map(([k, n]) => html`<button type="button" class="tk-cmode" role="tab" aria-selected="${String(ui.mode === k)}" data-act="tk-mode" data-v="${k}">${k === 'team' ? I('lock', 13, 2.2) : ''}${n}</button>`)}</div>
+      ${rp ? html`<div class="tk-replying"><span class="tk-pn">${rp.num}</span><span>Replying on pin ${rp.num} · ${chainName(t, rp.chain_id)} · team only</span><button type="button" class="tk-x-btn" data-act="tk-reply" data-id="0" aria-label="Stop replying on the pin">${I('x', 14)}</button></div>`
+        : html`<div class="tk-cmodes" role="tablist" aria-label="Kind of message">${modes.map(([k, n]) => html`<button type="button" class="tk-cmode" role="tab" aria-selected="${String(ui.mode === k)}" data-act="tk-mode" data-v="${k}">${k === 'team' ? I('lock', 13, 2.2) : ''}${n}</button>`)}</div>`}
       <div class="tk-cin">
         <label for="tk-c" class="tk-sr">Write a comment</label>
-        <textarea id="tk-c" name="body" rows="2" maxlength="4000" placeholder="${ui.mode === 'update' ? 'How it’s going: what’s done, what’s next' : ui.mode === 'team' ? `Only the team sees this, never ${t.client}` : 'Write a comment, @ to mention'}"></textarea>
+        <textarea id="tk-c" name="body" rows="2" maxlength="4000" placeholder="${rp ? `Reply on pin ${rp.num}` : ui.mode === 'update' ? 'How it’s going: what’s done, what’s next' : ui.mode === 'team' ? `Only the team sees this, never ${t.client}` : 'Write a comment, @ to mention'}"></textarea>
         <div class="tk-tools">
           <details class="tk-more"><summary class="tk-ti" aria-label="Turn into a step, a check or a new task">${I('plus')}</summary><div class="tk-menu tk-cmenu" role="menu"><div class="tk-mlab">Turn what you wrote into</div>
             <button type="button" class="tk-mi" data-act="tk-as" data-v="step">${I('steps', 16)}<span class="tk-x">A step<span>Added to the steps on this task</span></span></button>
@@ -413,12 +620,13 @@ actions['tk-stage'] = run(async (el) => {
 });
 actions['tk-pickup'] = run(async () => { await patch(`/api/tasks/${T().id}`, { assignee_id: S.me.id }); done('It’s yours'); });
 actions['tk-approve'] = run(async () => {
-  const t = T(), open = t.checks.filter((c) => !c.checked);
-  if (open.length && !(await confirmBox({ title: `Approve with ${plural(open.length, 'check')} unticked?`, message: open.map((c) => `• ${c.title}`).join('\n'), confirm: 'Approve anyway' }))) return;
+  const t = T(), open = t.checks.filter((c) => !c.checked), pins = openPins(t);
+  const what = [open.length ? plural(open.length, 'check') + ' unticked' : '', pins.length ? plural(pins.length, 'pin') + ' still open' : ''].filter(Boolean).join(' and ');
+  if (what && !(await confirmBox({ title: `Approve with ${what}?`, message: [...open.map((c) => `• ${c.title}`), ...pins.map((p) => `• Pin ${p.num}: ${p.body}`)].join('\n'), confirm: 'Approve anyway' }))) return;
   await post(`/api/tasks/${t.id}/approve`); done(`Approved. ${first(t.assignee) || 'They'}’ll hear about it.`);
 });
 function askChanges(prefill = '') {
-  const t = T(), open = t.checks.filter((c) => !c.checked);
+  const t = T(), open = [...t.checks.filter((c) => !c.checked).map((c) => ({ title: c.title })), ...openPins(t).map((p) => ({ title: `${chainName(t, p.chain_id)}, pin ${p.num}: ${p.body}` }))];
   openModal({
     title: 'Ask for changes', submit: 'Send it back', top: true,
     sub: `${first(t.assignee) || 'They'} gets it back as a to-do list. Feedback stays with the team${t.client ? `, never ${t.client}` : ''}.`,
@@ -441,7 +649,7 @@ actions['tk-delstep'] = run(async (el) => {
 });
 actions['tk-file'] = run(async (el) => download(`/api/tasks/${T().id}/files/${el.dataset.id}`, el.dataset.name));
 actions['tk-cfile'] = run(async (el) => download(el.dataset.url, el.dataset.name));
-actions['tk-delfile'] = run(async (el) => { if (!(await confirmBox({ title: 'Remove this file?', message: 'It is deleted from the task.', confirm: 'Remove', danger: true }))) return; await del(`/api/tasks/${T().id}/files/${el.dataset.id}`); done('File removed'); });
+actions['tk-delfile'] = run(async (el) => { if (!(await confirmBox({ title: Number(el.dataset.v) > 1 ? 'Remove this version?' : 'Remove this file?', message: Number(el.dataset.v) > 1 ? 'Only the latest version goes. Its pins go with it; earlier versions stay.' : 'It is deleted from the task, with any pins on it.', confirm: 'Remove', danger: true }))) return; await del(`/api/tasks/${T().id}/files/${el.dataset.id}`); done('File removed'); });
 actions['tk-dellink'] = run(async (el) => { await del(`/api/tasks/${T().id}/links/${el.dataset.id}`); done(); });
 actions['tk-delc'] = run(async (el) => { if (!(await confirmBox({ title: 'Delete this comment?', message: 'It is removed for everyone.', confirm: 'Delete', danger: true }))) return; await del(`/api/tasks/${T().id}/comments/${el.dataset.id}`); done(); });
 actions['tk-tab'] = (el) => { ui.tab = el.dataset.v; S.refresh(); };
@@ -450,6 +658,7 @@ actions['tk-view'] = (el) => { ui.view = el.dataset.v; S.refresh(); };
 actions['tk-show'] = (el) => {
   const k = el.dataset.v;
   if (k === 'estimate') return actions['tk-estimate']();
+  if (k === 'count') return actions['tk-count']();
   ui.shown.add(k); S.refresh();
   setTimeout(() => { const f = document.getElementById(k === 'steps' ? 'tk-ns' : k === 'checks' ? 'tk-nc' : k === 'files' ? 'tk-nl' : ''); if (f) f.focus(); }, 120);
 };
@@ -503,12 +712,37 @@ actions['tk-delete'] = run(async () => {
 });
 
 // ---------- typing, saving, uploading ----------
-async function upload(file) {
+const BIG = 4 * 1024 * 1024, MAX = 50 * 1024 * 1024;
+async function upload(file, extra = {}) {
   const t = T();
   if (!t) return;
-  if (file.size > 5 * 1024 * 1024) { toast('Files can be at most 5 MB', true); return; }
+  if (file.size > MAX) { toast(`${file.name} is ${kb(file.size)}. Files can be at most 50 MB.`, true); return; }
   const name = file.name && file.name !== 'image.png' ? file.name : `screenshot-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}.png`;
-  try { await post(`/api/tasks/${t.id}/files`, { name, mime: file.type || null, data_base64: await fileBase64(file) }); done(`${name} added`); } catch (err) { toast(errMsg(err), true); }
+  const opts = Object.fromEntries(Object.entries(extra).filter(([, v]) => v != null && v !== ''));
+  try {
+    let out;
+    if (file.size > BIG) {
+      // big files go as they are, not as text
+      toast(`Uploading ${name}…`);
+      const q = new URLSearchParams({ name, mime: file.type || '', ...opts });
+      const res = await fetch(`/api/tasks/${t.id}/upload?${q}`, { method: 'POST', headers: { Authorization: `Bearer ${getToken()}` }, body: file });
+      out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || 'The upload didn’t go through. Try again.');
+    } else out = await post(`/api/tasks/${t.id}/files`, { name, mime: file.type || null, data_base64: await fileBase64(file), ...opts });
+    if (out.version > 1 || pinnable({ mime: file.type, name })) Object.assign(ui, { sel: `c${out.chain_id}`, ver: null, page: 1, pin: null, draft: null, open: true, compare: null });
+    done(out.version > 1 ? `V${out.version} added` : `${name} added`);
+  } catch (err) { toast(errMsg(err), true); }
+}
+// a new version: say what changed, then upload
+function newVersion(file, prevId) {
+  const t = T(), prev = fileOf(t, prevId);
+  const c = chainsOf(t).find((x) => x.id === (prev ? prev.chain_id : null));
+  openModal({
+    title: `New version of ${c ? c.label : 'this'}`, submit: `Upload V${c ? c.latest.version + 1 : 2}`,
+    sub: `${file.name} · ${kb(file.size)}. Earlier versions and their pins stay, so you can compare.`,
+    body: html`<div class="field"><label class="f" for="tk-vn">What changed? (optional)</label><textarea id="tk-vn" name="note" maxlength="1000" placeholder="New presenter from the brand kit. Kept the rest the same."></textarea><p class="hint">Shown next to the new version, and when comparing.</p></div>`,
+    onSubmit: async (fd) => { await upload(file, { version_of: prevId, note: fd.get('note') || null }); },
+  });
 }
 document.addEventListener('change', async (e) => {
   if (!e.target.closest || !e.target.closest('.tk')) return;
@@ -522,7 +756,8 @@ document.addEventListener('change', async (e) => {
     try { await patch(`/api/tasks/${t.id}`, { [f]: v }); delete e.target.dataset.dirty; done(f === 'assignee_id' ? 'Reassigned' : null); } catch (err) { toast(errMsg(err), true); }
     return;
   }
-  if (e.target.matches('[data-tk-file]') && e.target.files[0]) { const file = e.target.files[0]; e.target.value = ''; await upload(file); }
+  if (e.target.matches('[data-tk-file]') && e.target.files[0]) { const file = e.target.files[0], ver = e.target.dataset.ver; e.target.value = ''; if (ver) newVersion(file, Number(ver)); else await upload(file); return; }
+  if (e.target.matches('[data-tk-cmp]')) { ui[e.target.dataset.tkCmp === 'a' ? 'cmpA' : 'cmpB'] = Number(e.target.value); S.refresh(); }
 });
 document.addEventListener('click', (e) => {
   // a due chip opens the date picker; menus close when you click elsewhere
@@ -532,7 +767,7 @@ document.addEventListener('click', (e) => {
   for (const d of document.querySelectorAll('.tk details.tk-more[open]')) if (!d.contains(e.target) || e.target.closest('.tk-mi')) d.removeAttribute('open');
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeMenus();
+  if (e.key === 'Escape') { closeMenus(); if (document.querySelector('.tk') && (ui.draft || ui.pin) && !document.querySelector('#overlay > *')) { ui.draft = null; ui.pin = null; S.refresh(); } }
   if (e.key === 'Enter' && !e.shiftKey && e.target.id === 'tk-c') { e.preventDefault(); e.target.form.requestSubmit(); }
   if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('tk-title')) { e.preventDefault(); e.target.blur(); }
 });
@@ -544,6 +779,7 @@ document.addEventListener('focusout', (e) => {
   if ((t[e.target.dataset.tf] || '') === v) return;
   e.target.dispatchEvent(new Event('change', { bubbles: true }));
 });
+window.addEventListener('resize', () => { const ti = document.querySelector('.tk-title[data-tf]'); if (ti) { ti.style.height = 'auto'; ti.style.height = `${ti.scrollHeight}px`; } });
 document.addEventListener('input', (e) => {
   if (e.target.classList && e.target.classList.contains('tk-title')) { e.target.style.height = 'auto'; e.target.style.height = `${e.target.scrollHeight}px`; }
 });
@@ -564,6 +800,16 @@ document.addEventListener('submit', async (e) => {
   const t = T(), kind = form.dataset.tkForm, fd = new FormData(form);
   const clear = () => form.querySelectorAll('input,textarea').forEach((x) => { if (x.type !== 'file') { x.value = ''; delete x.dataset.dirty; } });
   try {
+    if (kind === 'pin') {
+      const body = String(fd.get('body') || '').trim(); if (!body || !ui.draft) return;
+      const p = await post(`/api/tasks/${t.id}/pins`, { file_id: ui.draft.fid, page: ui.draft.page, x: ui.draft.x, y: ui.draft.y, body });
+      Object.assign(ui, { draft: null, pin: p.id }); clear(); done(`Pin ${p.num} added`); return;
+    }
+    if (kind === 'comment' && ui.replyPin) {
+      const body = String(fd.get('body') || '').trim(); if (!body) return;
+      const p = await post(`/api/tasks/${t.id}/pins/${ui.replyPin}/replies`, { body });
+      ui.replyPin = null; clear(); done(`Replied on pin ${p.num}`); return;
+    }
     if (kind === 'comment') {
       const body = String(fd.get('body') || '').trim(); if (!body) return;
       await post(`/api/tasks/${t.id}/comments`, { body, kind: ui.mode === 'update' ? 'update' : 'comment', team_only: ui.mode === 'team' });
@@ -574,3 +820,100 @@ document.addEventListener('submit', async (e) => {
     if (kind === 'link') { await post(`/api/tasks/${t.id}/links`, { url: fd.get('url') }); clear(); done('Link added'); }
   } catch (err) { toast(errMsg(err), true); }
 });
+
+// ---------- the work: pick, versions, pins, compare ----------
+const pinById = (id) => T().pins.find((p) => p.id === Number(id));
+actions['tk-open'] = (el) => { Object.assign(ui, { sel: el.dataset.v, ver: null, page: 1, pin: null, draft: null, open: true, compare: null, mtab: 'work' }); S.refresh(); setTimeout(() => document.querySelector('.tk-viewer')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80); };
+actions['tk-close'] = () => { Object.assign(ui, { open: false, pin: null, draft: null }); S.refresh(); };
+actions['tk-sel'] = (el) => { Object.assign(ui, { sel: el.dataset.v, ver: null, page: 1, pin: null, draft: null }); S.refresh(); };
+actions['tk-ver'] = (el) => { Object.assign(ui, { ver: Number(el.dataset.id), pin: null, draft: null }); S.refresh(); };
+actions['tk-page'] = (el) => { ui.page = Math.max(1, ui.page + Number(el.dataset.v)); Object.assign(ui, { pin: null, draft: null }); S.refresh(); };
+actions['tk-compare'] = (el) => { Object.assign(ui, { compare: Number(el.dataset.v), cmpA: null, cmpB: null, pin: null, draft: null, cut: 50 }); S.refresh(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+actions['tk-uncompare'] = () => { ui.compare = null; S.refresh(); };
+actions['tk-cmode'] = (el) => { ui.cmode = el.dataset.v; S.refresh(); };
+actions['tk-mtab'] = (el) => { ui.mtab = el.dataset.v; S.refresh(); window.scrollTo({ top: 0 }); };
+actions['tk-pinat'] = (el, e) => {
+  const b = el.getBoundingClientRect();
+  if (!b.width || !b.height) return;
+  const x = Math.min(1, Math.max(0, (e.clientX - b.left) / b.width)), y = Math.min(1, Math.max(0, (e.clientY - b.top) / b.height));
+  ui.pin = null; ui.draft = { fid: Number(el.dataset.fid), page: Number(el.dataset.page) || 1, x, y };
+  S.refresh();
+};
+actions['tk-undraft'] = () => { ui.draft = null; S.refresh(); };
+actions['tk-pinsel'] = (el) => { const id = Number(el.dataset.id); ui.pin = id && ui.pin !== id ? id : null; ui.draft = null; S.refresh(); };
+// show a pin wherever it is: its piece of work, its version, its page
+actions['tk-goto'] = (el) => {
+  const p = pinById(el.dataset.id); if (!p) return;
+  Object.assign(ui, { sel: `c${p.chain_id}`, ver: p.file_id, page: p.page, pin: p.id, draft: null, compare: null, open: true, mtab: 'work' });
+  S.refresh();
+  setTimeout(() => (document.querySelector('.tk-mark.tk-on') || document.querySelector('.tk-viewer'))?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+};
+actions['tk-reply'] = (el) => {
+  const id = Number(el.dataset.id);
+  ui.replyPin = id || null;
+  if (id && matchMedia('(max-width: 760px)').matches) ui.mtab = 'talk';
+  S.refresh();
+  if (id) setTimeout(() => document.getElementById('tk-c')?.focus(), 80);
+};
+actions['tk-resolve'] = run(async (el) => {
+  const p = await patch(`/api/tasks/${T().id}/pins/${el.dataset.id}`, { resolved: el.dataset.v === '1' });
+  done(p.resolved ? `Pin ${p.num} marked fixed` : `Pin ${p.num} reopened`);
+});
+actions['tk-delpin'] = run(async (el) => {
+  const p = pinById(el.dataset.id);
+  if (!(await confirmBox({ title: `Remove pin ${p.num}?`, message: 'Its replies go too.', confirm: 'Remove', danger: true }))) return;
+  await del(`/api/tasks/${T().id}/pins/${p.id}`); ui.pin = null; done('Pin removed');
+});
+actions['tk-rename'] = (el) => {
+  const t = T(), f = fileOf(t, Number(el.dataset.id)), c = chainsOf(t).find((x) => x.id === f.chain_id);
+  openModal({ title: 'Rename', submit: 'Save', body: html`<div class="field"><label class="f" for="tk-rn">Name</label><input id="tk-rn" name="label" maxlength="80" value="${c.label}" placeholder="Static 1" required><p class="hint">Every version takes this name.</p></div>`,
+    onSubmit: async (fd) => { await patch(`/api/tasks/${t.id}/files/${f.id}`, { label: fd.get('label') }); done(); } });
+};
+
+// ---------- a count ----------
+actions['tk-count'] = () => {
+  const t = T(), c = t.count;
+  openModal({
+    title: c ? 'Change the count' : 'Add a count', submit: 'Save', sub: 'For work measured in numbers: calls made, posts written, pages checked.',
+    body: html`<div class="field"><label class="f" for="tk-ct">How many</label><input id="tk-ct" name="target" type="number" min="1" max="1000000" required value="${c ? c.target : ''}" placeholder="20"></div>
+      <div class="field"><label class="f" for="tk-cu">Of what (optional)</label><input id="tk-cu" name="unit" maxlength="40" value="${c && c.unit ? c.unit : ''}" placeholder="called"><p class="hint">Reads as “12 of 20 called”.</p></div>
+      ${c ? html`<button type="button" class="linkbtn small" data-act="tk-uncount">Remove the count</button>` : ''}`,
+    onSubmit: async (fd) => { await post(`/api/tasks/${t.id}/progress`, { count_target: Number(fd.get('target')), count_unit: fd.get('unit') || null }); done(); },
+  });
+};
+actions['tk-uncount'] = run(async () => { [...document.querySelectorAll('#overlay [data-close]')].pop()?.click(); await post(`/api/tasks/${T().id}/progress`, { count_target: null }); done('Count removed'); });
+let bumpT = null, bumpTo = null;
+actions['tk-bump'] = (el) => {
+  // quick taps add up and are sent once
+  const t = T(); if (!t.count) return;
+  bumpTo = Math.max(0, (bumpTo ?? t.count.done) + Number(el.dataset.v));
+  t.count.done = bumpTo; S.refresh();
+  clearTimeout(bumpT);
+  bumpT = setTimeout(async () => { const v = bumpTo; bumpTo = null; try { await post(`/api/tasks/${t.id}/progress`, { count_done: v }); done(); } catch (err) { toast(errMsg(err), true); done(); } }, 500);
+};
+document.addEventListener('input', (e) => {
+  if (e.target.matches && e.target.matches('[data-tk-cut]')) { ui.cut = Number(e.target.value); const s = e.target.closest('.tk-cmp')?.querySelector('.tk-slider'); if (s) s.style.setProperty('--cut', `${ui.cut}%`); }
+});
+document.addEventListener('focusout', async (e) => {
+  if (!e.target.matches || !e.target.matches('[data-tko]')) return;
+  const t = T(); if (!t || (t.outcome || '') === e.target.value) return;
+  try { await post(`/api/tasks/${t.id}/progress`, { outcome: e.target.value }); delete e.target.dataset.dirty; done('Saved'); } catch (err) { toast(errMsg(err), true); }
+});
+
+// ---------- PDF pages, drawn with pdf.js ----------
+let pdfLibP = null;
+const pdfLib = () => (pdfLibP ||= new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = '/vendor/pdf/pdf.min.js'; sc.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdf/pdf.worker.min.js'; res(window.pdfjsLib); }; sc.onerror = () => { pdfLibP = null; rej(new Error('Could not load the PDF viewer')); }; document.head.appendChild(sc); }));
+async function pdfPage(fid, page) {
+  const tid = T().id;
+  if (!pdfDocs.has(fid)) pdfDocs.set(fid, (async () => { const L = await pdfLib(); return L.getDocument({ data: new Uint8Array(await fileBytes(`/api/tasks/${tid}/files/${fid}`)), isEvalSupported: false }).promise; })().catch((e) => { pdfDocs.delete(fid); throw e; }));
+  const doc = await pdfDocs.get(fid);
+  pdfPages.set(fid, doc.numPages);
+  const pg = await doc.getPage(Math.min(Math.max(1, page), doc.numPages));
+  const base = pg.getViewport({ scale: 1 });
+  const vp = pg.getViewport({ scale: Math.min(2.5, 1800 / base.width) });
+  const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+  await pg.render({ canvasContext: g, viewport: vp }).promise;
+  const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+  return URL.createObjectURL(blob);
+}
