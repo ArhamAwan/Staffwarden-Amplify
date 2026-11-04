@@ -48,8 +48,31 @@ module.exports = (ctx) => {
   const N = ctx.notify;
   const label = (t) => { const p = t.project_id ? getProject(t.project_id) : null; return p && t.number ? `${p.key}-${t.number} ${t.title}` : t.title; };
   const link = (t) => `#/tasks?task=${t.id}`;
-  // who approves this task: the project lead and the managers of the person doing it
-  const reviewersOf = (t) => { const p = t.project_id ? getProject(t.project_id) : null; return [p && p.lead_id, ...ctx.managersOf(t.assignee_id || t.created_by)]; };
+  // ---------- who approves ----------
+  // The manager assigned to the project (its lead). When the lead is the one doing the task, or there is no
+  // project or lead, the person's own managers. The owner can always approve. Nobody approves their own
+  // work, except the owner on a task they gave themselves when nobody else could.
+  function approversOf(t) {
+    const doer = t.assignee_id || t.created_by;
+    const p = t.project_id ? getProject(t.project_id) : null;
+    if (p && p.lead_id && p.lead_id !== doer) {
+      const l = db.prepare('SELECT id, active FROM users WHERE id = ?').get(p.lead_id);
+      if (l && l.active) return { ids: [p.lead_id], why: 'project lead' };
+    }
+    return { ids: ctx.managersOf(doer), why: 'manager' };
+  }
+  function canApprove(user, t) {
+    if (user.kind === 'client') return false;
+    const doer = t.assignee_id || t.created_by;
+    const a = approversOf(t).ids;
+    if (user.id === doer) return user.role === 'owner' && !user.dev_owner && !a.some((id) => id !== user.id);
+    return user.role === 'owner' || a.includes(user.id);
+  }
+  // does this task need approval: its own choice, else the company setting
+  const needsReview = (t) => (t.needs_review == null ? cfg.taskReviewRequired !== false : !!t.needs_review);
+  const reviewersOf = (t) => approversOf(t).ids;
+  const approverLabel = (t) => { const a = approversOf(t); const n = a.ids.map(nameOf).filter(Boolean); return n.length ? n.join(' or ') : 'A manager'; };
+  ctx.taskApprovers = approversOf; ctx.canApproveTask = canApprove;
   const watchersOf = (t) => [t.assignee_id, t.created_by, ...db.prepare('SELECT DISTINCT user_id FROM task_comments WHERE task_id = ?').all(t.id).map((r) => r.user_id)];
   const tell = (to, kind, t, user, title, body = null) => N.notify(to, { kind, title, body, link: link(t), actor: user });
   function tellStatus(before, after, user, note) {
@@ -133,6 +156,12 @@ module.exports = (ctx) => {
     if ('position' in body) { need(typeof body.position === 'number' && Number.isFinite(body.position), 400, 'position must be a number'); set.position = body.position; }
     // on a client's project: share this task with them, keep it to the team, or follow the client's setting
     if ('client_visible' in body) { need([null, 0, 1, true, false].includes(body.client_visible), 400, 'client_visible must be null, 0 or 1'); set.client_visible = body.client_visible == null ? null : body.client_visible ? 1 : 0; }
+    if ('needs_review' in body) {
+      const pid0 = 'project_id' in body ? body.project_id : existing ? existing.project_id : null;
+      need(user.role === 'owner' || (pid0 != null && isProjectLead(getProject(Number(pid0)), user)), 403, 'Only the project lead or the owner can change whether this needs approval');
+      need([null, 0, 1, true, false].includes(body.needs_review), 400, 'needs_review must be null, 0 or 1');
+      set.needs_review = body.needs_review == null ? null : body.needs_review ? 1 : 0;
+    }
     if ('milestone_id' in body) set.milestone_id = body.milestone_id === null || body.milestone_id === '' ? null : int(Number(body.milestone_id), 'milestone_id', 1, 1e9);
     if ('project_id' in body) {
       if (body.project_id === null || body.project_id === '') set.project_id = null;
@@ -182,6 +211,8 @@ module.exports = (ctx) => {
     const due = nextDue(t.due_day, t.recurrence);
     const id = Number(db.prepare(`INSERT INTO tasks (title, description, project_id, number, assignee_id, created_by, priority, due_day, estimate_min, recurrence, recurred_from, position, created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(t.title, t.description, t.project_id, t.project_id ? nextTaskNumber(t.project_id) : null, t.assignee_id, t.created_by, t.priority, due, t.estimate_min, t.recurrence, t.id, t.position, nowIso()).lastInsertRowid);
+    db.prepare('UPDATE tasks SET needs_review = ? WHERE id = ?').run(t.needs_review ?? null, id);
+    for (const c of db.prepare('SELECT title, position FROM task_checks WHERE task_id = ? ORDER BY position, id').all(t.id)) db.prepare('INSERT INTO task_checks (task_id, title, position, created_by, created_at) VALUES (?,?,?,?,?)').run(id, c.title, c.position, actorId, nowIso());
     event(id, actorId, 'created', `Repeats ${t.recurrence}; next copy of #${t.id}`);
     return id;
   }
@@ -192,23 +223,25 @@ module.exports = (ctx) => {
     if (t.status === to) return t;
     const mgr = manages(user, t);
     const mine = t.assignee_id === user.id || (t.assignee_id == null && t.created_by === user.id);
-    need(mgr || mine, 403, 'Not allowed');
+    const approver = canApprove(user, t);
+    need(mgr || mine || approver, 403, 'Not allowed');
     const now = nowIso();
     const sets = { status: to, updated_at: now };
     if (to === 'done') {
       // A person can close their own personal to-dos; assigned work goes through review (unless the owner turned review off).
-      const personal = t.created_by === user.id && (t.assignee_id === user.id || t.assignee_id == null);
-      if (!mgr) need(personal || cfg.taskReviewRequired === false, 403, 'Send it for review. A manager marks it done.');
+      const personal = t.created_by === user.id && (t.assignee_id === user.id || t.assignee_id == null) && t.project_id == null;
+      if (!approver) need(personal || !needsReview(t), 403, `Send it for review. ${approverLabel(t)} approves it.`);
       sets.completed_at = now;
       sets.first_time = t.review_rounds === 0 ? 1 : 0;
-      sets.approved_by = mgr ? user.id : null;
+      sets.approved_by = approver && !mine ? user.id : null;
       event(t.id, user.id, t.status === 'in_review' ? 'approved' : 'completed', t.review_rounds ? `After ${t.review_rounds} round${t.review_rounds === 1 ? '' : 's'} of changes` : 'First time');
     } else {
       if (t.status === 'done') { sets.completed_at = null; sets.first_time = null; sets.approved_by = null; event(t.id, user.id, 'reopened'); }
-      if (t.status === 'in_review' && t.assignee_id !== user.id) {          // a reviewer sends it back for changes
+      if (t.status === 'in_review' && t.assignee_id !== user.id) {          // the approver sends it back for changes
+        need(approver, 403, `Only ${approverLabel(t)} can send this back`);
         sets.review_rounds = t.review_rounds + 1;
         event(t.id, user.id, 'sent_back', note);
-        if (note) db.prepare('INSERT INTO task_comments (task_id, user_id, body, team_only, created_at) VALUES (?,?,?,1,?)').run(t.id, user.id, `Sent back: ${note}`, now);   // review notes stay with the team
+        if (note) db.prepare("INSERT INTO task_comments (task_id, user_id, body, team_only, kind, created_at) VALUES (?,?,?,1,'feedback',?)").run(t.id, user.id, note, now);   // review notes stay with the team
       } else if (t.status === 'in_review') event(t.id, user.id, 'withdrawn', note);
       else if (to === 'in_review') { sets.submitted_at = now; event(t.id, user.id, 'submitted', note); }
       else event(t.id, user.id, 'status', `${t.status} -> ${to}`);
@@ -243,7 +276,7 @@ module.exports = (ctx) => {
     where.push("(t.status != 'done' OR t.completed_at >= ?)"); args.push(T.iso(clockNow() - doneDays * 86400000));
     const rows = db.prepare(`SELECT t.* FROM tasks t ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY t.position, t.id`).all(...args)
       .filter((t) => canSeeTask(user, t));
-    let out = shape(rows).map((t, i) => ({ ...t, can_manage: manages(user, rows[i]) }));
+    let out = shape(rows).map((t, i) => ({ ...t, can_manage: manages(user, rows[i]), can_approve: rows[i].status === 'in_review' && canApprove(user, rows[i]) }));
     const due = query.get('due');
     if (due === 'overdue') out = out.filter((t) => t.overdue);
     else if (due === 'today') out = out.filter((t) => t.due_today || t.overdue);
@@ -260,7 +293,7 @@ module.exports = (ctx) => {
       in_review: mine.filter((t) => t.status === 'in_review').length,
       next: mine.filter((t) => t.status !== 'in_review').sort((a, b) => (a.due_day || '9999').localeCompare(b.due_day || '9999') || PRIORITIES.indexOf(a.priority) - PRIORITIES.indexOf(b.priority)).slice(0, 8),
     };
-    const rev = db.prepare("SELECT * FROM tasks WHERE status = 'in_review'").all().filter((t) => manages(user, t) && t.assignee_id !== user.id);
+    const rev = db.prepare("SELECT * FROM tasks WHERE status = 'in_review'").all().filter((t) => canApprove(user, t) && t.assignee_id !== user.id);
     if (isManager(user) || rev.length) out.to_review = rev.length;
     if (isManager(user)) {
       const team = db.prepare("SELECT * FROM tasks WHERE status != 'done' AND due_day IS NOT NULL").all().filter((t) => manages(user, t));
@@ -276,13 +309,17 @@ module.exports = (ctx) => {
     return {
       ...one,
       can_manage: manages(user, t), is_mine: t.assignee_id === user.id,
-      comments: db.prepare('SELECT c.id, c.user_id, COALESCE(u.name, cu.name) AS user, c.client_user_id, c.team_only, c.body, c.created_at, c.file, c.file_name, c.file_type, c.file_size FROM task_comments c LEFT JOIN users u ON u.id = c.user_id LEFT JOIN client_users cu ON cu.id = c.client_user_id WHERE c.task_id = ? ORDER BY c.created_at, c.id').all(t.id)
+      comments: db.prepare('SELECT c.id, c.user_id, COALESCE(u.name, cu.name) AS user, c.client_user_id, c.team_only, c.kind, c.body, c.created_at, c.file, c.file_name, c.file_type, c.file_size FROM task_comments c LEFT JOIN users u ON u.id = c.user_id LEFT JOIN client_users cu ON cu.id = c.client_user_id WHERE c.task_id = ? ORDER BY c.created_at, c.id').all(t.id)
         .map(({ file, file_name, file_type, file_size, ...c }) => ({ ...c, team_only: !!c.team_only, from_client: !!c.client_user_id, file: file ? { name: file_name, type: file_type, size: file_size, url: `/api/portal/comment-files/${c.id}` } : null })),
       steps_list: db.prepare('SELECT id, title, done_at FROM task_steps WHERE task_id = ? ORDER BY position, id').all(t.id).map((x) => ({ id: x.id, title: x.title, done: !!x.done_at })),
       milestones: t.project_id ? db.prepare('SELECT id, title, done_at FROM milestones WHERE project_id = ? ORDER BY position, id').all(t.project_id) : [],
       files: db.prepare('SELECT f.id, f.name, f.mime, f.size, f.created_at, f.user_id, u.name AS user FROM task_files f LEFT JOIN users u ON u.id = f.user_id WHERE f.task_id = ? ORDER BY f.id').all(t.id),
       events: db.prepare('SELECT e.kind, e.at, e.detail, u.name AS user FROM task_events e LEFT JOIN users u ON u.id = e.user_id WHERE e.task_id = ? ORDER BY e.at, e.id').all(t.id),
       sessions: db.prepare('SELECT COUNT(*) n FROM time_entries WHERE task_id = ?').get(t.id).n,
+      approver: (() => { const a = approversOf(t); return { ids: a.ids, names: a.ids.map(nameOf).filter(Boolean), why: a.why }; })(),
+      can_approve: canApprove(user, t), needs_review: needsReview(t), needs_review_set: t.needs_review == null ? null : !!t.needs_review,
+      can_set_review: user.role === 'owner' || leads(user, t), can_edit: canEditTask(user, t),
+      checks: checksOf(t.id), links: linksOf(t.id), live: liveOf(t, user),
     };
   });
 
@@ -345,7 +382,7 @@ module.exports = (ctx) => {
 
   route('POST', '/api/tasks/:id/approve', ({ user, params }) => {
     const t = loadVisible(user, params.id);
-    need(manages(user, t) && t.assignee_id !== user.id, 403, 'Only a manager can approve');
+    need(canApprove(user, t), 403, `Only ${approverLabel(t)} can approve this`);
     need(t.status === 'in_review', 409, 'This task is not waiting for review');
     const after = changeStatus(t, 'done', user);
     notify(after);
@@ -353,9 +390,13 @@ module.exports = (ctx) => {
   });
   route('POST', '/api/tasks/:id/send-back', ({ user, params, body }) => {
     const t = loadVisible(user, params.id);
-    need(manages(user, t) && t.assignee_id !== user.id, 403, 'Only a manager can send work back');
+    need(canApprove(user, t), 403, `Only ${approverLabel(t)} can send this back`);
     need(t.status === 'in_review', 409, 'This task is not waiting for review');
-    const note = str(body.note, 'note', 2000);
+    // the note can be left out when unticked "Done when" checks say what's missing
+    const open = db.prepare('SELECT title FROM task_checks WHERE task_id = ? AND checked_at IS NULL ORDER BY position, id').all(t.id).map((c) => c.title);
+    let note = optStr(body.note, 'note', 2000);
+    need(note || open.length, 400, 'Say what needs to change');
+    if (open.length) note = `${note ? `${note}\n\n` : ''}Still to do:\n${open.map((x) => `• ${x}`).join('\n')}`;
     const after = changeStatus(t, 'in_progress', user, note);
     notify(after);
     return shape([after])[0];
@@ -377,7 +418,8 @@ module.exports = (ctx) => {
     const t = loadVisible(user, params.id);
     const text = str(body.body, 'body', 4000);
     const teamOnly = body.team_only ? 1 : 0;
-    const id = Number(db.prepare('INSERT INTO task_comments (task_id, user_id, body, team_only, created_at) VALUES (?,?,?,?,?)').run(t.id, user.id, text, teamOnly, nowIso()).lastInsertRowid);
+    const kind = body.kind === 'update' ? 'update' : 'comment';
+    const id = Number(db.prepare('INSERT INTO task_comments (task_id, user_id, body, team_only, kind, created_at) VALUES (?,?,?,?,?,?)').run(t.id, user.id, text, teamOnly, kind, nowIso()).lastInsertRowid);
     const p = t.project_id ? getProject(t.project_id) : null;
     void p;
     tell(watchersOf(t), 'task_comment', t, user, `${user.name} commented on ${label(t)}`, text.length > 140 ? text.slice(0, 137) + '…' : text);
@@ -417,13 +459,15 @@ module.exports = (ctx) => {
     notify(t);
     return { id, name, size: buf.length };
   });
-  route('GET', '/api/tasks/:id/files/:fid', ({ user, params }) => {
+  route('GET', '/api/tasks/:id/files/:fid', ({ user, params, query }) => {
     const t = loadVisible(user, params.id);
     const f = db.prepare('SELECT * FROM task_files WHERE id = ? AND task_id = ?').get(Number(params.fid), t.id);
     need(f, 404, 'File not found');
     const p = path.join(fileDir, f.file);
     need(fs.existsSync(p), 404, 'File missing');
-    return { raw: fs.readFileSync(p), type: f.mime || 'application/octet-stream', headers: { 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(f.name)}`, 'X-Content-Type-Options': 'nosniff' } };
+    // pictures can be shown on the page; anything else (SVG and HTML included) only downloads, so nothing uploaded can run here
+    const inline = query && query.get('inline') === '1' && /^image\/(png|jpeg|webp|gif)$/.test(f.mime || '');
+    return { raw: fs.readFileSync(p), type: inline ? f.mime : f.mime || 'application/octet-stream', headers: { 'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(f.name)}`, 'X-Content-Type-Options': 'nosniff', ...(inline ? { 'Content-Security-Policy': "default-src 'none'" } : {}) } };
   });
   route('DELETE', '/api/tasks/:id/files/:fid', ({ user, params }) => {
     const t = loadVisible(user, params.id);
@@ -435,6 +479,81 @@ module.exports = (ctx) => {
     notify(t);
     return { ok: true };
   });
+
+  // ---------- "Done when" checks: written with the task, ticked by the approver ----------
+  function canEditTask(user, t) { return manages(user, t) || t.created_by === user.id || t.assignee_id === user.id; }
+  const checksOf = (id) => db.prepare('SELECT c.id, c.title, c.checked_at, c.checked_by, u.name AS checked_by_name FROM task_checks c LEFT JOIN users u ON u.id = c.checked_by WHERE c.task_id = ? ORDER BY c.position, c.id').all(id)
+    .map((c) => ({ id: c.id, title: c.title, checked: !!c.checked_at, checked_at: c.checked_at, checked_by: c.checked_by_name || null }));
+  const checkOf = (t, cid) => { const c = db.prepare('SELECT * FROM task_checks WHERE id = ? AND task_id = ?').get(Number(cid), t.id); need(c, 404, 'That check is not on this task'); return c; };
+  route('POST', '/api/tasks/:id/checks', ({ user, params, body }) => {
+    const t = loadVisible(user, params.id);
+    need(canEditTask(user, t), 403, 'Only the people on this task can add checks');
+    need(db.prepare('SELECT COUNT(*) n FROM task_checks WHERE task_id = ?').get(t.id).n < 30, 400, 'A task can have at most 30 checks');
+    const title = str(body.title, 'title', 200);
+    const pos = db.prepare('SELECT COALESCE(MAX(position), 0) + 1 p FROM task_checks WHERE task_id = ?').get(t.id).p;
+    db.prepare('INSERT INTO task_checks (task_id, title, position, created_by, created_at) VALUES (?,?,?,?,?)').run(t.id, title, pos, user.id, nowIso());
+    event(t.id, user.id, 'check_added', title);
+    notify(t);
+    return checksOf(t.id);
+  });
+  route('PATCH', '/api/tasks/:id/checks/:cid', ({ user, params, body }) => {
+    const t = loadVisible(user, params.id);
+    const c = checkOf(t, params.cid);
+    if ('title' in body) { need(canEditTask(user, t), 403, 'Only the people on this task can change checks'); db.prepare('UPDATE task_checks SET title = ? WHERE id = ?').run(str(body.title, 'title', 200), c.id); }
+    if ('checked' in body) {
+      need(canApprove(user, t), 403, `Only ${approverLabel(t)} ticks these`);
+      db.prepare('UPDATE task_checks SET checked_at = ?, checked_by = ? WHERE id = ?').run(body.checked ? nowIso() : null, body.checked ? user.id : null, c.id);
+      event(t.id, user.id, body.checked ? 'check_ticked' : 'check_unticked', c.title);
+    }
+    notify(t);
+    return checksOf(t.id);
+  });
+  route('DELETE', '/api/tasks/:id/checks/:cid', ({ user, params }) => {
+    const t = loadVisible(user, params.id);
+    const c = checkOf(t, params.cid);
+    need(canEditTask(user, t), 403, 'Only the people on this task can remove checks');
+    db.prepare('DELETE FROM task_checks WHERE id = ?').run(c.id);
+    notify(t);
+    return checksOf(t.id);
+  });
+
+  // ---------- links handed in as work (a pull request, a staging page, a doc) ----------
+  const linksOf = (id) => db.prepare('SELECT l.id, l.url, l.title, l.created_at, l.user_id, u.name AS user FROM task_links l LEFT JOIN users u ON u.id = l.user_id WHERE l.task_id = ? ORDER BY l.id').all(id)
+    .map((l) => { let host = ''; try { host = new URL(l.url).hostname.replace(/^www\./, ''); } catch { /* kept as typed */ } return { ...l, host }; });
+  route('POST', '/api/tasks/:id/links', ({ user, params, body }) => {
+    const t = loadVisible(user, params.id);
+    need(canEditTask(user, t), 403, 'Only the people on this task can add links');
+    const raw = str(body.url, 'url', 2000).trim();
+    let u = null; try { u = new URL(raw); } catch { /* checked below */ }
+    need(u && (u.protocol === 'https:' || u.protocol === 'http:'), 400, 'Paste a link that starts with https://');
+    need(db.prepare('SELECT COUNT(*) n FROM task_links WHERE task_id = ?').get(t.id).n < 30, 400, 'A task can have at most 30 links');
+    const title = optStr(body.title, 'title', 200) || null;
+    db.prepare('INSERT INTO task_links (task_id, user_id, url, title, created_at) VALUES (?,?,?,?,?)').run(t.id, user.id, u.href, title, nowIso());
+    event(t.id, user.id, 'link', title || u.hostname);
+    notify(t);
+    return linksOf(t.id);
+  });
+  route('DELETE', '/api/tasks/:id/links/:lid', ({ user, params }) => {
+    const t = loadVisible(user, params.id);
+    const l = db.prepare('SELECT * FROM task_links WHERE id = ? AND task_id = ?').get(Number(params.lid), t.id);
+    need(l, 404, 'Link not found');
+    need(l.user_id === user.id || manages(user, t), 403, 'You can only remove links you added');
+    db.prepare('DELETE FROM task_links WHERE id = ?').run(l.id);
+    notify(t);
+    return linksOf(t.id);
+  });
+
+  // ---------- who is working on it right now: for that person, their managers and the approver ----------
+  function liveOf(t, user) {
+    const e = db.prepare('SELECT * FROM time_entries WHERE task_id = ? AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1').get(t.id);
+    if (!e) return null;
+    if (!(e.user_id === user.id || canSee(user, e.user_id) || canApprove(user, t))) return null;
+    const now = clockNow(), s = Date.parse(e.started_at);
+    let ms = now - s;
+    for (const p of db.prepare('SELECT started_at, ended_at FROM pauses WHERE entry_id = ?').all(e.id)) ms -= Math.max(0, Math.min(now, p.ended_at ? Date.parse(p.ended_at) : now) - Math.max(s, Date.parse(p.started_at)));
+    const paused = !!db.prepare('SELECT 1 FROM pauses WHERE entry_id = ? AND ended_at IS NULL').get(e.id);
+    return { user_id: e.user_id, name: nameOf(e.user_id), since: e.started_at, session_secs: Math.max(0, Math.round(ms / 1000)), paused };
+  }
 
   ctx.taskVisible = canSeeTask;
 };

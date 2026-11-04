@@ -218,7 +218,13 @@ document.addEventListener('keydown', (e) => {
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[data-act="open-task"]') && !e.target.closest('.tpanel')) { e.preventDefault(); openTask(Number(e.target.dataset.id)); }
 });
 
+// every way of opening a task goes to the task page; links from notifications (#/tasks?task=12) are swapped for it
 export async function openTask(id) {
+  const to = `#/task?id=${Number(id)}`;
+  if (/[?&]task=\d+/.test(location.hash)) location.replace(to); else location.hash = to;
+}
+// the old side panel, kept for now
+export async function openTaskPanel(id) {
   if (panel) panel.close(false);
   const opener = document.activeElement;
   const scrim = document.createElement('div');

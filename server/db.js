@@ -3,7 +3,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 // Schema v2. Fresh installs and v1 databases go through the same path: the v1 tables are created
 // if missing, then migrate() adds everything v2 needs without touching existing rows.
-const SCHEMA_VERSION = 26;
+const SCHEMA_VERSION = 27;
 
 function hasColumn(db, table, col) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
@@ -83,6 +83,7 @@ function openDb(file = ':memory:') {
 function migrate(db) {
   const version = db.prepare('PRAGMA user_version').get().user_version;
   if (version >= SCHEMA_VERSION) return;
+  if (version === 26) return migrateV27(db);
   if (version === 25) return migrateV26(db);
   if (version === 24) return migrateV25(db);
   if (version === 23) return migrateV24(db);
@@ -1021,6 +1022,31 @@ function migrateV26(db) {
     addColumn(db, 'hr_records', 'upd_note', 'TEXT');
     addColumn(db, 'hr_records', 'upd_by', 'INTEGER');
     addColumn(db, 'hr_records', 'upd_at', 'TEXT');
+    db.exec('PRAGMA user_version = 26');
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  migrateV27(db);
+}
+
+// v27: the task page. A task can say whether it needs approval (empty: the company setting decides),
+// "Done when" checks the approver ticks, links handed in as work, and what kind a comment is
+// (a comment, a progress update, or review feedback).
+function migrateV27(db) {
+  db.exec('BEGIN');
+  try {
+    addColumn(db, 'tasks', 'needs_review', 'INTEGER');
+    addColumn(db, 'task_comments', 'kind', "TEXT NOT NULL DEFAULT 'comment'");
+    db.exec(`CREATE TABLE IF NOT EXISTS task_checks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      title TEXT NOT NULL, position REAL NOT NULL DEFAULT 0, checked_by INTEGER, checked_at TEXT, created_by INTEGER, created_at TEXT NOT NULL)`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_checks_task ON task_checks(task_id, position)');
+    db.exec(`CREATE TABLE IF NOT EXISTS task_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      user_id INTEGER, url TEXT NOT NULL, title TEXT, created_at TEXT NOT NULL)`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_links_task ON task_links(task_id, id)');
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {

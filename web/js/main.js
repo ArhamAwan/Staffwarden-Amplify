@@ -15,6 +15,7 @@ watchOverlay();
 import { teamPage, mePage } from './pages/dashboard.js';
 import timeline from './pages/timeline.js';
 import tasks from './pages/tasks.js';
+import taskPage from './pages/taskpage.js';
 import performance from './pages/performance.js';
 import screenshots from './pages/screenshots.js';
 import timesheets from './pages/timesheets.js';
@@ -51,13 +52,13 @@ let liveState = 'connecting', lastOk = 0, lastErr = null, pendingBadge = 0, reqB
 let current = { name: null, key: null };
 let openedTask = null;
 
-const MGR = { '': teamPage, me: mePage, chat: teamChatPage, checkin: checkinPage, checkins: checkinsPage, announcements: announcementsPage, tasks, project, clients: clientsPage, inbox: inboxPage, performance, productivity: performance, timeline, screenshots, timesheets, attendance, timeoff, requests: requestsPage, reports, 'shift-report': shiftReport, people, projects, audit: auditPage, profile };
+const MGR = { '': teamPage, me: mePage, chat: teamChatPage, checkin: checkinPage, checkins: checkinsPage, announcements: announcementsPage, tasks, task: taskPage, project, clients: clientsPage, inbox: inboxPage, performance, productivity: performance, timeline, screenshots, timesheets, attendance, timeoff, requests: requestsPage, reports, 'shift-report': shiftReport, people, projects, audit: auditPage, profile };
 const MGR_NAV = [
   ['', 'Dashboard', 'dash'], ['projects', 'Projects', 'folder'], ['tasks', 'Tasks', 'tasks'], ['performance', 'Performance', 'bolt'], ['timeline', 'Activity', 'pulse'], ['screenshots', 'Screenshots', 'camera'],
   ['timesheets', 'Timesheets', 'clock'], ['attendance', 'Attendance', 'cal'], ['timeoff', 'Time off', 'sun'], ['requests', 'Missing time', 'plus'], ['reports', 'Reports', 'chart'], ['shift-report', 'Shift reports', 'file'],
 ];
 const MGR_NAV2 = [['people', 'People', 'users'], ['settings', 'Settings', 'gear'], ['audit', 'Audit log', 'log']];
-const EMP = { '': mePage, me: mePage, chat: teamChatPage, checkin: checkinPage, checkins: checkinsPage, announcements: announcementsPage, projects, project, tasks, inbox: inboxPage, performance, productivity: performance, timeline, screenshots, timesheets, attendance, timeoff, profile };
+const EMP = { '': mePage, me: mePage, chat: teamChatPage, checkin: checkinPage, checkins: checkinsPage, announcements: announcementsPage, projects, project, tasks, task: taskPage, inbox: inboxPage, performance, productivity: performance, timeline, screenshots, timesheets, attendance, timeoff, profile };
 const EMP_NAV = [
   ['', 'Dashboard', 'dash'], ['projects', 'Projects', 'folder'], ['tasks', 'My tasks', 'tasks'], ['timeline', 'My day', 'pulse'], ['performance', 'Performance', 'bolt'], ['screenshots', 'Screenshots', 'camera'], ['timesheets', 'Timesheet', 'clock'],
   ['attendance', 'Attendance', 'cal'], ['timeoff', 'Time off', 'sun'], ['profile', 'Profile', 'user'],
@@ -203,7 +204,7 @@ actions['nav-g'] = (el) => {
 };
 function navHtml() {
   const { name: raw } = parseHash();
-  const name = raw === 'project' ? 'projects' : /^dev-/.test(raw) ? 'dev' : raw;   // one project highlights Projects; every developer page highlights Developer
+  const name = raw === 'project' ? 'projects' : raw === 'task' ? 'tasks' : /^dev-/.test(raw) ? 'dev' : raw;   // one project highlights Projects; every developer page highlights Developer
   const link = ([r, label, ic]) => `<a class="nav" data-ic="${ic}" href="#/${r}" ${(name === 'hr-import' ? 'hr' : name || '') === r ? 'aria-current="page"' : ''} data-k="n${r}">${icon(ic)}<span>${esc(label)}</span>${r === 'timeoff' && isMgr() && pendingBadge ? `<span class="badge" aria-label="${pendingBadge} waiting">${pendingBadge}</span>` : ''}${r === 'tasks' && taskBadge ? `<span class="badge" aria-label="${taskBadge} need attention">${taskBadge}</span>` : ''}${r === 'requests' && reqBadge ? `<span class="badge" aria-label="${reqBadge} waiting">${reqBadge}</span>` : ''}${r === 'chat' && chatBadge ? `<span class="badge${chatMention ? '' : ' soft'}" aria-label="${chatBadge} unread">${chatBadge > 99 ? '99+' : chatBadge}</span>` : ''}${r === 'inbox' && inboxBadge ? `<span class="badge${inboxLate ? '' : ' soft'}" aria-label="${inboxBadge} waiting">${inboxBadge}</span>` : ''}</a>`;
   // grouped like the work: what is happening today, the work itself, time, and running the company
   // groups fold away so the menu fits on one screen: Today and the group you are in stay open, the rest

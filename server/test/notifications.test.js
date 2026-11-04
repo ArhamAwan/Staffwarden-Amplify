@@ -43,8 +43,8 @@ test('a task goes round: assigned, sent for review, sent back, approved, with co
 
   await ok('PATCH', `/api/tasks/${t.id}`, { token: T('dan'), body: { status: 'in_progress' } });
   await ok('PATCH', `/api/tasks/${t.id}`, { token: T('dan'), body: { status: 'in_review' } });
-  for (const k of ['lead', 'mona', 'owner']) assert.equal((await inbox(k)).items[0].kind, 'task_review', `${k} (lead and managers) is asked to review`);
-  assert.equal((await inbox('eve')).items.filter((x) => x.kind === 'task_review').length, 0, 'other members are not');
+  assert.equal((await inbox('lead')).items[0].kind, 'task_review', 'the project lead approves project tasks, so the lead is asked');
+  for (const k of ['mona', 'eve']) assert.equal((await inbox(k)).items.filter((x) => x.kind === 'task_review').length, 0, `${k} is not asked`);
 
   await ok('POST', `/api/tasks/${t.id}/send-back`, { token: T('lead'), body: { note: 'Use the new brand colours' } });
   n = (await inbox('dan')).items[0];
@@ -60,7 +60,8 @@ test('a task goes round: assigned, sent for review, sent back, approved, with co
   assert.equal((await inbox('dan')).items[0].kind, 'task_due_changed');
 
   await ok('PATCH', `/api/tasks/${t.id}`, { token: T('dan'), body: { status: 'in_review' } });
-  await ok('POST', `/api/tasks/${t.id}/approve`, { token: T('mona') });
+  assert.equal((await env.api('POST', `/api/tasks/${t.id}/approve`, { token: T('mona') })).status, 403, 'a manager who is not the project lead can comment but not approve');
+  await ok('POST', `/api/tasks/${t.id}/approve`, { token: T('lead') });
   n = (await inbox('dan')).items[0];
   assert.equal(n.kind, 'task_approved');
   assert.equal(n.body, null, 'not "first time": it was sent back once');
