@@ -315,9 +315,17 @@ function stepsCard(t, r) {
   </section>`;
 }
 
+// a file or link on a project's task can be saved to the client's assets in one click
+function saveBtn(t, { file = null, link = null, url = null }) {
+  const a = t.assets;
+  if (!a) return '';
+  const inIt = file != null ? a.files.includes(file) : a.urls.includes(url);
+  return inIt ? html`<span class="tk-tag tk-green tk-inas" title="Saved to ${a.name}’s assets">${I('check', 12, 3)}In ${a.client_id ? 'their' : 'project'} assets</span>`
+    : html`<button type="button" class="tk-btn tk-sm tk-saveas" data-act="tk-saveasset" ${raw(file != null ? `data-file="${file}"` : `data-link="${link}"`)} title="Save to ${esc(a.name)}’s assets">${I('plus', 14, 2.4)}<span>Save to assets</span></button>`;
+}
 function linkItem(t, w, r) {
   const gh = /github\.com$/.test(w.host) && /\/pull\/\d+/.test(w.url);
-  return html`<li class="tk-item" data-k="ln${w.id}"><span class="tk-thumb ${gh ? 'tk-pr' : 'tk-ln'}" aria-hidden="true">${I(gh ? 'pr' : 'globe', 20)}</span><span class="tk-t"><a href="${w.url}" target="_blank" rel="noopener noreferrer" style="color:#F2EFFF;font-weight:600;font-size:14.5px">${w.title || w.host}</a><span>Link · ${w.host}${w.user ? ` · ${first(w.user)}` : ''}</span></span>${r.manage || w.user_id === S.me.id ? html`<button type="button" class="tk-x-btn" data-act="tk-dellink" data-id="${w.id}" aria-label="Remove link">${I('x', 14)}</button>` : ''}</li>`;
+  return html`<li class="tk-item" data-k="ln${w.id}"><span class="tk-thumb ${gh ? 'tk-pr' : 'tk-ln'}" aria-hidden="true">${I(gh ? 'pr' : 'globe', 20)}</span><span class="tk-t"><a href="${w.url}" target="_blank" rel="noopener noreferrer" style="color:#F2EFFF;font-weight:600;font-size:14.5px">${w.title || w.host}</a><span>Link · ${w.host}${w.user ? ` · ${first(w.user)}` : ''}</span></span>${r.noSave ? '' : saveBtn(t, { link: w.id, url: w.url })}${r.manage || w.user_id === S.me.id ? html`<button type="button" class="tk-x-btn" data-act="tk-dellink" data-id="${w.id}" aria-label="Remove link">${I('x', 14)}</button>` : ''}</li>`;
 }
 const thumb = (t, f) => (isImg(f) ? html`<img class="tk-thumbimg" alt="" data-tkimg="${fileSrc(t, f)}" ${raw(imgCache.get(fileSrc(t, f)) ? `src="${imgCache.get(fileSrc(t, f))}"` : '')}>`
   : isPdf(f) ? html`<img class="tk-thumbimg tk-pdfthumb" alt="" data-tkpdf="${f.id}:1" ${raw(imgCache.get(`pdf:${f.id}:1`) ? `src="${imgCache.get(`pdf:${f.id}:1`)}"` : '')}>`
@@ -331,6 +339,7 @@ function chainItem(t, c, r, { canAdd = true } = {}) {
       ? html`<button type="button" class="tk-lnk tk-open" data-act="tk-open" data-v="c${c.id}">${c.label}</button>`
       : html`<button type="button" class="tk-lnk tk-open" data-act="tk-file" data-id="${f.id}" data-name="${f.name}">${c.label}</button>`}
       <span>${meta}${open ? html` · <b class="tk-amber-t">${plural(open, 'open pin')}</b>` : ''}</span></span>
+    ${saveBtn(t, { file: f.id })}
     ${canAdd && (r.edit || r.approver) ? html`<label class="tk-btn tk-sm tk-ver" title="Upload a new version of ${c.label}">${I('up', 15)}<span>New version</span><input type="file" data-tk-file data-ver="${f.id}" hidden></label>` : ''}
     ${canAdd && (f.user_id === S.me.id || r.manage) ? html`<button type="button" class="tk-x-btn" data-act="tk-delfile" data-id="${f.id}" data-v="${c.versions.length}" aria-label="Remove ${c.label}${c.versions.length > 1 ? `, V${f.version}` : ''}">${I('x', 14)}</button>` : ''}</li>`;
 }
@@ -530,9 +539,17 @@ function doneView(t, r) {
   const chains = chainsOf(t);
   void ap;
   return html`${tiles.length ? html`<div class="tk-g4">${tiles.map(([a, b, c]) => html`<div class="tk-tile"><span>${a}</span><b>${b}</b><span>${c}</span></div>`)}</div>` : ''}
+  ${t.assets && t.assets.saved.length ? savedCard(t) : ''}
   ${t.outcome ? html`<section class="tk-card"><h2>How it went</h2><p class="tk-p" style="white-space:pre-line">${t.outcome}</p></section>` : ''}
   ${chains.length || t.links.length ? html`<section class="tk-card"><div class="tk-ch"><h2>Files and links</h2></div><ul class="tk-list">${t.links.map((w) => linkItem(t, w, { manage: false }))}${chains.map((c) => chainItem(t, c, r, { canAdd: false }))}</ul></section>` : ''}
   ${t.description ? html`<section class="tk-card tk-md"><h2>What to do</h2><p class="tk-p" style="white-space:pre-line">${t.description}</p></section>` : ''}`;
+}
+
+function savedCard(t) {
+  const a = t.assets, href = a.client_id && isMgr() ? `#/clients?id=${a.client_id}&tab=assets` : `#/project?id=${t.project_id}&tab=assets`;
+  return html`<section class="tk-card tk-savedas" aria-label="Saved to assets"><div class="tk-ch"><h2>Saved to ${a.name}’s assets</h2><span class="tk-small tk-muted">The approved version of each picture and PDF</span></div>
+    <ul class="tk-list">${a.saved.map((x) => html`<li class="tk-item" data-k="sa${x.id}"><span class="tk-thumb tk-ln" aria-hidden="true">${I('img', 18)}</span><span class="tk-t"><b>${x.title}</b><span>${x.version > 1 ? `V${x.version} · ` : ''}${x.shared ? `${a.name} sees it` : 'Team only'}</span></span></li>`)}</ul>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><a class="tk-btn tk-sm" href="${href}">Open their assets</a><button type="button" class="tk-btn tk-sm" data-act="tk-unsave">Undo</button></div></section>`;
 }
 
 // ---------- on a phone: Work, Conversation and Details as tabs ----------
@@ -986,3 +1003,16 @@ async function pdfPage(fid, page) {
 }
 
 actions['tk-moredet'] = () => { ui.more = !ui.more; redraw(); };
+
+actions['tk-saveasset'] = run(async (el) => {
+  const t = T();
+  const a = await post(`/api/tasks/${t.id}/save-asset`, el.dataset.file ? { file_id: Number(el.dataset.file) } : { link_id: Number(el.dataset.link) });
+  if (t.assets) { if (el.dataset.file) t.assets.files.push(Number(el.dataset.file)); else t.assets.urls.push(a.url); redraw(); }
+  done(`Saved to ${t.assets ? t.assets.name : 'the client'}’s assets`);
+});
+actions['tk-unsave'] = run(async () => {
+  const t = T();
+  if (!(await confirmBox({ title: 'Take these out of the assets?', message: 'The files stay on this task.', confirm: 'Take them out' }))) return;
+  for (const x of t.assets.saved) await del(`/api/assets/${x.id}`);
+  done('Taken out of the assets');
+});

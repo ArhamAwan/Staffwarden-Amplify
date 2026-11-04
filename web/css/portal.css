@@ -789,3 +789,22 @@ body.portal { background: rgba(115,90,191,0.16); }
 }
 
 @keyframes viewIn { from { opacity: .4; } to { opacity: 1; } }
+
+/* the client's brand and files, and sending files in */
+.pabrand > * + *, .psend > * + * { margin-top: 12px; }
+.pabrand .pfiles-l .pfile, .psend .pfiles-l .pfile { width: 100%; box-sizing: border-box; }
+.pswatches { display: flex; flex-wrap: wrap; gap: 10px; }
+.pswatch { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 6px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.045); color: var(--ink); cursor: pointer; text-align: left; font: inherit; }
+.pswatch:hover { border-color: rgba(117,98,182,0.35); }
+.pswatch i { width: 32px; height: 32px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.2); display: block; }
+.pswatch > span { display: flex; flex-direction: column; font-size: 13.5px; }
+.pswatch > span span { font-size: 12px; opacity: .7; }
+.pnote { padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.03); }
+.pnote p { margin: 4px 0 0; white-space: pre-line; line-height: 1.5; }
+.psenddrop { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 22px; border-radius: 14px; border: 1.5px dashed rgba(255,255,255,0.2); background: rgba(255,255,255,0.02); color: var(--ink); cursor: pointer; font: inherit; text-align: center; }
+.psenddrop:hover { border-color: rgba(117,98,182,0.6); }
+.psenddrop b { font-size: 15px; }
+.pcd.pabrand, .pcd.psend { display: flex !important; flex-direction: column !important; align-items: stretch !important; gap: 12px; }
+.pcd.pabrand > *, .pcd.psend > * { margin-top: 0; max-width: none; }
+.pcd.pabrand .pfiles-l, .pcd.psend .pfiles-l { width: 100%; }
+.psenddrop { width: 100%; box-sizing: border-box; }

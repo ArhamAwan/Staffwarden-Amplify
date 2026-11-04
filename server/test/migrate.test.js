@@ -39,7 +39,7 @@ test('a v19 database from before double ticks and the boost clip gets them, and 
   const env = await makeEnv({ app: { dbFile: file } });
   try {
     const { ok, person, tokens } = env;
-    assert.equal(env.app.db.prepare('PRAGMA user_version').get().user_version, 28);
+    assert.equal(env.app.db.prepare('PRAGMA user_version').get().user_version, 29);
     await person('ali', 'Ali Raza');
     const threads = await ok('GET', '/api/team/threads', { token: tokens.ali });
     const company = (threads.threads || threads).find((t) => t.kind === 'company') || (threads.threads || threads)[0];
@@ -60,7 +60,7 @@ test('a server already on v22 (web34/web35) gets the test-boost column too', asy
   let db = openDb(file);
   db.exec('ALTER TABLE boosts DROP COLUMN test'); db.exec('PRAGMA user_version = 22'); db.close();
   db = openDb(file);
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 28);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 29);
   assert.ok(db.prepare('PRAGMA table_info(boosts)').all().some((c) => c.name === 'test'));
   db.close(); fs.rmSync(dir, { recursive: true, force: true });
 });

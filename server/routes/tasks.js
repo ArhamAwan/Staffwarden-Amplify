@@ -89,6 +89,7 @@ module.exports = (ctx) => {
   const tellProject = (pid, uid, user) => { const p = getProject(pid); if (p) N.notify(uid, { kind: 'project_added', title: `${user.name} added you to ${p.key} ${p.name}`, body: 'You can now see its tasks and track time on it.', link: `#/project?id=${p.id}`, actor: user }); };
 
   const loadVisible = (user, id) => { const t = getTask(id); need(t && canSeeTask(user, t), 404, 'Task not found'); return t; };
+  ctx.loadTaskVisible = loadVisible;
 
   // Worked seconds on each task (time entries minus their pauses).
   function trackedByTask(ids) {
@@ -254,6 +255,8 @@ module.exports = (ctx) => {
     const after = getTask(t.id);
     if (to === 'done') spawnNext(after, user.id);
     tellStatus(t, after, user, note);
+    // approved work: the approved version of each picture and PDF is saved to the client's assets
+    if (to === 'done' && t.status === 'in_review' && ctx.assetsOnApproved) ctx.assetsOnApproved(after, user);
     return after;
   }
   ctx.changeTaskStatus = changeStatus;
@@ -325,6 +328,7 @@ module.exports = (ctx) => {
       can_set_review: user.role === 'owner' || leads(user, t), can_edit: canEditTask(user, t),
       can_change: manages(user, t) || (t.created_by === user.id && (t.assignee_id === user.id || t.assignee_id == null)),
       checks: checksOf(t.id), links: linksOf(t.id), live: liveOf(t, user),
+      assets: ctx.assetsForTask ? ctx.assetsForTask(t) : null,
     };
   });
 

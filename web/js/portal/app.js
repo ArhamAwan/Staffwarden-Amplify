@@ -1,7 +1,7 @@
 // The client portal: what someone at a client sees when they sign in. Their own projects only, and only
 // what the agency shares: progress, tasks, the people on them, approvals, requests, calls, hours and a
 // live chat with the team. Never screenshots, activity, attendance or anything about other clients.
-import { get, post, patch, put, del, startLive, fileUrl, fileBase64, download, setToken, liveFresh, setViewAs, getViewAs } from '../api.js';
+import { get, post, patch, put, del, startLive, fileUrl, fileBase64, download, setToken, liveFresh, setViewAs, getViewAs, getToken } from '../api.js';
 import { html, raw, esc, icon, initials, avColor, relTime, plural, dateY, dayMD, HELM, monthLabel, addMonths, addDays, nowMs } from '../util.js';
 import { toast, errMsg, openModal, confirmBox, trap } from '../ui.js';
 import { morph } from '../morph.js';
@@ -612,11 +612,55 @@ function hoursPage({ h, stmt, prefs }) {
 }
 
 // ================= Files =================
-async function loadFiles(pid) { return { files: await get(`/api/portal/projects/${pid}/files`) }; }
-function filesPage({ files }) {
+async function loadFiles(pid) { const [files, assets] = await Promise.all([get(`/api/portal/projects/${pid}/files`), get(`/api/portal/projects/${pid}/assets`).catch(() => ({ assets: [], sent: [] }))]); return { files, assets }; }
+// the client's brand and files, shared by the team, and sending files in
+function brandCard(assets) {
+  const list = assets.assets || [];
+  const colors = list.filter((a) => a.kind === 'color'), fonts = list.filter((a) => a.kind === 'font'), links = list.filter((a) => a.kind === 'link');
+  const files = list.filter((a) => a.kind === 'file' && !a.from_client), notes = list.filter((a) => a.kind === 'note');
+  if (!list.length) return '';
+  const fileBtn = (a) => html`<li data-k="as${a.id}"><button type="button" class="pfile wide" data-pa="open" data-url="${a.url_file}" data-name="${a.file_name}"><span class="pf-i">${icon('file')}</span><span><b>${a.title}</b><span>${[a.section === 'brand' ? 'Brand' : '', a.task ? 'Approved work' : a.from_client ? 'Sent by you' : '', relTime(a.created_at)].filter(Boolean).join(' · ')}</span></span><span class="pf-s">${kb(a.size || 0)}</span></button></li>`;
+  return card('pabrand', html`${cardH('Your brand and files', `What ${orgShort()} uses for your work`)}
+    ${colors.length ? html`<div class="pswatches">${colors.map((a) => html`<button type="button" class="pswatch" data-pa="copy" data-v="${a.value}" title="Copy ${a.value}"><i style="background:${a.value}"></i><span><b>${a.title !== a.value ? a.title : a.value}</b>${a.title !== a.value ? html`<span>${a.value}</span>` : ''}</span></button>`)}</div>` : ''}
+    ${fonts.length ? html`<p class="pmuted">Fonts: ${fonts.map((a) => a.value).join(', ')}</p>` : ''}
+    ${files.length ? html`<ul class="pfiles-l">${files.map(fileBtn)}</ul>` : ''}
+    ${links.length ? html`<ul class="pfiles-l">${links.map((a) => html`<li data-k="as${a.id}"><a class="pfile wide" href="${a.url}" target="_blank" rel="noopener noreferrer"><span class="pf-i">${ix('link', 16)}</span><span><b>${a.title}</b><span>${a.host || a.url}</span></span></a></li>`)}</ul>` : ''}
+    ${notes.map((a) => html`<div class="pnote" data-k="as${a.id}"><b>${a.title}</b><p>${a.value}</p></div>`)}`);
+}
+function sendCard(assets) {
+  if (preview()) return '';
+  const sent = assets.sent || [];
+  return card('psend', html`${cardH(`Send ${orgShort()} files`)}
+    <button type="button" class="psenddrop" data-pa="as-send">${icon('file')}<b>Pick files to send</b><span class="pmuted">Logos, photos, documents, up to 50 MB each. They go straight to the team.</span></button>
+    ${sent.length ? html`<ul class="pfiles-l">${sent.map((a) => html`<li data-k="ms${a.id}"><button type="button" class="pfile wide" data-pa="open" data-url="${a.url_file}" data-name="${a.file_name}"><span class="pf-i">${icon('file')}</span><span><b>${a.file_name}</b><span>Sent ${relTime(a.created_at)}${a.note ? ` · ${a.note}` : ''}</span></span><span class="pf-s">${kb(a.size || 0)}</span></button></li>`)}</ul>` : ''}`);
+}
+function filesPage({ files, assets }) {
   const where = { chat: 'In the chat', approval: 'Approvals', task: 'On a task' };
-  return frame('files', { title: 'Files', sub: 'Everything shared on the project, from the chat, approvals and tasks.' },
-    card('pfiles', files.length ? html`<ul class="pfiles-l">${files.map((f) => html`<li><button type="button" class="pfile wide" data-pa="open" data-url="${f.url}" data-name="${f.name}"><span class="pf-i">${icon('file')}</span><span><b>${f.name}</b><span>${[f.by ? `${f.by}` : '', f.about ? `on ${f.about}` : '', relTime(f.at)].filter(Boolean).join(' · ')}</span></span><span class="pf-w">${where[f.where]}</span><span class="pf-s">${kb(f.size || 0)}</span></button></li>`)}</ul>` : emptyBox('No files yet', 'Files shared in the chat, sent for approval or added to tasks all show up here.')));
+  return frame('files', { title: 'Files', sub: 'Your brand, approved work, and everything shared on the project.' },
+    html`${brandCard(assets || {})}${sendCard(assets || {})}
+    ${card('pfiles', html`${(assets && (assets.assets || []).length) ? cardH('Shared on the project') : ''}${files.length ? html`<ul class="pfiles-l">${files.map((f) => html`<li><button type="button" class="pfile wide" data-pa="open" data-url="${f.url}" data-name="${f.name}"><span class="pf-i">${icon('file')}</span><span><b>${f.name}</b><span>${[f.by ? `${f.by}` : '', f.about ? `on ${f.about}` : '', relTime(f.at)].filter(Boolean).join(' · ')}</span></span><span class="pf-w">${where[f.where]}</span><span class="pf-s">${kb(f.size || 0)}</span></button></li>`)}</ul>` : emptyBox('No files yet', 'Files shared in the chat, sent for approval or added to tasks all show up here.')}`)}`);
+}
+function sendDialog() {
+  let picked = [];
+  const m = openModal({
+    title: `Send ${orgShort()} files`, submit: 'Send',
+    body: html`<div class="field"><label class="f" for="ps-f">Files</label><input id="ps-f" type="file" multiple data-ps-files></div>
+      <div class="field"><label class="f" for="ps-n">Anything we should know? (optional)</label><textarea id="ps-n" name="note" rows="3" maxlength="2000" placeholder="New listing photos. Use the garden one first."></textarea></div>
+      <p class="hint">Up to 50 MB each. The team is told when they arrive.</p>`,
+    onSubmit: async (fd) => {
+      if (!picked.length) { m.setError('Pick at least one file'); return false; }
+      const note = String(fd.get('note') || '').trim();
+      for (const f of picked) {
+        if (f.size > 50 * 1024 * 1024) throw new Error(`${f.name} is over 50 MB`);
+        const q = new URLSearchParams({ name: f.name, mime: f.type || '', ...(note ? { note } : {}) });
+        const res = await fetch(`/api/portal/projects/${pidNow()}/assets/upload?${q}`, { method: 'POST', headers: { Authorization: `Bearer ${getToken()}` }, body: f });
+        if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `${f.name} didn’t go through. Try again.`); }
+      }
+      toast(picked.length === 1 ? 'Sent. The team has it.' : `${picked.length} files sent. The team has them.`);
+      run();
+    },
+  });
+  m.form.addEventListener('change', (e) => { if (e.target.matches('[data-ps-files]')) picked = [...e.target.files]; });
 }
 
 // ================= running the pages =================
@@ -893,6 +937,8 @@ function onClick(e) {
   if (a === 'account') return accountDialog();
   if (a === 'retry') return run({ navigated: true });
   if (a === 'open') return openFile(b.dataset.url, b.dataset.name);
+  if (a === 'as-send') return sendDialog();
+  if (a === 'copy') { navigator.clipboard.writeText(b.dataset.v).then(() => toast(`Copied ${b.dataset.v}`), () => toast('Your browser blocked copying', true)); return; }
   if (a === 'csv') return download(`/api/portal/projects/${pidNow()}/hours.csv?month=${b.dataset.month}`, `hours-${b.dataset.month}.csv`).catch((err) => toast(errMsg(err), true));
   if (a === 'pdf') return download(`/api/portal/projects/${pidNow()}/statement.pdf?month=${b.dataset.month}`, `statement-${b.dataset.month}.pdf`).catch((err) => toast(errMsg(err), true));
   if (a === 'ics') return download(`/api/portal/meetings/${b.dataset.id}/ics`, 'call.ics').catch((err) => toast(errMsg(err), true));

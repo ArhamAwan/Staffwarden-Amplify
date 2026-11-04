@@ -376,3 +376,4 @@
   .tk *:hover,.tk *:active{transform:none !important}
   .tk-busy::before{animation:tkSpin 1.4s linear infinite !important}
 }
+.tk-saveas{white-space:nowrap}.tk-inas{white-space:nowrap}@media (max-width:760px){.tk-saveas span{display:none}}

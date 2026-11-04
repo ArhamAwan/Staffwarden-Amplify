@@ -108,6 +108,8 @@ module.exports = (ctx) => {
       audit(user, 'client.project_fresh', null, `${p.name}: history with ${old} deleted, now ${c.name}`);
     }
     db.prepare('UPDATE projects SET client_id = ?, portal_client_id = COALESCE(?, portal_client_id) WHERE id = ?').run(on ? c.id : null, on ? c.id : null, p.id);
+    // the project's own assets move to the client, so their other projects have them too
+    if (on && ctx.assetsToClient) ctx.assetsToClient(p.id, c.id);
     if (on && !db.prepare("SELECT 1 FROM chat_threads WHERE project_id = ? AND kind = 'group'").get(p.id)) db.prepare("INSERT INTO chat_threads (project_id, kind, created_at) VALUES (?, 'group', ?)").run(p.id, nowIso());
     audit(user, on ? 'client.project_added' : 'client.project_removed', null, `${p.name} → ${c.name}`);
     ctx.emit('projects');

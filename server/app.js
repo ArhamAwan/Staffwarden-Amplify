@@ -473,7 +473,7 @@ function createApp(opts = {}) {
   ctx.pnotify = createPortalNotify(ctx);
   ctx.changes = createChanges(ctx);
   ctx.payroll = createPayroll(ctx);
-  for (const f of ['auth', 'people', 'projects', 'tasks', 'performance', 'timer', 'capture', 'views', 'timeoff', 'admin', 'notifications', 'explain', 'hr', 'payroll', 'clients', 'portal', 'chat', 'portal2', 'team', 'shift', 'gifs', 'dev', 'leaderboard', 'shiftreport']) require(`./routes/${f}`)(ctx);
+  for (const f of ['auth', 'people', 'projects', 'tasks', 'performance', 'timer', 'capture', 'views', 'timeoff', 'admin', 'notifications', 'explain', 'hr', 'payroll', 'clients', 'portal', 'chat', 'portal2', 'team', 'shift', 'gifs', 'dev', 'leaderboard', 'shiftreport', 'assets']) require(`./routes/${f}`)(ctx);
 
   // ---------- server ----------
   // a file sent as it is (not as JSON), for uploads bigger than a JSON body allows

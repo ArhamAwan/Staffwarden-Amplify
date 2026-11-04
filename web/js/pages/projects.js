@@ -6,6 +6,7 @@ import { S, actions, empty, toast, errMsg, openModal, confirmBox, kpis, meter, t
 import { isMgr, loadPeople, select } from '../parts.js';
 import { boardHtml, listHtml, setTasks, dueChip, STATUS } from './tasks.js';
 import { loadClientTab, clientTab, mountClientTab } from './clients.js';
+import { loadAssets, assetsPanel, assetsAfter } from './assets.js';
 
 export const COLORS = ['#6B55D6', '#B45309', '#7C3AED', '#0F766E', '#BE185D', '#4F46E5', '#15803D', '#C2410C'];
 const PSTATUS = { active: 'Active', on_hold: 'On hold', done: 'Done' };
@@ -94,28 +95,30 @@ export const projectPage = {
     // the Client tab loads alongside the project (it knows the project from the last visit, if any)
     const known = cur && cur.id === id ? cur : null;
     const early = onClient && known ? loadClientTab(known, q).catch(() => null) : null;
-    const [p, tasks] = await Promise.all([get(`/api/projects/${id}`), get(`/api/tasks${qs({ assignee: 'all', project: id, done_days: 30 })}`), isMgr() ? loadPeople() : null]);
+    const [p, tasks, , assets] = await Promise.all([get(`/api/projects/${id}`), get(`/api/tasks${qs({ assignee: 'all', project: id, done_days: 30 })}`), isMgr() ? loadPeople() : null, q.get('tab') === 'assets' ? loadAssets({ project: id }) : null]);
     cur = p; setTasks(tasks);
     document.title = `${p.key} ${p.name} · Staffwarden`;
     const client = onClient && (p.client_id || isMgr()) ? ((early && (await early) && known.client_id === p.client_id ? await early : null) || await loadClientTab(p, q)) : null;
-    return { p, tasks, client };
+    return { p, tasks, client, assets };
   },
   after(view, data) {
     if (data && data.client) mountClientTab(view, data.client);
+    if (data && data.assets) assetsAfter(view);
     // on a narrow screen the tabs scroll sideways: keep the open one in sight
     const bar = view.querySelector('.page-h > .tabs'), t = bar && bar.querySelector('.tab[aria-current="page"]');
     if (t && bar.scrollWidth > bar.clientWidth) { const l = t.offsetLeft - bar.offsetLeft, r = l + t.offsetWidth; if (l < bar.scrollLeft || r > bar.scrollLeft + bar.clientWidth) bar.scrollLeft = Math.max(0, r - bar.clientWidth + 16); }
   },
-  render({ p, tasks, client }, q) {
-    const tab = ['board', 'list', 'members', 'client'].includes(q.get('tab')) && (q.get('tab') !== 'client' || client) ? q.get('tab') : 'overview';
+  render({ p, tasks, client, assets }, q) {
+    const tab = ['board', 'list', 'members', 'client', 'assets'].includes(q.get('tab')) && (q.get('tab') !== 'assets' || assets) && (q.get('tab') !== 'client' || client) ? q.get('tab') : 'overview';
     const whoF = q.get('who') || '';
     const shown = whoF ? tasks.filter((t) => (whoF === 'none' ? t.assignee_id == null : String(t.assignee_id) === whoF)) : tasks;
-    const tabs = [['overview', 'Overview'], ['board', 'Board'], ['list', 'List'], ['members', 'Members', p.members.length], ...(p.client_id || isMgr() ? [['client', p.client_id ? 'Client' : 'Share with a client']] : [])];
+    const tabs = [['overview', 'Overview'], ['board', 'Board'], ['list', 'List'], ['assets', 'Assets'], ['members', 'Members', p.members.length], ...(p.client_id || isMgr() ? [['client', p.client_id ? 'Client' : 'Share with a client']] : [])];
     const lead = p.lead ? p.lead.name : 'No lead';
     let body, sub = '';
     if (tab === 'overview') body = overview(p, tasks);
     else if (tab === 'members') body = membersTab(p);
     else if (tab === 'client') body = clientTab(p, client);
+    else if (tab === 'assets') body = assetsPanel(assets, { onProject: true });
     else {
       const filter = select({ q: 'who', value: whoF, label: 'Assignee', options: [['', 'Everyone'], ['none', 'Unassigned'], ...p.members.map((m) => [String(m.id), m.id === S.me.id ? 'Me' : m.name])] });
       sub = html`<div class="subbar">${filter}<span class="muted small">${plural(shown.filter((t) => t.status !== 'done').length, 'open task')}.${tab === 'board' ? ' Drag cards between columns; finished work goes to In review.' : ' Open a task to change it.'}</span></div>`;

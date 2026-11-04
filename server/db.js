@@ -3,7 +3,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 // Schema v2. Fresh installs and v1 databases go through the same path: the v1 tables are created
 // if missing, then migrate() adds everything v2 needs without touching existing rows.
-const SCHEMA_VERSION = 28;
+const SCHEMA_VERSION = 29;
 
 function hasColumn(db, table, col) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
@@ -83,6 +83,7 @@ function openDb(file = ':memory:') {
 function migrate(db) {
   const version = db.prepare('PRAGMA user_version').get().user_version;
   if (version >= SCHEMA_VERSION) return;
+  if (version === 28) return migrateV29(db);
   if (version === 27) return migrateV28(db);
   if (version === 26) return migrateV27(db);
   if (version === 25) return migrateV26(db);
@@ -1083,6 +1084,35 @@ function migrateV28(db) {
     addColumn(db, 'tasks', 'count_done', 'INTEGER');
     addColumn(db, 'tasks', 'count_unit', 'TEXT');
     addColumn(db, 'tasks', 'outcome', 'TEXT');
+    db.exec('PRAGMA user_version = 28');
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  migrateV29(db);
+}
+
+// Assets: everything for one client in one place (logos, colours, fonts, links, files, where logins are kept,
+// notes). They belong to the client; a project with no client keeps its own until it is linked to one.
+function migrateV29(db) {
+  db.exec('BEGIN');
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS assets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+      project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+      section TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL,
+      url TEXT, value TEXT, note TEXT,
+      file TEXT, file_name TEXT, mime TEXT, size INTEGER,
+      chain_id INTEGER, version INTEGER NOT NULL DEFAULT 1,
+      shared INTEGER NOT NULL DEFAULT 0,
+      source_task_id INTEGER, source_file_id INTEGER, source_chain_id INTEGER,
+      created_by INTEGER, client_user_id INTEGER, seen_at TEXT,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_assets_client ON assets(client_id, section)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_assets_project ON assets(project_id, section)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_assets_source ON assets(source_task_id)');
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {

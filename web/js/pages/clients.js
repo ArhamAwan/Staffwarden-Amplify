@@ -6,6 +6,7 @@ import { get, post, patch, put, del, fileBase64, fileUrl, liveFresh } from '../a
 import { S, actions, empty, toast, errMsg, openModal, confirmBox, qAttr } from '../ui.js';
 import { isMgr, zoneOptions, readZone } from '../parts.js';
 import { mountChat } from '../chat.js';
+import { loadAssets, assetsPanel, assetsAfter } from './assets.js';
 
 const SETTINGS = [
   ['tasks', 'Tasks', [['all', 'All tasks'], ['shared', 'Only shared tasks']], 'All: every task except ones marked team only. Shared: only tasks you mark as shared.'],
@@ -29,11 +30,13 @@ export const clientsPage = {
   title: 'Clients',
   async load(q) {
     const id = Number(q.get('id'));
-    const [list, projects, health, inbox] = await Promise.all([get('/api/clients?all=1'), get('/api/projects'), id ? null : get('/api/client-health').catch(() => ({})), id ? null : get('/api/client-inbox').catch(() => null)]);
-    return { list, projects, health, inbox, one: id ? await get(`/api/clients/${id}`) : null };
+    const onAssets = id && q.get('tab') === 'assets';
+    const [list, projects, health, inbox, assets] = await Promise.all([get('/api/clients?all=1'), get('/api/projects'), id ? null : get('/api/client-health').catch(() => ({})), id ? null : get('/api/client-inbox').catch(() => null), onAssets ? loadAssets({ client: id }) : null]);
+    return { list, projects, health, inbox, assets, one: id ? await get(`/api/clients/${id}`) : null };
   },
-  render({ list, projects, one, health, inbox }) {
-    if (one) return clientPage(one, projects);
+  after(view, data) { if (data && data.assets) assetsAfter(view); },
+  render({ list, projects, one, health, inbox, assets }) {
+    if (one) return clientPage(one, projects, assets);
     const active = list.filter((c) => !c.archived);
     if (active.length && health && Object.keys(health).length) return healthPage(list, health, inbox);
     return html`<div class="page-h"><div><h1>Clients</h1><p class="sub">${active.length ? `${plural(active.length, 'client')}. Give people at a client a sign-in, and they follow their projects in the client portal.` : 'Give your clients a sign-in to follow their projects.'}</p></div>
@@ -93,7 +96,7 @@ function clientBento(rows, health, inbox) {
 }
 actions['go-client'] = (el, e) => { if (e.target.closest('a')) return; S.navigate(`#/clients?id=${el.dataset.id}`); };
 
-function clientPage(c, projects) {
+function clientPage(c, projects, assets) {
   const s = c.settings;
   const linked = new Set(c.projects.map((p) => p.id));
   const free = projects.filter((p) => !linked.has(p.id) && !p.archived && !p.client_id);
@@ -101,8 +104,9 @@ function clientPage(c, projects) {
     ${choices ? html`<select data-cset="${k}" aria-label="${label}">${choices.map(([v, t]) => html`<option value="${v}" ${s[k] === v ? raw('selected') : ''}>${t}</option>`)}</select>`
       : html`<label class="switch"><input type="checkbox" data-cset="${k}" ${s[k] ? raw('checked') : ''} aria-label="${label}"><span></span></label>`}</div>`;
   return html`<div class="page-h"><a class="crumb" href="#/clients">${icon('left')}Clients</a><div><h1>${c.name}${c.archived ? html` <span class="tag off"><i></i>Archived</span>` : ''}</h1><p class="sub">${[c.city, c.tz_name ? `Their time: ${c.tz_name.split('/').pop().replace(/_/g, ' ')}` : '', c.retainer_hours ? `${c.retainer_hours}-hour monthly retainer` : 'No retainer'].filter(Boolean).join(' · ')}</p></div>
-    <div class="tools"><button class="btn" data-act="client-edit" data-id="${c.id}">${icon('gear')} Details</button><button class="btn primary" data-act="client-invite" data-id="${c.id}">${raw('+')} Invite someone</button></div></div>
-    <div class="cols"><div>
+    <div class="tools"><button class="btn" data-act="client-edit" data-id="${c.id}">${icon('gear')} Details</button><button class="btn primary" data-act="client-invite" data-id="${c.id}">${raw('+')} Invite someone</button></div>
+    <nav class="tabs" aria-label="Client">${[['', 'Overview'], ['assets', 'Assets']].map(([v, n]) => html`<button type="button" class="tab" data-act="q" ${raw(qAttr('tab', v))} aria-current="${(assets ? 'assets' : '') === v ? 'page' : 'false'}">${n}</button>`)}</nav></div>
+    ${assets ? assetsPanel(assets) : html`<div class="cols"><div>
       <section class="panel flush"><header><h2>People who can sign in</h2><span class="muted small">They sign in at this same address with their email</span></header>
         ${c.people.length ? html`<ul class="cl-people">${c.people.map((p) => html`<li data-k="u${p.id}" class="${p.active ? '' : 'off'}">${cav(p)}<div><b>${p.name}</b><span>${p.email}${p.title ? ` · ${p.title}` : ''}</span><span class="faint">${!p.active ? 'Turned off' : p.last_seen_at ? `Last here ${relTime(p.last_seen_at)}` : p.joined_at ? `Joined ${relTime(p.joined_at)}` : 'Hasn’t signed in yet'}</span></div>
           <label class="check small"><input type="checkbox" data-cperson="can_approve" data-id="${p.id}" ${p.can_approve ? raw('checked') : ''} ${p.active ? '' : raw('disabled')}><span>Can approve</span></label>
@@ -115,7 +119,7 @@ function clientPage(c, projects) {
       <section class="panel"><header><h2>What ${short(c.name)} sees</h2></header><div class="body"><div class="cs-list">${SETTINGS.map(switchRow)}</div>
         <p class="cl-never small">${icon('lock')} ${NEVER}</p></div></section>
       <section class="panel"><div class="body"><button class="btn ${c.archived ? '' : 'danger'} sm" data-act="client-archive" data-id="${c.id}" data-on="${c.archived ? '' : '1'}">${c.archived ? 'Bring back' : 'Archive this client'}</button><p class="hint">${c.archived ? 'Their people can sign in again.' : 'Nobody at the client can sign in while it is archived. Nothing is deleted.'}</p></div></section>
-    </div></div>`;
+    </div></div>`}`;
 }
 
 function clientForm(c) {
