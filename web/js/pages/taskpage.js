@@ -208,7 +208,7 @@ function nextStep(t, r) {
     tone = 'wait'; title = t.status === 'todo' ? `${doer} hasn’t started yet` : `${doer} is working on it`;
     if (r.approver || (r.manage && !t.needs_review)) acts.push(btn('tk-stage', html`${I('check', 16, 2.6)}Mark done`, '', 'data-v="done"'));
   }
-  return html`<section class="tk-next tk-n-${tone}" aria-label="What happens next">
+  return html`<section class="tk-next tk-n-${tone}" data-k="next-${tone}-${t.status}-${t.review_rounds}" aria-label="What happens next">
     <div class="tk-nt"><b>${title}</b>${text ? html`<span>${text}</span>` : ''}</div>
     ${acts.length ? html`<div class="tk-acts">${acts}</div>` : ''}
   </section>`;

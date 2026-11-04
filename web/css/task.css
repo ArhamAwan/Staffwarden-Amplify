@@ -330,32 +330,49 @@
 .tk-pathm b{color:#fff}
 @media (max-width:760px){.tk-path{display:none}.tk-pathm{display:block}.tk[data-m="talk"] .tk-pathm{display:none}}
 
-/* ---------- feel: instant feedback and light motion ---------- */
-@keyframes tkIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-@keyframes tkPop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
-@keyframes tkDrop{0%{opacity:0;transform:translateY(-10px) scale(.6)}70%{opacity:1;transform:translateY(1px) scale(1.06)}100%{transform:none}}
+/* ---------- feel: instant feedback and motion ---------- */
+@keyframes tkIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes tkPop{0%{opacity:0;transform:scale(.9) translateY(-4px)}70%{opacity:1;transform:scale(1.02)}100%{transform:none}}
+@keyframes tkDrop{0%{opacity:0;transform:translateY(-18px) scale(.5)}60%{opacity:1;transform:translateY(2px) scale(1.12)}80%{transform:translateY(-1px) scale(.97)}100%{transform:none}}
 @keyframes tkSpin{to{transform:rotate(360deg)}}
 @keyframes tkShimmer{from{background-position:-200% 0}to{background-position:200% 0}}
-@keyframes tkTick{0%{transform:scale(.8)}60%{transform:scale(1.15)}100%{transform:none}}
-.tk .tk-btn,.tk .tk-tab,.tk .tk-ftab,.tk .tk-ver-b,.tk .tk-seg button,.tk .tk-mtabs button,.tk .tk-mi,.tk .tk-lnk,.tk .tk-morebtn,.tk .tk-pinrow{transition:background-color .15s ease,border-color .15s ease,color .15s ease,transform .1s ease,opacity .15s ease}
-.tk .tk-btn:active:not(:disabled),.tk .tk-ftab:active,.tk .tk-mark:active{transform:scale(.97)}
-.tk .tk-btn:hover:not(:disabled){filter:brightness(1.08)}
+@keyframes tkTick{0%{transform:scale(.7)}55%{transform:scale(1.25)}100%{transform:none}}
+@keyframes tkFlash{0%{box-shadow:0 0 0 0 rgba(155,123,255,.55)}100%{box-shadow:0 0 0 14px rgba(155,123,255,0)}}
+@keyframes tkFade{from{opacity:0}to{opacity:1}}
+/* buttons and tabs answer the pointer */
+.tk .tk-btn,.tk .tk-tab,.tk .tk-ftab,.tk .tk-ver-b,.tk .tk-seg button,.tk .tk-mtabs button,.tk .tk-mi,.tk .tk-lnk,.tk .tk-morebtn,.tk .tk-pinrow,.tk .tk-item,.tk .tk-pinit,.tk .tk-chip,.tk .tk-mark,.tk .tk-st{transition:background-color .2s ease,border-color .2s ease,color .2s ease,box-shadow .2s ease,transform .15s ease,opacity .2s ease,filter .15s ease}
+.tk .tk-btn:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.1);box-shadow:0 8px 18px -8px rgba(0,0,0,.6)}
+.tk .tk-btn:active:not(:disabled),.tk .tk-ftab:active,.tk .tk-tab:active,.tk .tk-ver-b:active{transform:scale(.96);transition-duration:.06s}
+.tk .tk-ftab:hover,.tk .tk-tab:hover,.tk .tk-ver-b:hover{transform:translateY(-1px)}
+.tk .tk-item:hover,.tk .tk-pinit:hover{transform:translateY(-1px);border-color:rgba(255,255,255,.2)}
+.tk .tk-mark:hover{transform:scale(1.15)}
+.tk .tk-mi:hover{transform:translateX(2px)}
+/* working on it */
 .tk-busy{pointer-events:none;opacity:.8}
 .tk-busy > svg{display:none}
 .tk-busy::before{content:'';width:14px;height:14px;box-sizing:border-box;border-radius:99px;border:2px solid currentColor;border-top-color:transparent;animation:tkSpin .7s linear infinite;flex:none}
-.tk-pending{opacity:.6}
-.tk-pop,.tk .tk-menu{animation:tkPop .14s ease-out;transform-origin:top left}
-.tk .tk-mark{animation:tkDrop .32s ease-out}
-.tk-feed > li,.tk-list > li,.tk-checks > li{animation:tkIn .22s ease-out}
-.tk-next,.tk-viewer,.tk-card,.tk-tile{animation:tkIn .25s ease-out}
-.tk-next{transition:background .3s ease,border-color .3s ease}
-.tk-bar i{transition:width .35s ease}
-.tk-cntn b{transition:color .2s}
-.tk input[type="checkbox"]:checked{animation:tkTick .22s ease-out}
-.tk-stage .tk-shot:not([src]),.tk-thumbimg:not([src]),.tk-slider .tk-shot:not([src]){background:linear-gradient(90deg,rgba(255,255,255,.04) 25%,rgba(255,255,255,.1) 50%,rgba(255,255,255,.04) 75%);background-size:200% 100%;animation:tkShimmer 1.2s linear infinite;min-width:min(480px,100%);min-height:280px}
+.tk-pending{opacity:.55}
+/* things arriving */
+.tk-pop,.tk .tk-menu{animation:tkPop .22s cubic-bezier(.2,.8,.3,1.2);transform-origin:top center}
+.tk .tk-mark{animation:tkDrop .45s cubic-bezier(.2,.8,.3,1)}
+.tk-feed > li,.tk-list > li,.tk-checks > li{animation:tkIn .3s ease-out backwards}
+.tk-feed > li:nth-last-child(1){animation-delay:.04s}
+.tk-main > *{animation:tkIn .38s ease-out backwards}
+.tk-main > :nth-child(2){animation-delay:.05s}.tk-main > :nth-child(3){animation-delay:.1s}.tk-main > :nth-child(4){animation-delay:.15s}.tk-main > :nth-child(5){animation-delay:.2s}.tk-main > :nth-child(n+6){animation-delay:.25s}
+.tk-rail{animation:tkIn .4s .1s ease-out backwards}
+.tk-next{animation:tkIn .38s ease-out backwards,tkFlash 1s .3s ease-out}
+.tk-next{transition:background .35s ease,border-color .35s ease}
+.tk-pinit,.tk-item{transition:background .35s ease,border-color .35s ease,transform .15s ease}
+.tk-bar i{transition:width .45s cubic-bezier(.2,.8,.3,1)}
+.tk input[type="checkbox"]:checked{animation:tkTick .28s ease-out}
+.tk-check{transition:color .25s ease,opacity .25s ease}
+.tk-stage .tk-shot:not([src]),.tk-thumbimg:not([src]),.tk-slider .tk-shot:not([src]){background:linear-gradient(90deg,rgba(255,255,255,.04) 25%,rgba(255,255,255,.12) 50%,rgba(255,255,255,.04) 75%);background-size:200% 100%;animation:tkShimmer 1.2s linear infinite;min-width:min(480px,100%);min-height:280px}
 .tk-thumbimg:not([src]){min-width:0;min-height:0}
-.tk-shot,.tk-thumbimg{transition:opacity .2s ease}
+.tk-shot[src],.tk-thumbimg[src]{animation:tkFade .35s ease-out}
+/* a device set to reduce motion still gets gentle fades, without anything moving */
 @media (prefers-reduced-motion:reduce){
-  .tk *,.tk *::before,.tk *::after{animation:none !important;transition:none !important}
+  .tk *:not(.tk-busy){animation-name:tkFade !important}
+  .tk .tk-mark,.tk input[type="checkbox"]:checked{animation:none !important}
+  .tk *:hover,.tk *:active{transform:none !important}
   .tk-busy::before{animation:tkSpin 1.4s linear infinite !important}
 }
