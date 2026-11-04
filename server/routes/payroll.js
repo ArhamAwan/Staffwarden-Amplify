@@ -4,6 +4,7 @@
 // locks it and sends every payslip; marking it paid records the bank transfer. A mistake found later is
 // fixed with a correction on the next month, so the record always shows what was paid.
 const { need, str, optStr, int, isoDate } = require('../lib/http');
+const X = require('../lib/xlsx');
 
 module.exports = (ctx) => {
   const { db, cfg, route, emit, audit, isHR, needHR, nowIso, T, saveSetting } = ctx;
@@ -267,6 +268,105 @@ module.exports = (ctx) => {
     }
     audit(user, 'payroll.register', null, r.period);
     return { raw: csv(rows), type: 'text/csv; charset=utf-8', headers: { 'Content-Disposition': `attachment; filename="payroll-${r.period}.csv"`, 'Cache-Control': 'no-store' } };
+  });
+
+  // ---- the same two, as Excel files laid out for people to read (the CSV stays for bank uploads) ----
+  const human = (d) => (d ? new Date(`${String(d).slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
+  const curSign = (c) => (c === 'USD' ? '$' : 'Rs');
+  const xlsxOut = (buf, name) => ({ raw: buf, type: X.XLSX_TYPE, headers: { 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' } });
+  const approvedBy = (r) => `Approved by ${nameOf(r.approved_by) || 'the owner'}${r.approved_at ? ` on ${human(r.approved_at)}` : ''}`;
+  const statusLine = (r) => (r.status === 'paid' ? `Paid. ${approvedBy(r)}` : P().LOCKED(r.status) ? approvedBy(r) : 'Draft, not approved yet. Numbers can still change');
+  // an IBAN in groups of four, the way banks print it
+  const ibanText = (v) => String(v || '').replace(/\s+/g, '').toUpperCase().replace(/(.{4})(?=.)/g, '$1 ');
+  const slipsOf = (r) => db.prepare('SELECT p.*, u.name, u.title FROM payslips p JOIN users u ON u.id = p.user_id WHERE p.run_id = ? ORDER BY u.name').all(r.id);
+
+  route('GET', '/api/payroll/runs/:id/bank.xlsx', ({ user, params }) => {
+    needHR(user);
+    const r = runOf(params.id);
+    need(P().LOCKED(r.status), 409, 'Approve the month first');
+    const name = P().periodName(r.period), win = ctx.payWindow(r.period);
+    const on = [], off = [];
+    for (const s of slipsOf(r)) {
+      const h = P().recordOf(s.user_id);
+      if (s.by_hand) off.push([s, 'Paid by hand']);
+      else if (!h || !h.iban) off.push([s, 'No bank details']);
+      else on.push([s, h]);
+    }
+    const rows = [
+      [{ v: `Salary transfers, ${name}`, s: 'title' }],
+      [{ v: `${cfg.orgName || 'Staffwarden'} · to be paid ${human(win.from)} to ${human(win.by)}`, s: 'sub' }],
+      [{ v: statusLine(r), s: 'sub' }],
+      [],
+    ];
+    const head = rows.length;
+    rows.push([{ v: '#', s: 'headC' }, { v: 'Name', s: 'head' }, { v: 'Account title', s: 'head' }, { v: 'Bank', s: 'head' }, { v: 'IBAN', s: 'head' }, { v: 'Amount', s: 'headR' }, { v: 'Currency', s: 'headC' }, { v: 'Reference', s: 'head' }, { v: 'Paid on', s: 'head' }]);
+    on.forEach(([s, h], i) => rows.push([{ v: i + 1, s: 'center' }, s.name, h.account_title || s.name, h.bank_name || '', { v: ibanText(h.iban), s: 'mono' }, { v: s.net, s: 'money' }, { v: s.currency, s: 'center' }, `Salary ${name}`, s.paid_on ? human(s.paid_on) : '']));
+    const last = rows.length - 1;
+    // a total for each currency
+    const curs = [...new Set(on.map(([s]) => s.currency))];
+    for (const c of curs.length ? curs : ['PKR']) {
+      const list = on.filter(([s]) => s.currency === c);
+      rows.push([{ v: '', s: 'total' }, { v: `Total, ${list.length} ${list.length === 1 ? 'transfer' : 'transfers'}`, s: 'total' }, { v: '', s: 'total' }, { v: '', s: 'total' }, { v: '', s: 'total' }, { v: list.reduce((n, [s]) => n + s.net, 0), s: 'totalMoney' }, { v: c, s: 'totalC' }, { v: '', s: 'total' }, { v: '', s: 'total' }]);
+    }
+    if (off.length) {
+      rows.push([], [{ v: 'Not on this sheet', s: 'bold' }]);
+      for (const [s, why] of off) rows.push(['', s.name, { v: why, s: 'muted' }, '', '', { v: s.net, s: 'mutedMoney' }, { v: s.currency, s: 'mutedC' }]);
+    }
+    rows.push([], [{ v: `Downloaded from Staffwarden by ${user.name} on ${human(ctx.calc.companyToday())}. Check each IBAN against the bank before sending.`, s: 'sub' }]);
+    audit(user, 'payroll.bank_sheet', null, `${r.period} (Excel)`);
+    return xlsxOut(X.workbook([{ name: `Bank sheet ${r.period}`, cols: [6, 26, 26, 18, 34, 15, 11, 24, 13], rows, freeze: head + 1, filter: { row: head, last, from: 0, to: 8 }, heights: { 0: 26, [head]: 24 }, landscape: true }], { title: `Salary transfers, ${name}` }), `bank-sheet-${r.period}.xlsx`);
+  });
+
+  route('GET', '/api/payroll/runs/:id/register.xlsx', ({ user, params }) => {
+    needHR(user);
+    const r = runOf(params.id);
+    const name = P().periodName(r.period), win = ctx.payWindow(r.period);
+    const slips = slipsOf(r);
+    const intro = (title) => [[{ v: title, s: 'title' }], [{ v: `${cfg.orgName || 'Staffwarden'} · ${name}, paid ${human(win.from)} to ${human(win.by)}`, s: 'sub' }], [{ v: statusLine(r), s: 'sub' }], []];
+
+    // 1. one row a person
+    const H = ['Name', 'Role', 'Days worked', 'Base salary', 'Additions', 'Expenses repaid', 'Gross pay', 'Deductions', 'Income tax', 'Net pay', 'Company contributions', 'Currency', 'Bank', 'Paid on'];
+    const MONEY = new Set([3, 4, 5, 6, 7, 8, 9, 10]);
+    const sum = [];
+    for (const s of slips) {
+      const lines = JSON.parse(s.lines).filter((l) => l.counted), f = JSON.parse(s.facts || '{}'), h = P().recordOf(s.user_id);
+      const base = lines.filter((l) => l.key === 'base').reduce((n, l) => n + l.amount, 0);
+      const exp = lines.filter((l) => String(l.key).startsWith('exp:')).reduce((n, l) => n + l.amount, 0);
+      const add = lines.filter((l) => l.amount > 0 && l.key !== 'base' && !String(l.key).startsWith('exp:')).reduce((n, l) => n + l.amount, 0);
+      const ded = -lines.filter((l) => l.amount < 0).reduce((n, l) => n + l.amount, 0);
+      const er = JSON.parse(s.employer || '[]').reduce((n, e) => n + e.amount, 0);
+      const bank = s.by_hand ? 'Paid by hand' : h && h.iban ? `${h.bank_name || 'Bank'} ···${String(h.iban).replace(/\s/g, '').slice(-4)}` : 'No bank details';
+      sum.push({ cur: s.currency, row: [s.name, s.title || '', f.workdays ? `${f.present ?? f.employed_days} of ${f.workdays}` : '', base, add, exp, s.gross, ded, s.tax, s.net, er, s.currency, bank, s.paid_on ? human(s.paid_on) : ''] });
+    }
+    const rows1 = intro(`Payroll register, ${name}`);
+    const head1 = rows1.length;
+    rows1.push(H.map((v, i) => ({ v, s: MONEY.has(i) ? 'headR' : i === 11 || i === 2 ? 'headC' : 'head' })));
+    for (const x of sum) rows1.push(x.row.map((v, i) => (MONEY.has(i) ? { v, s: 'money' } : i === 11 || i === 2 ? { v, s: 'center' } : v)));
+    const last1 = rows1.length - 1;
+    for (const c of [...new Set(sum.map((x) => x.cur))]) {
+      const list = sum.filter((x) => x.cur === c);
+      rows1.push(H.map((_, i) => (i === 0 ? { v: `Total (${curSign(c)}), ${list.length} ${list.length === 1 ? 'person' : 'people'}`, s: 'total' } : MONEY.has(i) ? { v: list.reduce((n, x) => n + x.row[i], 0), s: 'totalMoney' } : i === 11 ? { v: c, s: 'totalC' } : { v: '', s: 'total' })));
+    }
+    rows1.push([], [{ v: 'Gross pay = base + additions + expenses. Net pay = gross − deductions − income tax. Company contributions (like EOBI) are paid by the company on top and are not in net pay.', s: 'sub' }]);
+    rows1.push([{ v: `Downloaded from Staffwarden by ${user.name} on ${human(ctx.calc.companyToday())}.`, s: 'sub' }]);
+
+    // 2. every line, as it appears on the payslips
+    const rows2 = intro(`Payroll lines, ${name}`);
+    const head2 = rows2.length;
+    rows2.push([{ v: 'Name', s: 'head' }, { v: 'Line', s: 'head' }, { v: 'Type', s: 'head' }, { v: 'Amount', s: 'headR' }, { v: 'Currency', s: 'headC' }, { v: 'Where it came from', s: 'head' }]);
+    const TYPE = { base: 'Salary', allowance: 'Allowance', overtime: 'Overtime', bonus: 'Bonus', commission: 'Commission', correction: 'Correction', deduction: 'Deduction', advance: 'Advance repayment', expense: 'Expense', leaving: 'Leaving', attendance: 'Attendance', contribution: 'Contribution', item: 'Payroll line' };
+    for (const s of slips) {
+      for (const l of JSON.parse(s.lines)) rows2.push([s.name, l.label + (l.counted ? '' : ' (shown only, not counted)'), TYPE[l.kind] || (l.amount < 0 ? 'Deduction' : 'Addition'), { v: l.counted ? l.amount : 0, s: l.counted ? 'money' : 'mutedMoney' }, { v: s.currency, s: 'center' }, { v: l.source || '', s: 'muted' }]);
+      if (s.tax) rows2.push([s.name, 'Income tax', 'Tax', { v: -s.tax, s: 'money' }, { v: s.currency, s: 'center' }, { v: JSON.parse(s.facts || '{}').tax_note || '', s: 'muted' }]);
+      for (const e of JSON.parse(s.employer || '[]')) rows2.push([s.name, `${e.label} (company pays)`, 'Company contribution', { v: e.amount, s: 'mutedMoney' }, { v: s.currency, s: 'center' }, { v: e.source || '', s: 'muted' }]);
+      rows2.push([{ v: s.name, s: 'net' }, { v: 'Net pay', s: 'net' }, { v: '', s: 'net' }, { v: s.net, s: 'netMoney' }, { v: s.currency, s: 'netC' }, { v: '', s: 'net' }]);
+    }
+    const last2 = rows2.length - 1;
+    audit(user, 'payroll.register', null, `${r.period} (Excel)`);
+    return xlsxOut(X.workbook([
+      { name: 'Summary', cols: [26, 28, 11, 13, 13, 13, 13, 13, 13, 14, 15, 10, 22, 13], rows: rows1, freeze: head1 + 1, filter: { row: head1, last: last1, from: 0, to: 13 }, heights: { 0: 26, [head1]: 34 }, landscape: true },
+      { name: 'Every line', cols: [26, 36, 20, 14, 10, 62], rows: rows2, freeze: head2 + 1, filter: { row: head2, last: last2, from: 0, to: 5 }, heights: { 0: 26, [head2]: 24 }, landscape: true },
+    ], { title: `Payroll register, ${name}` }), `payroll-register-${r.period}.xlsx`);
   });
 
   // ---- payslips and questions ----

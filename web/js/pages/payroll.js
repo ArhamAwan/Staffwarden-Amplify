@@ -58,7 +58,7 @@ function runView(ov, d) {
   const r = d.run, s = r.status, pk = d.totals.PKR, usd = d.totals.USD;
   const tools = s === 'draft' ? html`<button class="btn" data-act="pr-refresh" data-id="${r.id}">${icon('refresh')} Work it out again</button><button class="btn primary" data-act="pr-submit" data-id="${r.id}">Send for approval</button>`
     : s === 'review' ? html`<button class="btn" data-act="pr-refresh" data-id="${r.id}">${icon('refresh')} Work it out again</button>${d.can_approve ? html`<button class="btn primary" data-act="pr-approve" data-id="${r.id}">${icon('check')} Approve ${periodLabel(r.period).split(' ')[0]}</button>` : ''}`
-    : html`<button class="btn" data-act="pr-dl" data-id="${r.id}" data-kind="bank" data-period="${r.period}">${icon('download')} Bank sheet</button><button class="btn" data-act="pr-dl" data-id="${r.id}" data-kind="register" data-period="${r.period}">${icon('file')} Register for accountant</button>${s === 'approved' ? html`<button class="btn primary" data-act="pr-paid" data-id="${r.id}" data-left="${d.slips.length - r.paid_count}">${r.paid_count ? `Mark the other ${d.slips.length - r.paid_count} paid` : 'Mark everyone paid'}</button>` : html`<button class="btn primary" data-act="pr-start" data-period="${nextPeriod(ov)}">${icon('plus')} Start ${periodLabel(nextPeriod(ov)).split(' ')[0]}</button>`}`;
+    : html`<button class="btn" data-act="pr-dl" data-id="${r.id}" data-kind="bank" data-period="${r.period}">${icon('download')} Bank sheet</button><button class="btn" data-act="pr-dl" data-id="${r.id}" data-kind="register" data-period="${r.period}">${icon('file')} Register for accountant</button><button class="linkbtn small pr-csv" data-act="pr-dl" data-id="${r.id}" data-kind="bank" data-fmt="csv" data-period="${r.period}" title="The plain file some banks ask for when you upload transfers">CSV for bank upload</button>${s === 'approved' ? html`<button class="btn primary" data-act="pr-paid" data-id="${r.id}" data-left="${d.slips.length - r.paid_count}">${r.paid_count ? `Mark the other ${d.slips.length - r.paid_count} paid` : 'Mark everyone paid'}</button>` : html`<button class="btn primary" data-act="pr-start" data-period="${nextPeriod(ov)}">${icon('plus')} Start ${periodLabel(nextPeriod(ov)).split(' ')[0]}</button>`}`;
   const who = s === 'draft' ? `Started by ${r.created_by_name || 'HR'} ${relTime(r.created_at)}. People do not see it until you send it for approval.`
     : s === 'review' ? (d.can_approve ? `Sent by ${r.submitted_by_name || 'HR'} ${relTime(r.submitted_at)}. Everyone can see and ask about their payslip.` : `Sent for approval ${relTime(r.submitted_at)}. Waiting for the owner. Everyone can see and ask about their payslip.`)
     : s === 'approved' ? `Approved by ${r.approved_by_name} ${relTime(r.approved_at)}. ${r.paid_count} of ${d.slips.length} paid. Pay each person by ${dayShort(r.pay_by)} and mark them paid as you go.`
@@ -208,7 +208,11 @@ actions['pr-remove'] = async (el) => {
   if (!(await confirmBox({ title: `Remove the ${el.dataset.period} draft?`, message: 'What HR added to it goes too. Nobody has seen it yet.', confirm: 'Remove', danger: true }))) return;
   try { await del(`/api/payroll/runs/${el.dataset.id}`); toast('Removed'); S.navigate('#/payroll?tab=history'); } catch (e) { toast(errMsg(e), true); }
 };
-actions['pr-dl'] = act(async (el) => { await download(`/api/payroll/runs/${el.dataset.id}/${el.dataset.kind}.csv`, `${el.dataset.kind === 'bank' ? 'bank-sheet' : 'payroll'}-${el.dataset.period}.csv`); });
+// Excel files laid out to read and print; the plain CSV only for a bank's upload
+actions['pr-dl'] = act(async (el) => {
+  const fmt = el.dataset.fmt || 'xlsx', k = el.dataset.kind;
+  await download(`/api/payroll/runs/${el.dataset.id}/${k}.${fmt}`, `${k === 'bank' ? 'bank-sheet' : fmt === 'csv' ? 'payroll' : 'payroll-register'}-${el.dataset.period}.${fmt}`);
+});
 actions['pr-approve'] = act(async (el) => {
   const d = await get(`/api/payroll/runs/${el.dataset.id}`);
   const pk = d.totals.PKR, usd = d.totals.USD;

@@ -237,6 +237,31 @@ test('income tax can be switched off for the company or for one person', async (
   } finally { await e.close(); }
 });
 
+test('the bank sheet and the register download as Excel files', async () => {
+  const e = await makeEnv();
+  try {
+    const p = await e.person('lina', 'Lina Butt');
+    e.app.db.prepare("INSERT OR REPLACE INTO hr_records (user_id, joined_on, bank_name, account_title, iban) VALUES (?, '2026-01-01', 'Meezan Bank', 'Lina Butt', 'PK36MEZN0000001122334455')").run(p.id);
+    await e.ok('PUT', `/api/hr/people/${p.id}/pay`, { token: e.tokens.owner, body: { base: 120000, currency: 'PKR', tax_mode: 'pk', effective_from: '2026-09-01' } });
+    const run = (await e.ok('POST', '/api/payroll/runs', { token: e.tokens.owner, body: { period: '2026-10' } })).run;
+    const get = (k) => e.api('GET', `/api/payroll/runs/${run.id}/${k}`, { token: e.tokens.owner, raw: true });
+    const reg = await get('register.xlsx');
+    assert.equal(reg.status, 200);
+    const zlib = require('node:zlib');
+    // the sheet inside the zip says who and how much
+    const unzip = (buf, name) => { let i = 0; while ((i = buf.indexOf(Buffer.from([0x50, 0x4b, 3, 4]), i)) >= 0) { const n = buf.readUInt16LE(i + 26), x = buf.readUInt16LE(i + 28), sz = buf.readUInt32LE(i + 18), nm = buf.slice(i + 30, i + 30 + n).toString(); if (nm === name) return zlib.inflateRawSync(buf.slice(i + 30 + n + x, i + 30 + n + x + sz)).toString(); i += 4; } return null; };
+    const body = reg.data;
+    assert.match(unzip(body, 'xl/worksheets/sheet1.xml'), /Lina Butt[\s\S]*120000/);
+    assert.match(unzip(body, 'xl/workbook.xml'), /Summary[\s\S]*Every line/);
+    assert.equal((await get('bank.xlsx')).status, 409, 'the bank sheet waits for approval');
+    e.app.db.prepare("UPDATE pay_runs SET status = 'approved' WHERE id = ?").run(run.id);
+    const bank = await get('bank.xlsx');
+    assert.equal(bank.status, 200);
+    assert.match(unzip(bank.data, 'xl/worksheets/sheet1.xml'), /PK36 MEZN 0000 0011 2233 4455/);
+    assert.equal((await get('bank.csv')).status, 200, 'the CSV is still there for bank uploads');
+  } finally { await e.close(); }
+});
+
 test('"All good" to a quiet hour isn’t asked again a minute later', async () => {
   const e = await makeEnv();
   try {
