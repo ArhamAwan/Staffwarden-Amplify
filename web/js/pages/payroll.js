@@ -111,11 +111,25 @@ function runView(ov, d) {
       <div class="pr-stepline">${stepper(s)}<span>${who}</span></div>
       ${hero}
       ${ptabs('month')}</div>
+    ${nudge()}
     <section class="panel flush"><header><h2>Everyone this month</h2><span class="muted small">Open a person to see every line and where it came from</span></header><div class="body">
       ${d.slips.length ? html`<div class="tbl-wrap"><table class="t prt"><thead><tr><th>Person</th><th class="r">Base</th><th>This month</th><th class="r">Income tax</th><th class="r">Net pay</th>${paidCol ? html`<th>Paid</th>` : ''}<th>Check</th>${canEdit ? html`<th><span class="sr">Leave off</span></th>` : ''}</tr></thead><tbody>${rows}${totalRow}</tbody></table></div>` : empty('Nobody on this month', 'Set pay for people on People and pay, then work it out again.')}</div></section>
     ${offList}
     ${s === 'draft' ? html`<p class="small muted">${icon('lock')} Only HR and the owner see this page. Every change is in the audit log. <button class="linkbtn danger" data-act="pr-remove" data-id="${r.id}" data-period="${periodLabel(r.period)}">Remove this draft</button></p>` : html`<p class="small muted">${icon('lock')} Only HR and the owner see this page. Every change is in the audit log.${S.me.role === 'owner' && s === 'approved' ? html` <button class="linkbtn" data-act="pr-reopen" data-id="${r.id}" data-period="${periodLabel(r.period)}" data-paid="${r.paid_count}">Reopen to change it</button>` : ''}${S.me.role === 'owner' || S.me.is_dev ? html` <button class="linkbtn danger" data-act="pr-remove-any" data-id="${r.id}" data-period="${periodLabel(r.period)}" data-status="${s}">Remove this month</button>` : ''}</p>`}`;
 }
+
+// payslips going out without the company's logo or address: a reminder, for the owner, until it's done
+// or put off (remembered in this browser)
+const NUDGE_KEY = 'sw.co-nudge-off';
+function nudge() {
+  const co = (S.settings && S.settings.company) || {};
+  if (S.me.role !== 'owner' || co.logo || co.details) return '';
+  try { if (localStorage.getItem(NUDGE_KEY)) return ''; } catch { /* no storage: show it */ }
+  return html`<section class="co-nudge" data-k="co-nudge" aria-label="Company details"><span class="co-nudge-pic" aria-hidden="true"><i></i><i style="width:76px"></i><i style="width:60px"></i><i style="width:84px"></i></span>
+    <div class="co-nudge-t"><b>Payslips go out with just your company’s name</b><span>Add your logo, address and tax number so payslips look like they came from you. Certificates, client statements and the client portal get them too.</span></div>
+    <div class="co-nudge-a"><button type="button" class="btn quiet" data-act="co-nudge-off">Not now</button><a class="btn primary" href="#/settings">Add company details</a></div></section>`;
+}
+actions['co-nudge-off'] = (el) => { try { localStorage.setItem(NUDGE_KEY, '1'); } catch { /* fine */ } const n = el.closest('.co-nudge'); if (n) n.remove(); };
 
 function firstView(ov) {
   const period = nextPeriod(ov) || addMonths(companyToday().slice(0, 7), -1);

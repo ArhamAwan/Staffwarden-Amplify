@@ -3,7 +3,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 // Schema v2. Fresh installs and v1 databases go through the same path: the v1 tables are created
 // if missing, then migrate() adds everything v2 needs without touching existing rows.
-const SCHEMA_VERSION = 30;
+const SCHEMA_VERSION = 31;
 
 function hasColumn(db, table, col) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
@@ -83,6 +83,7 @@ function openDb(file = ':memory:') {
 function migrate(db) {
   const version = db.prepare('PRAGMA user_version').get().user_version;
   if (version >= SCHEMA_VERSION) return;
+  if (version === 30) return migrateV31(db);
   if (version === 29) return migrateV30(db);
   if (version === 28) return migrateV29(db);
   if (version === 27) return migrateV28(db);
@@ -1146,6 +1147,21 @@ function migrateV30(db) {
       user_id INTEGER NOT NULL, line_key TEXT NOT NULL,
       reason TEXT NOT NULL, by_id INTEGER, created_at TEXT NOT NULL,
       UNIQUE (run_id, user_id, line_key))`);
+    db.exec('PRAGMA user_version = 30');
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  migrateV31(db);
+}
+
+// Company branding: when a month is approved, the company's details at that moment are kept with it, so
+// payslips already sent keep the logo, address and signature they went out with.
+function migrateV31(db) {
+  db.exec('BEGIN');
+  try {
+    addColumn(db, 'pay_runs', 'company', 'TEXT');
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {

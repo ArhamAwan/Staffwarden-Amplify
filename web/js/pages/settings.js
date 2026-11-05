@@ -4,6 +4,7 @@ const breakLen = (a, b) => (((hm(b) - hm(a)) % 1440) + 1440) % 1440;
 import { get, post, put } from '../api.js';
 import { S, actions, empty, toast, errMsg, confirmBox, qAttr } from '../ui.js';
 import { zoneOptions } from '../parts.js';
+import { companyBlock, companyAfter, loadCompany } from './company.js';
 
 const DAYS = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [0, 'Sun']];
 const bytes = (n) => (n > 1e9 ? (n / 1e9).toFixed(2) + ' GB' : n > 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1e3)) + ' KB');
@@ -11,7 +12,7 @@ const bytes = (n) => (n > 1e9 ? (n / 1e9).toFixed(2) + ' GB' : n > 1e6 ? (n / 1e
 // The settings page: a list of sections on the left (each with what it is set to now), the sections on
 // the right as plain rows (what it is, then the control), a picture of the shift that follows the times
 // as they are typed, and a save bar that only appears once something has changed.
-const SECTIONS = [['company', 'Company'], ['hours', 'Working hours'], ['shots', 'Screenshots'], ['privacy', 'Private windows'], ['tasks', 'Tasks'], ['open', 'Transparency'], ['live', 'Live status'], ['reports', 'Report email'], ['storage', 'Storage'], ['chat', 'Chat']];
+const SECTIONS = [['company', 'Your company'], ['hours', 'Working hours'], ['shots', 'Screenshots'], ['privacy', 'Private windows'], ['tasks', 'Tasks'], ['open', 'Transparency'], ['live', 'Live status'], ['reports', 'Report email'], ['storage', 'Storage'], ['chat', 'Chat']];
 const ALWAYS = ['Messaging apps (WhatsApp, Telegram, Signal…)', 'Password managers', 'Private and incognito windows', 'Banking and payments', 'Social media', 'Notification pop-ups'];
 const SHOTS = [[0, 'Off'], [1, '1'], [2, '2'], [3, '3']];
 const short = (t) => (t ? hhmmText(t).replace(':00', '') : '');
@@ -25,11 +26,11 @@ const dayRun = (wd) => {
 
 const SEC_ICON = { company: 'bank', hours: 'clock', shots: 'camera', privacy: 'lock', tasks: 'tasks', open: 'eye', live: 'pulse', reports: 'file', storage: 'db', chat: 'chats' };
 // one short line under each section's name in the strip: what it's set to now
-function summaries(s, { storage, gifs, mail } = {}) {
+function summaries(s, { storage, gifs, mail, co } = {}) {
   const wd = new Set(String(s.work_days).split(',').map(Number));
   const extra = (s.blackout_apps || []).filter((a) => a.toLowerCase() !== 'whatsapp').length;
   return {
-    company: s.org_name,
+    company: co && co.images && co.images.logo ? 'Logo and details' : co && (co.address || co.ntn) ? 'Details, no logo yet' : 'Add your logo',
     hours: `${short(s.shift_start)}–${short(s.shift_end)}, ${dayRun(wd)}`,
     shots: s.shots_per_10 ? `${s.shots_per_10} per 10 min` : 'Off',
     privacy: extra ? `Always on, +${extra}` : 'Always on',
@@ -73,13 +74,13 @@ function shotRuler(n) {
 export const settingsPage = {
   title: 'Settings',
   async load() {
-    const [s, storage, gifs, mail] = await Promise.all([get('/api/settings'), get('/api/admin/storage'), get('/api/chat/gifs/setup').catch(() => null), get('/api/shift-reports/email').catch(() => null)]);
+    const [s, storage, gifs, mail, co] = await Promise.all([get('/api/settings'), get('/api/admin/storage'), get('/api/chat/gifs/setup').catch(() => null), get('/api/shift-reports/email').catch(() => null), loadCompany()]);
     S.settings = s;
-    return { s, storage, gifs, mail };
+    return { s, storage, gifs, mail, co };
   },
-  render({ s, storage, gifs, mail }) {
+  render({ s, storage, gifs, mail, co }) {
     const wd = new Set(String(s.work_days).split(',').map(Number));
-    const sum = summaries(s, { storage, gifs, mail });
+    const sum = summaries(s, { storage, gifs, mail, co });
     const row = (label, hint, control, { id, wide, tog } = {}) => html`<div class="srow ${wide ? 'wide' : ''} ${tog ? 'tog' : ''}"><div class="srow-t">${id ? html`<label for="${id}">${label}</label>` : html`<span class="srow-l">${label}</span>`}${hint ? html`<p>${hint}</p>` : ''}</div><div class="srow-c">${control}</div></div>`;
     const sw = (name, on, id) => html`<label class="switch"><input type="checkbox" id="${id}" name="${name}" ${on ? raw('checked') : ''}><span></span></label>`;
     const num = (id, name, v, min, max, unit, step = 1) => html`<span class="unit-in"><input id="${id}" name="${name}" type="number" inputmode="decimal" min="${min}" max="${max}" step="${step}" value="${v}" required><em>${unit}</em></span>`;
@@ -91,9 +92,9 @@ export const settingsPage = {
       <div class="set-wrap">
         <nav class="set-nav" aria-label="Settings sections">${SECTIONS.filter(([k]) => (k !== 'chat' || gifs) && (k !== 'reports' || mail)).map(([k, t]) => html`<button type="button" data-act="set-jump" data-to="${k}" data-k="nav-${k}" title="${sum[k] ? `${t}: ${sum[k]}` : t}"><i class="sn-ic" aria-hidden="true">${icon(SEC_ICON[k] || 'gear')}</i><span class="sn-t"><b>${t}</b>${sum[k] ? html`<span data-sum="${k}">${sum[k]}</span>` : ''}</span></button>`)}</nav>
         <div class="set-main">
+        ${companyBlock(co)}
         <form data-submit="save-settings" data-setform novalidate>
           <div class="set-cols"><div class="set-col">
-          ${sec('company', 'Company', '', row('Company name', 'Shown in the app, on payslips and in emails.', html`<input id="s-org" name="org_name" value="${s.org_name}" maxlength="80" required>`, { id: 's-org' }))}
 
           ${sec('hours', 'Working hours', 'Attendance, lateness and weekly targets are worked out from these.', html`
             <div data-strip>${shiftStrip(s)}</div>
@@ -156,7 +157,7 @@ export const settingsPage = {
         </div>
       </div>`;
   },
-  after(view) { setupForm(view); spy(view); },
+  after(view, d) { setupForm(view); spy(view); if (d) companyAfter(view, d.co); },
 };
 
 // ---- emailing the shift report ----
@@ -299,7 +300,7 @@ actions['save-settings'] = async (form) => {
   const n = (k) => Number(fd.get(k));
   if (!fd.get('break_start') !== !fd.get('break_end')) { err.textContent = 'Give the break a start and an end, or neither.'; return; }
   const body = {
-    org_name: fd.get('org_name'), shift_start: fd.get('shift_start'), shift_end: fd.get('shift_end'), break_start: fd.get('break_start') || null, break_end: fd.get('break_end') || null, grace_min: n('grace_min'),
+    shift_start: fd.get('shift_start'), shift_end: fd.get('shift_end'), break_start: fd.get('break_start') || null, break_end: fd.get('break_end') || null, grace_min: n('grace_min'),
     ...(() => { const v = String(fd.get('tz') || ''); if (v.startsWith('z:')) return { tz_name: v.slice(2), tz_offset_min: zoneOffset(v.slice(2)) }; return {}; })(), weekly_target_min: Math.round(n('weekly_h') * 60), leave_days_per_year: n('leave_days_per_year'),
     work_days: wd.join(','), shots_per_10: n('shots_per_10'), idle_limit_min: n('idle_limit_min'), retention_days: n('retention_days'),
     blackout_apps: String(fd.get('blackout_apps') || '').split(',').map((x) => x.trim()).filter(Boolean),
@@ -337,7 +338,7 @@ const LABEL = {
   'hr.record': 'Changed an HR record', 'hr.pay': 'Changed someone’s pay', 'hr.step': 'Moved an HR step', 'hr.viewed': 'Opened an HR record',
   'hr.doc_added': 'Added an HR document', 'hr.doc_changed': 'Changed an HR document', 'hr.doc_opened': 'Opened an HR document', 'hr.doc_removed': 'Removed an HR document',
   'payroll.started': 'Started a payroll month', 'payroll.submitted': 'Sent payroll for approval', 'payroll.approved': 'Approved payroll', 'payroll.paid': 'Marked payroll paid',
-  'payroll.reopened': 'Reopened payroll', 'payroll.removed': 'Removed a payroll draft', 'payroll.item_added': 'Added a payroll line', 'payroll.item_removed': 'Removed a payroll line', 'payroll.line_removed': 'Took a line off a payslip', 'payroll.line_restored': 'Put a payslip line back', 'payroll.person_left_off': 'Left someone off a month', 'payroll.person_back': 'Put someone back on a month',
+  'payroll.reopened': 'Reopened payroll', 'payroll.removed': 'Removed a payroll draft', 'payroll.item_added': 'Added a payroll line', 'payroll.item_removed': 'Removed a payroll line', 'payroll.line_removed': 'Took a line off a payslip', 'payroll.line_restored': 'Put a payslip line back', 'payroll.person_left_off': 'Left someone off a month', 'payroll.person_back': 'Put someone back on a month', 'company.changed': 'Changed the company details', 'company.image': 'Uploaded a company picture', 'company.image_removed': 'Removed a company picture',
   'payroll.question': 'Asked about a payslip', 'payroll.answered': 'Answered a payslip question', 'payroll.slip_viewed': 'Opened a payslip', 'payroll.bank_sheet': 'Downloaded the bank sheet',
   'payroll.register': 'Downloaded the payroll register', 'payroll.rules': 'Changed payroll rules',
   'expense.sent': 'Sent an expense claim', 'expense.approved': 'Approved an expense', 'expense.declined': 'Declined an expense',
@@ -350,7 +351,7 @@ const words = (a) => { const t = String(a).replace(/[._]/g, ' ').trim(); return 
 const AUDIT_PAGE = 100;
 // what kind of thing an entry is about, for the filters and the chip on each row
 const AU_KINDS = [['money', 'Money'], ['privacy', 'Privacy'], ['settings', 'Settings'], ['time', 'Time'], ['people', 'People'], ['clients', 'Clients'], ['signin', 'Sign-ins']];
-const kindOf = (a) => (/^screenshot|hr\.(viewed|doc_opened)|payroll\.slip_viewed/.test(a) ? 'privacy' : /^(payroll|expense|advance)|hr\.pay/.test(a) ? 'money' : /^(settings|holiday|team\.screenshots|policy)/.test(a) ? 'settings'
+const kindOf = (a) => (/^screenshot|hr\.(viewed|doc_opened)|payroll\.slip_viewed/.test(a) ? 'privacy' : /^(payroll|expense|advance)|hr\.pay/.test(a) ? 'money' : /^(settings|company|holiday|team\.screenshots|policy)/.test(a) ? 'settings'
   : /^(time|timer|timeoff)/.test(a) ? 'time' : /^client/.test(a) ? 'clients' : /^(login|logout|password)/.test(a) ? 'signin' : /^(user|team|hr|project|task)/.test(a) ? 'people' : 'other');
 // times stored in an entry's details read as "Sat, Oct 24, 3:00 PM", not as raw ISO stamps
 const tidyDetail = (d, tz) => String(d || '').replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z/g, (iso) => { const day = new Date(Date.parse(iso) + tz * 60000).toISOString().slice(0, 10); return `${dayShort(day)}, ${tod(iso, tz)}`; });

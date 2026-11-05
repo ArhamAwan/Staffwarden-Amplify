@@ -4,7 +4,7 @@ const net = require('node:net');
 const http = require('node:http');
 const https = require('node:https');
 const { need, str, optStr, int } = require('../lib/http');
-const { Pdf, PAGE_W } = require('../lib/pdf');
+const { Pdf } = require('../lib/pdf');
 
 // Portal v2: the client's bell and phone notifications, calls with the team, ratings at finished
 // milestones, a thread and an estimate on each request, task steps, comments pinned on an approval,
@@ -592,13 +592,9 @@ module.exports = (ctx) => {
     const mName = new Date(Date.UTC(y, m - 1, 15)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
     const h = (secs) => `${(secs / 3600).toFixed(1)}h`;
     const doc = new Pdf();
-    const L = 56, R = PAGE_W - 56;
-    doc.rect(0, 0, PAGE_W, 112, { fill: '#0B1D2A' });
-    doc.text(L, 52, s.org, { size: 18, bold: true, color: '#FFFFFF' });
-    doc.text(L, 76, `Statement for ${s.client}`, { size: 11, color: '#AFC0CD' });
-    doc.text(R, 52, mName, { size: 14, bold: true, color: '#E2BC70', align: 'right' });
-    doc.text(R, 76, s.ready ? 'Final' : `So far, as of ${T.human(T.localDay(clockNow(), ctx.calc.companyTz()))}`, { size: 10, color: '#AFC0CD', align: 'right' });
-    let yy = 150;
+    // the company's branding (Settings, Company): its logo, address and colour on the client's statement
+    const co = ctx.companyFor(null), D = ctx.docParts, { L, R } = D;
+    let yy = D.head(doc, co, { title: 'Statement', sub: mName, sub2: s.ready ? `For ${s.client}, final` : `For ${s.client}, so far, as of ${T.human(T.localDay(clockNow(), ctx.calc.companyTz())).replace(/^\w+, /, '')}` }) + 10;
     doc.text(L, yy, s.project, { size: 13, bold: true }); yy += 30;
     doc.text(L, yy, 'Milestone', { size: 10, bold: true, color: '#5B6B78' });
     doc.text(R, yy, 'Hours', { size: 10, bold: true, color: '#5B6B78', align: 'right' }); yy += 10;
@@ -614,10 +610,11 @@ module.exports = (ctx) => {
     doc.text(R, yy, `${h(s.total_secs)}${s.retainer_hours ? ` of ${s.retainer_hours}h` : ''}`, { size: 12, bold: true, align: 'right' }); yy += 34;
     if (s.retainer_hours) {
       const pct = Math.min(1, s.total_secs / 3600 / s.retainer_hours);
-      doc.rect(L, yy, R - L, 8, { fill: '#E7ECF0' }); doc.rect(L, yy, (R - L) * pct, 8, { fill: '#7B61FF' }); yy += 28;
+      doc.rect(L, yy, R - L, 8, { fill: '#E7ECF0' }); doc.rect(L, yy, (R - L) * pct, 8, { fill: D.brandOf(co) }); yy += 28;
       doc.text(L, yy, `${Math.round((s.total_secs / 3600 / s.retainer_hours) * 100)}% of the ${s.retainer_hours}-hour monthly retainer`, { size: 10, color: '#5B6B78' }); yy += 30;
     }
     doc.para(L, yy, `Hours come from the team's Staffwarden timers, only while they work on this project. This statement matches the invoice from ${s.org}.`, { size: 9.5, maxW: R - L });
+    D.foot(doc, co);
     return { raw: doc.toBuffer({ title: `${s.client} statement ${s.month}`, author: s.org }), type: 'application/pdf', headers: { 'Content-Disposition': `attachment; filename="${a.p.key}-statement-${s.month}.pdf"`, 'Cache-Control': 'private, no-store' } };
   }, C);
 

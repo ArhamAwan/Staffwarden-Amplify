@@ -110,7 +110,7 @@ module.exports = (ctx) => {
     const c = db.prepare('SELECT * FROM clients WHERE id = ?').get(user.client_id);
     const projects = db.prepare("SELECT * FROM projects WHERE client_id = ? AND status != 'archived' ORDER BY (status = 'active') DESC, name").all(user.client_id)
       .map((p) => { const a = { p, c, s: ctx.clientSettings(c), client: true }; return { id: p.id, name: p.name, key: p.key, color: p.color, status: p.status, unread: unreadFor(user, p.id), waiting: waitingOf(a).length }; });
-    return { me: ctx.publicClient(user), client: { id: c.id, name: c.name, city: c.city, tz_name: c.tz_name }, org_name: cfg.orgName, settings: ctx.clientSettings(c), projects };
+    return { me: ctx.publicClient(user), client: { id: c.id, name: c.name, city: c.city, tz_name: c.tz_name }, org_name: cfg.orgName, company: ctx.companyPublic(), settings: ctx.clientSettings(c), projects };
   }, C);
 
   // ---------- overview ----------

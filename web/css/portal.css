@@ -816,3 +816,7 @@ body.portal { background: rgba(115,90,191,0.16); }
 .psenddrop { width: 100%; box-sizing: border-box; }
 .msg.me .bv-play { background: #fff; color: #5B3FD0; }
 .msg.me .bv-wave i.on { background: #fff; }
+/* the company's own icon or light logo in the portal's header (Settings, Your company) */
+.pbrand .mark.pmark-co { background: #FFFFFF; overflow: hidden; padding: 5px; box-sizing: border-box; }
+.pbrand .mark.pmark-co img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.pbt-logo { display: block; max-height: 26px; max-width: 180px; object-fit: contain; object-position: left center; margin-bottom: 2px; }

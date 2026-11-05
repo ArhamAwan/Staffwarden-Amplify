@@ -1,4 +1,5 @@
 'use strict';
+const zlib = require('node:zlib');
 // A small PDF writer for the monthly statement: A4 pages, Helvetica text, lines and filled boxes.
 // Nothing outside the box: the statement is a simple table, and a real PDF opens everywhere.
 const W = 595.28, H = 841.89;
@@ -32,7 +33,18 @@ function width(s, size, bold = false) {
 const rgb = (hex) => { const n = parseInt(String(hex || '#000000').slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => (v / 255).toFixed(3)).join(' '); };
 
 class Pdf {
-  constructor() { this.pages = []; this.page(); }
+  constructor() { this.pages = []; this.images = []; this.page(); }
+  // a decoded PNG ({w, h, rgb, alpha}) drawn into a box, kept to its own shape: it fits inside w x h,
+  // pinned to the left (or right/center) of the box and centred top to bottom
+  image(x, y, w, h, img, { align = 'left' } = {}) {
+    if (!img || !img.w || !img.h) return this;
+    let n = this.images.indexOf(img);
+    if (n < 0) { this.images.push(img); n = this.images.length - 1; }
+    const s = Math.min(w / img.w, h / img.h), dw = img.w * s, dh = img.h * s;
+    const x0 = align === 'right' ? x + w - dw : align === 'center' ? x + (w - dw) / 2 : x, y0 = y + (h - dh) / 2;
+    this.ops.push(`q ${dw.toFixed(2)} 0 0 ${dh.toFixed(2)} ${x0.toFixed(2)} ${(H - y0 - dh).toFixed(2)} cm /Im${n + 1} Do Q`);
+    return { w: dw, h: dh, x: x0, y: y0 };
+  }
   page() { this.ops = []; this.pages.push(this.ops); return this; }
   // y is measured from the top of the page, like a screen
   text(x, y, s, { size = 11, bold = false, color = '#0B1D2A', align = 'left', maxW = null } = {}) {
@@ -63,11 +75,20 @@ class Pdf {
     const catalog = add(null), pagesObj = add(null);
     const f1 = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
     const f2 = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+    // pictures: compressed colour samples, with their transparency as a soft mask
+    const bin = (b) => b.toString('latin1');
+    const xo = this.images.map((im, i) => {
+      let mask = '';
+      if (im.alpha) { const a = zlib.deflateSync(im.alpha); mask = ` /SMask ${add(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /Length ${a.length} >>\nstream\n${bin(a)}\nendstream`)} 0 R`; }
+      const d = zlib.deflateSync(im.rgb);
+      return `/Im${i + 1} ${add(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode${mask} /Length ${d.length} >>\nstream\n${bin(d)}\nendstream`)} 0 R`;
+    });
+    const xobj = xo.length ? ` /XObject << ${xo.join(' ')} >>` : '';
     const kids = [];
     for (const ops of this.pages) {
       const stream = ops.join('\n');
       const c = add(`<< /Length ${Buffer.byteLength(stream, 'latin1')} >>\nstream\n${stream}\nendstream`);
-      kids.push(add(`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >> >> /Contents ${c} 0 R >>`));
+      kids.push(add(`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >>${xobj} >> /Contents ${c} 0 R >>`));
     }
     objs[catalog - 1] = `<< /Type /Catalog /Pages ${pagesObj} 0 R >>`;
     objs[pagesObj - 1] = `<< /Type /Pages /Kids [${kids.map((k) => `${k} 0 R`).join(' ')}] /Count ${kids.length} >>`;

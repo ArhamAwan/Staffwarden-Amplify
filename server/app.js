@@ -440,7 +440,7 @@ function createApp(opts = {}) {
   const route = (method, pattern, handler, o = {}) => {
     const keys = [];
     const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; }) + '$');
-    routes.push({ method, re, keys, handler, client: !!o.client, raw: o.raw || 0 });
+    routes.push({ method, re, keys, handler, client: !!o.client, raw: o.raw || 0, open: !!o.open });
   };
 
   // The visitor's address. Behind Caddy every request arrives from this machine, so the address Caddy
@@ -473,7 +473,7 @@ function createApp(opts = {}) {
   ctx.pnotify = createPortalNotify(ctx);
   ctx.changes = createChanges(ctx);
   ctx.payroll = createPayroll(ctx);
-  for (const f of ['auth', 'people', 'projects', 'tasks', 'performance', 'timer', 'capture', 'views', 'timeoff', 'admin', 'notifications', 'explain', 'hr', 'payroll', 'clients', 'portal', 'chat', 'portal2', 'team', 'shift', 'gifs', 'dev', 'leaderboard', 'shiftreport', 'assets']) require(`./routes/${f}`)(ctx);
+  for (const f of ['auth', 'people', 'projects', 'tasks', 'performance', 'timer', 'capture', 'views', 'timeoff', 'admin', 'notifications', 'explain', 'hr', 'payroll', 'clients', 'portal', 'chat', 'portal2', 'team', 'shift', 'gifs', 'dev', 'leaderboard', 'shiftreport', 'assets', 'company']) require(`./routes/${f}`)(ctx);
 
   // ---------- server ----------
   // a file sent as it is (not as JSON), for uploads bigger than a JSON body allows
@@ -592,7 +592,8 @@ function createApp(opts = {}) {
       const m = url.pathname.match(r.re);
       let params; try { params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])])); } catch { throw new HttpError(400, 'That address is not valid'); }
       const isLogin = url.pathname === '/api/auth/login' || url.pathname === '/api/downloads' || url.pathname === '/api/app/latest';
-      const user = isLogin ? null : authUser(req);
+      // an open route (the company logo) works signed out, and still knows who is asking when they are signed in
+      const user = isLogin ? null : r.open ? (() => { try { return authUser(req); } catch { return null; } })() : authUser(req);
       if (user && user.kind === 'client') need(r.client, 403, 'Not available in the client portal');
       if (user && user.preview) need(req.method === 'GET', 403, 'This is a preview. Nothing you do here is sent.');
       const body = r.raw ? await readRaw(req, r.raw) : ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readBody(req) : {};

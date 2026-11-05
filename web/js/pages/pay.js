@@ -5,6 +5,7 @@ import { get, post, del, qs, fileBase64, fileUrl, download } from '../api.js';
 import { S, actions, tag, empty, openModal, confirmBox, toast, errMsg } from '../ui.js';
 import { myToday } from '../parts.js';
 import { qAttr } from '../ui.js';
+import { companyMark } from './company.js';
 
 export const STATUS = { draft: ['idle', 'Draft'], review: ['break', 'Being checked'], approved: ['working', 'Approved'], paid: ['working', 'Paid'] };
 export const EXP_STATUS = { pending: ['break', 'Waiting'], manager_ok: ['break', 'Manager approved, waiting for HR'], approved: ['working', 'Approved: with your next salary'], paid: ['working', 'Paid'], declined: ['absent', 'Declined'] };
@@ -70,7 +71,7 @@ export default {
     const main = html`<section class="panel printable slip" data-k="slip${slip.id}"><div class="body">
         <div class="slip-h"><div><div class="muted small">${slip.paid_on ? `Paid ${dayShort(slip.paid_on)}` : slip.run.status === 'approved' || slip.run.status === 'paid' ? `Paid by ${dayShort(slip.run.pay_by)}` : `Pay day ${dayShort(slip.run.pay_day)} to ${dayShort(slip.run.pay_by)}`}${slip.bank ? `, to ${slip.bank.name || 'your bank'} ••• ${slip.bank.last4}` : ''}</div>
           <b class="slip-net num">${money(slip.net, slip.currency)}</b><div class="muted">Net pay for ${periodLabel(slip.run.period)} ${tag(cls, word)}</div></div>
-          <div class="slip-org"><span class="mark-sm">${esc(S.settings.org_name)}</span><span class="muted small">${S.me.name}</span></div></div>
+          <div class="slip-org">${companyMark()}<span class="muted small">${S.me.name}</span></div></div>
         ${slip.run.status === 'review' ? html`<div class="banner info" style="margin:14px 0 0"><span>This month is still being checked, so it can change. Ask about anything that looks wrong.</span></div>` : ''}
         <div style="margin:18px 0 6px">${payBar(slip)}</div>
         ${slipLines(slip, { ask: canAsk })}

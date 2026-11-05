@@ -80,8 +80,8 @@ module.exports = (ctx) => {
   route('GET', '/api/downloads', () => ctx.listDownloads());
   route('GET', '/api/app/latest', ({ query }) => ctx.latestApp(query.get('platform'), query.get('arch')));
 
-  route('GET', '/api/settings', ({ user }) => (user.kind === 'client' ? { org_name: cfg.orgName, tz_name: cfg.tzName || null, tz_offset_min: ctx.calc.companyTz() } : {
-    org_name: cfg.orgName,
+  route('GET', '/api/settings', ({ user }) => (user.kind === 'client' ? { org_name: cfg.orgName, company: ctx.companyPublic(), tz_name: cfg.tzName || null, tz_offset_min: ctx.calc.companyTz() } : {
+    org_name: cfg.orgName, company: ctx.companyPublic(),
     idle_tell_lead: (() => { try { return !!JSON.parse((db.prepare("SELECT value FROM settings WHERE key = 'idle_rules'").get() || {}).value || '{}').tell_lead; } catch { return false; } })(),
     owner_name: (db.prepare("SELECT name FROM users WHERE role = 'owner' AND active = 1 ORDER BY id LIMIT 1").get() || {}).name || null,
     shots_per_10: cfg.shotsPer10,
