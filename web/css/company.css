@@ -127,3 +127,13 @@
 @media (prefers-reduced-motion: reduce) { .co-lg.busy::after { animation: none; } .co-lg, .co-well, .co-sw i { transition: none; } }
 /* a signature or stamp sits on a faint check, so it's plain the paper behind it is gone */
 .co-well.paper.clear { background-color: #FFFFFF; background-image: linear-gradient(45deg, #EEEDF4 25%, transparent 25%, transparent 75%, #EEEDF4 75%), linear-gradient(45deg, #EEEDF4 25%, transparent 25%, transparent 75%, #EEEDF4 75%); background-size: 16px 16px; background-position: 0 0, 8px 8px; }
+/* drawing the signature */
+.co-pad { position: relative; border-radius: 14px; background: #FFFFFF; overflow: hidden; touch-action: none; }
+.co-pad canvas { display: block; width: 100%; height: auto; aspect-ratio: 3 / 1; cursor: crosshair; touch-action: none; position: relative; z-index: 1; }
+.co-pad-line { position: absolute; left: 6%; right: 6%; bottom: 24%; height: 1px; background: #CFCBE3; }
+.co-pad-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+.co-pad-bar .co-seg button { display: inline-flex; align-items: center; gap: 7px; }
+.co-pad-bar .co-seg button[aria-checked="true"] { background: rgba(139,92,246,.4); color: #fff; }
+.co-pad-bar .co-seg i { width: 12px; height: 12px; border-radius: 99px; display: block; }
+.co-pad-acts { display: flex; gap: 18px; }
+.co-pad-acts .linkbtn { min-height: 36px; font-weight: 600; }

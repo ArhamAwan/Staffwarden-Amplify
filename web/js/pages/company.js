@@ -4,14 +4,14 @@
 // (a signature or stamp has its white paper taken out); the words are saved with Save changes.
 import { html, raw, esc, icon } from '../util.js';
 import { get, put, del, getToken, download, fileUrl } from '../api.js';
-import { S, actions, toast, errMsg, confirmBox } from '../ui.js';
+import { S, actions, toast, errMsg, confirmBox, openModal } from '../ui.js';
 
 const PRESETS = [['#1E2A5A', 'Navy'], ['#1F6B4A', 'Green'], ['#5B2A6E', 'Plum'], ['#8A3B12', 'Rust']];
 const SLOTS = {
   logo: ['Full logo', 'For payslips and certificates, on white. PNG, JPG or SVG.'],
   logo_light: ['Light version', 'Optional. For dark headers, like the client portal.'],
   icon: ['Small icon', 'Optional. A square mark for small spaces.'],
-  signature: ['Signature', 'On payslips and certificates. A phone photo of it on paper works; the paper is taken out.'],
+  signature: ['Signature', 'On payslips and certificates. Draw it here, or upload a close-up photo of it on paper.'],
   stamp: ['Stamp', 'Optional. A photo of it stamped on paper; the paper is taken out.'],
 };
 const ok = icon('check');
@@ -64,7 +64,7 @@ const slotCard = (c, slot, { tall = false } = {}) => {
     <label class="co-well ${im ? (dark ? 'dark' : PRIVATE.has(slot) ? 'paper clear' : 'paper') : 'empty'} ${tall ? 'tall' : ''}" for="${id}">${im ? (im.url && !PRIVATE.has(slot) ? html`<img src="${im.url}" alt="${t}">` : html`<img data-co-auth="${slot}" alt="${t}" src="${authUrls.get(slot) || BLANK}">`) : html`${icon('up')}<span>${slot === 'icon' ? 'Add a square icon' : slot === 'stamp' ? 'Add the company stamp' : `Add the ${t.toLowerCase()}`}</span>`}</label>
     <input type="file" id="${id}" class="sr" accept="image/png,image/jpeg,image/svg+xml,image/webp" data-co-file="${slot}">
     <b>${t}</b><small>${slot === 'logo' && c.logo_inked ? 'Its white parts are printed in dark ink, so they show on white paper.' : sub}</small>
-    <div class="co-acts"><label for="${id}" class="linkbtn">${im ? 'Replace' : 'Upload'}</label>${im ? html`<button type="button" class="linkbtn danger" data-act="co-img-rm" data-slot="${slot}" data-label="${t}">Remove</button>` : ''}</div></div>`;
+    <div class="co-acts">${slot === 'signature' ? html`<button type="button" class="linkbtn" data-act="co-draw">Draw it</button>` : ''}<label for="${id}" class="linkbtn">${im ? (slot === 'signature' ? 'Upload a photo' : 'Replace') : (slot === 'signature' ? 'Upload a photo' : 'Upload')}</label>${im ? html`<button type="button" class="linkbtn danger" data-act="co-img-rm" data-slot="${slot}" data-label="${t}">Remove</button>` : ''}</div></div>`;
 };
 
 export function companyBlock(c) {
@@ -217,6 +217,7 @@ async function toPng(file, slot) {
     const asBlob = (c) => new Promise((resolve, reject) => c.toBlob((b) => (b ? resolve(b) : reject(new Error('That picture can’t be read'))), 'image/png'));
     const blob = await asBlob(out);
     blob.whiteParts = whiteParts;
+    if (tw < 360) blob.small = tw;
     // for white paper: the same logo with its white and near-white parts in dark ink
     if (whiteParts) {
       const g2 = out.getContext('2d'), od = g2.getImageData(0, 0, tw, th), q = od.data;
@@ -234,6 +235,12 @@ async function uploadPick(input) {
   const card = input.closest('.co-lg'); if (card) card.classList.add('busy');
   try {
     const png = await toPng(file, slot);
+    if (slot === 'signature' && png.small) {
+      if (card) card.classList.remove('busy');
+      const draw = await confirmBox({ title: 'This signature picture is small', message: `It’s only ${png.small} pixels wide, so it will look soft and rough when printed. Drawing it here, or a close-up phone photo, comes out sharp.`, confirm: 'Draw it instead', cancel: 'Use it anyway' });
+      if (draw) { drawPad(); return; }
+      if (card) card.classList.add('busy');
+    }
     const send = async (to, body) => {
       const res = await fetch(`/api/company/images/${to}`, { method: 'POST', headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'image/png' }, body });
       const outp = await res.json().catch(() => ({}));
@@ -266,6 +273,58 @@ actions['co-save'] = async (form) => {
     markDirty(form); toast('Company details saved'); S.refresh();
   } catch (e) { err.textContent = errMsg(e); } finally { btn.disabled = false; }
 };
+// draw the signature with a finger, trackpad or mouse: smooth strokes, saved large, in dark ink
+const INKS = [['#16123A', 'Black'], ['#1D3F8F', 'Blue']];
+function drawPad() {
+  let ink = INKS[0][0], strokes = [], cur = null;
+  const m = openModal({
+    title: 'Draw your signature', submit: 'Save signature', wide: true,
+    sub: 'Sign in the box with your finger, trackpad or mouse. It goes on payslips and certificates.',
+    body: html`<div class="co-pad"><canvas width="1500" height="500" data-pad aria-label="Signature pad"></canvas><i class="co-pad-line" aria-hidden="true"></i></div>
+      <div class="co-pad-bar"><div class="co-seg" role="radiogroup" aria-label="Ink">${INKS.map(([v, n], i) => html`<button type="button" role="radio" aria-checked="${String(!i)}" data-ink="${v}"><i style="background:${v}"></i>${n}</button>`)}</div>
+      <span class="co-pad-acts"><button type="button" class="linkbtn" data-pad-undo>Undo</button><button type="button" class="linkbtn" data-pad-clear>Clear</button></span></div>`,
+    onSubmit: async () => {
+      if (!strokes.length) throw new Error('Sign in the box first');
+      const blob = await trimmed();
+      const res = await fetch('/api/company/images/signature', { method: 'POST', headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'image/png' }, body: blob });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || 'It didn’t save. Try again.');
+      authUrls.delete('signature'); toast('Signature saved'); S.refresh();
+    },
+  });
+  const root = m.form;
+  const cv = root.querySelector('[data-pad]'), g = cv.getContext('2d');
+  const draw = () => {
+    g.clearRect(0, 0, cv.width, cv.height); g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = ink;
+    for (const s of strokes) {
+      if (s.length === 1) { g.beginPath(); g.fillStyle = ink; g.arc(s[0].x, s[0].y, 4.5, 0, Math.PI * 2); g.fill(); continue; }
+      // a smooth line through the points, thicker where the pen moved slowly
+      for (let i = 1; i < s.length; i++) {
+        const a = s[i - 1], b = s[i], mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, prev = i > 1 ? { x: (s[i - 2].x + a.x) / 2, y: (s[i - 2].y + a.y) / 2 } : a;
+        const speed = Math.hypot(b.x - a.x, b.y - a.y);
+        g.lineWidth = Math.max(4, Math.min(9, 10 - speed / 6));
+        g.beginPath(); g.moveTo(prev.x, prev.y); g.quadraticCurveTo(a.x, a.y, mid.x, mid.y); g.stroke();
+      }
+    }
+  };
+  const pt = (e) => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * (cv.width / r.width), y: (e.clientY - r.top) * (cv.height / r.height) }; };
+  cv.addEventListener('pointerdown', (e) => { e.preventDefault(); cv.setPointerCapture(e.pointerId); cur = [pt(e)]; strokes.push(cur); draw(); });
+  cv.addEventListener('pointermove', (e) => { if (!cur) return; const p = pt(e), l = cur[cur.length - 1]; if (Math.hypot(p.x - l.x, p.y - l.y) > 2) { cur.push(p); draw(); } });
+  const end = () => { cur = null; };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  root.querySelector('[data-pad-clear]').addEventListener('click', () => { strokes = []; draw(); });
+  root.querySelector('[data-pad-undo]').addEventListener('click', () => { strokes.pop(); draw(); });
+  for (const b of root.querySelectorAll('[data-ink]')) b.addEventListener('click', () => { ink = b.dataset.ink; for (const x of root.querySelectorAll('[data-ink]')) x.setAttribute('aria-checked', String(x === b)); draw(); });
+  // just the signature, with a little room around it
+  async function trimmed() {
+    const d = g.getImageData(0, 0, cv.width, cv.height).data; let x0 = cv.width, y0 = cv.height, x1 = -1, y1 = -1;
+    for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) if (d[(y * cv.width + x) * 4 + 3] > 10) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    const pad = 12, sx = Math.max(0, x0 - pad), sy = Math.max(0, y0 - pad), w = Math.min(cv.width, x1 + pad) - sx, h = Math.min(cv.height, y1 + pad) - sy;
+    const o = document.createElement('canvas'); o.width = w; o.height = h; o.getContext('2d').drawImage(cv, sx, sy, w, h, 0, 0, w, h);
+    return new Promise((resolve, reject) => o.toBlob((b) => (b ? resolve(b) : reject(new Error('It didn’t save'))), 'image/png'));
+  }
+}
+actions['co-draw'] = () => drawPad();
 actions['co-img-rm'] = async (el) => {
   if (!(await confirmBox({ title: `Remove the ${el.dataset.label.toLowerCase()}?`, message: 'New payslips and documents go out without it. Months already approved keep theirs.', confirm: 'Remove', danger: true }))) return;
   try { await del(`/api/company/images/${el.dataset.slot}`); authUrls.delete(el.dataset.slot); toast(`${el.dataset.label} removed`); S.refresh(); } catch (e) { toast(errMsg(e), true); }
