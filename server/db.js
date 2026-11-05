@@ -3,7 +3,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 // Schema v2. Fresh installs and v1 databases go through the same path: the v1 tables are created
 // if missing, then migrate() adds everything v2 needs without touching existing rows.
-const SCHEMA_VERSION = 33;
+const SCHEMA_VERSION = 34;
 
 function hasColumn(db, table, col) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
@@ -83,6 +83,7 @@ function openDb(file = ':memory:') {
 function migrate(db) {
   const version = db.prepare('PRAGMA user_version').get().user_version;
   if (version >= SCHEMA_VERSION) return;
+  if (version === 33) return migrateV34(db);
   if (version === 32) return migrateV33(db);
   if (version === 31) return migrateV32(db);
   if (version === 30) return migrateV31(db);
@@ -1212,6 +1213,41 @@ function migrateV33(db) {
   db.exec('BEGIN');
   try {
     addColumn(db, 'users', 'theme', 'TEXT');
+    db.exec('PRAGMA user_version = 33');
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  migrateV34(db);
+}
+
+// Notes, like Apple Notes (pnotes: the notes table is the older explanation notes): private to the person who writes them unless they share one with people (can
+// edit or can view) or with a project's team. Folders and pins are each person's own.
+function migrateV34(db) {
+  db.exec('BEGIN');
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS note_folders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, position REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL)`);
+    db.exec(`CREATE TABLE IF NOT EXISTS pnotes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      folder_id INTEGER REFERENCES note_folders(id) ON DELETE SET NULL,
+      title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', text TEXT NOT NULL DEFAULT '',
+      version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by INTEGER,
+      deleted_at TEXT)`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_notes_owner ON pnotes(owner_id, updated_at)');
+    db.exec(`CREATE TABLE IF NOT EXISTS note_shares (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, note_id INTEGER NOT NULL REFERENCES pnotes(id) ON DELETE CASCADE,
+      user_id INTEGER, project_id INTEGER, perm TEXT NOT NULL DEFAULT 'view' CHECK (perm IN ('view','edit')),
+      created_at TEXT NOT NULL, UNIQUE (note_id, user_id), UNIQUE (note_id, project_id))`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_note_shares_user ON note_shares(user_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_note_shares_project ON note_shares(project_id)');
+    db.exec(`CREATE TABLE IF NOT EXISTS note_pins (user_id INTEGER NOT NULL, note_id INTEGER NOT NULL REFERENCES pnotes(id) ON DELETE CASCADE, PRIMARY KEY (user_id, note_id))`);
+    db.exec(`CREATE TABLE IF NOT EXISTS note_files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, note_id INTEGER NOT NULL REFERENCES pnotes(id) ON DELETE CASCADE,
+      user_id INTEGER, name TEXT NOT NULL, mime TEXT, size INTEGER NOT NULL, file TEXT NOT NULL, created_at TEXT NOT NULL)`);
+    db.exec(`CREATE TABLE IF NOT EXISTS note_mentions (note_id INTEGER NOT NULL REFERENCES pnotes(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, by_id INTEGER, created_at TEXT NOT NULL, PRIMARY KEY (note_id, user_id))`);
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {

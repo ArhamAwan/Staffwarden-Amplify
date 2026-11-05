@@ -477,7 +477,7 @@ function createApp(opts = {}) {
   ctx.pnotify = createPortalNotify(ctx);
   ctx.changes = createChanges(ctx);
   ctx.payroll = createPayroll(ctx);
-  for (const f of ['auth', 'people', 'projects', 'tasks', 'performance', 'timer', 'capture', 'views', 'timeoff', 'admin', 'notifications', 'explain', 'hr', 'payroll', 'clients', 'portal', 'chat', 'portal2', 'team', 'shift', 'gifs', 'dev', 'leaderboard', 'shiftreport', 'assets', 'company', 'plans', 'themes']) require(`./routes/${f}`)(ctx);
+  for (const f of ['auth', 'people', 'projects', 'tasks', 'performance', 'timer', 'capture', 'views', 'timeoff', 'admin', 'notifications', 'explain', 'hr', 'payroll', 'clients', 'portal', 'chat', 'portal2', 'team', 'shift', 'gifs', 'dev', 'leaderboard', 'shiftreport', 'assets', 'company', 'plans', 'themes', 'notes']) require(`./routes/${f}`)(ctx);
 
   // ---------- server ----------
   // a file sent as it is (not as JSON), for uploads bigger than a JSON body allows
@@ -616,7 +616,7 @@ function createApp(opts = {}) {
       if (out && out.raw) return send(200, out.raw, { 'Content-Type': out.type, 'Cache-Control': 'private, max-age=300', ...(out.headers || {}) });
       send(200, out);
     } catch (e) {
-      if (e instanceof HttpError) return send(e.status, { error: e.message });
+      if (e instanceof HttpError) return send(e.status, { error: e.message, ...(e.extra || {}) });
       console.error(e);
       if (ctx.recordError) ctx.recordError(e, null);
       send(500, { error: 'Internal error' });

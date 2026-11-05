@@ -11,7 +11,7 @@ const T = require('../lib/time');
 const KINDS = {
   task_assigned: 'tasks', task_status: 'tasks', task_due_changed: 'deadlines', task_due: 'deadlines',
   task_review: 'reviews', task_approved: 'results', task_sent_back: 'results',
-  task_comment: 'comments', task_file: 'comments', task_mention: 'mentions', task_plan: 'tasks', task_from_message: 'tasks',
+  task_comment: 'comments', task_file: 'comments', task_mention: 'mentions', note_mention: 'mentions', note_shared: 'mentions', task_plan: 'tasks', task_from_message: 'tasks',
   project_added: 'projects', project_lead: 'projects',
   timeoff_request: 'timeoff', timeoff_decision: 'timeoff',
   no_signal: 'team', policy: 'account', app_update: 'account',

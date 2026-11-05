@@ -58,7 +58,7 @@ export async function api(method, path, body, { tries = method === 'GET' ? 2 : 1
   if (res.status === 401 && path !== '/api/auth/login') { onUnauthorized(); throw new ApiError(401, 'Please sign in again'); }
   const ct = res.headers.get('content-type') || '';
   const data = ct.includes('json') ? await res.json().catch(() => ({})) : null;
-  if (!res.ok) throw new ApiError(res.status, (data && data.error) || `Something went wrong (${res.status})`);
+  if (!res.ok) { const e = new ApiError(res.status, (data && data.error) || `Something went wrong (${res.status})`); e.data = data; throw e; }
   return data;
 }
 export const get = (p) => api('GET', p);
