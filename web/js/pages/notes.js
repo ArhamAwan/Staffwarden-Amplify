@@ -60,7 +60,7 @@ function serialize(el) {
   const c = el.cloneNode(true);
   c.querySelectorAll('img').forEach((i) => i.removeAttribute('src'));
   c.querySelectorAll('.nt-task').forEach((t) => { t.removeAttribute('data-label'); t.removeAttribute('data-status'); });
-  c.querySelectorAll('.nb-mk').forEach((x) => x.remove());
+  c.querySelectorAll('.nk-mk').forEach((x) => x.remove());
   return cleanNote(c.innerHTML);
 }
 
@@ -107,7 +107,7 @@ function groupOf(iso) {
   return dt.toLocaleString('en-US', { month: 'long', year: dt.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
 }
 const when = (iso) => { const dt = new Date(iso), d = (nowMs() - dt) / 86400000; if (dt.toDateString() === new Date(nowMs()).toDateString()) return dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); if (d < 7) return dt.toLocaleDateString('en-US', { weekday: 'short' }); return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
-const faces = (people) => html`<span class="nb-faces">${people.slice(0, 3).map((p) => av(p.id, p.name, 'xs'))}</span>`;
+const faces = (people) => html`<span class="nk-faces">${people.slice(0, 3).map((p) => av(p.id, p.name, 'xs'))}</span>`;
 
 function link(q, id) { const p = new URLSearchParams(); if (q.get('folder')) p.set('folder', q.get('folder')); if (q.get('q')) p.set('q', q.get('q')); if (id) p.set('id', id); const s = p.toString(); return `#/notes${s ? `?${s}` : ''}`; }
 
@@ -126,7 +126,7 @@ export default {
   },
   render({ list, note, shown, folder }, q) {
     const c = list.counts;
-    const fl = (key, ic, name, count) => html`<a href="${link(new URLSearchParams(key ? `folder=${key}` : ''), null)}" class="nb-fi${folder === key ? ' on' : ''}" ${raw(folder === key ? 'aria-current="page"' : '')}>${I(ic)}<span>${name}</span><em>${count || ''}</em></a>`;
+    const fl = (key, ic, name, count) => html`<a href="${link(new URLSearchParams(key ? `folder=${key}` : ''), null)}" class="nk-fi${folder === key ? ' on' : ''}" ${raw(folder === key ? 'aria-current="page"' : '')}>${I(ic)}<span>${name}</span><em>${count || ''}</em></a>`;
     const mode = note ? 'note' : q.get('view') === 'folders' ? 'folders' : 'list';
     const folderName = FOLDERS[folder] ?? (folder.startsWith('f') ? (list.folders.find((f) => `f${f.id}` === folder) || {}).name : (list.projects.find((p) => `p${p.id}` === folder) || {}).name) ?? 'Notes';
     const canNew = folder !== 'deleted' && folder !== 'shared';
@@ -138,25 +138,25 @@ export default {
       last.items.push(n);
     }
     groups.sort((a, b) => (a.name === 'Pinned' ? -1 : b.name === 'Pinned' ? 1 : 0));
-    return html`<div class="nb" data-mode="${mode}">
-      <nav class="nb-f" aria-label="Folders">
-        <div class="nb-fh"><h1>Notes</h1></div>
+    return html`<div class="nbk" data-mode="${mode}">
+      <nav class="nk-f" aria-label="Folders">
+        <div class="nk-fh"><h1>Notes</h1></div>
         ${fl('', 'note', 'All notes', c.all)}${fl('pinned', 'pin', 'Pinned', c.pinned)}${fl('shared', 'users', 'Shared with me', c.shared)}
-        <div class="nb-fg"><span>Your folders</span><button type="button" class="nb-ib" data-act="nb-newfolder" aria-label="New folder" title="New folder">${I('plus')}</button></div>
-        ${list.folders.length ? list.folders.map((f) => html`<div class="nb-frow">${fl(`f${f.id}`, 'folder', f.name, f.count)}<button type="button" class="nb-ib nb-fm" data-act="nb-folder" data-id="${f.id}" data-name="${f.name}" aria-label="Rename or remove ${f.name}">${I('more')}</button></div>`) : html`<p class="nb-none">Make folders to keep notes apart.</p>`}
-        ${list.projects.length ? html`<div class="nb-fg"><span>Projects</span></div>${list.projects.map((p) => html`<a href="#/notes?folder=p${p.id}" class="nb-fi${folder === `p${p.id}` ? ' on' : ''}"><i class="nb-pc" style="background:${p.color}"></i><span>${p.name}</span><em>${p.count}</em></a>`)}` : ''}
-        <span class="nb-sp"></span>
+        <div class="nk-fg"><span>Your folders</span><button type="button" class="nk-ib" data-act="nk-newfolder" aria-label="New folder" title="New folder">${I('plus')}</button></div>
+        ${list.folders.length ? list.folders.map((f) => html`<div class="nk-frow">${fl(`f${f.id}`, 'folder', f.name, f.count)}<button type="button" class="nk-ib nk-fm" data-act="nk-folder" data-id="${f.id}" data-name="${f.name}" aria-label="Rename or remove ${f.name}">${I('more')}</button></div>`) : html`<p class="nk-none">Make folders to keep notes apart.</p>`}
+        ${list.projects.length ? html`<div class="nk-fg"><span>Projects</span></div>${list.projects.map((p) => html`<a href="#/notes?folder=p${p.id}" class="nk-fi${folder === `p${p.id}` ? ' on' : ''}"><i class="nk-pc" style="background:${p.color}"></i><span>${p.name}</span><em>${p.count}</em></a>`)}` : ''}
+        <span class="nk-sp"></span>
         ${fl('deleted', 'trash', 'Recently deleted', c.deleted)}
       </nav>
-      <section class="nb-l" aria-label="${folderName}">
-        <div class="nb-lh"><div class="nb-row"><a class="nb-back" href="#/notes?view=folders">${I('left')}<span>Folders</span></a></div>
-          <div class="nb-row"><h2 class="nb-grow">${folderName}</h2>${canNew ? html`<button type="button" class="nb-ib" data-act="nb-new" aria-label="New note" title="New note">${I('new')}</button>` : ''}</div>
-          <label class="nb-srch">${I('search')}<span class="sr">Search notes</span><input type="search" placeholder="Search notes" value="${q.get('q') || ''}" data-q="q"></label></div>
-        <div class="nb-items">${shown.length ? groups.map((g) => html`<h3 class="nb-gh">${g.name}</h3>${g.items.map((n) => html`<a href="${link(q, n.id)}" class="nb-i${note && note.id === n.id ? ' on' : ''}" data-k="n${n.id}" ${raw(note && note.id === n.id ? 'aria-current="true"' : '')}>
-            <b>${n.title}</b><span class="nb-m"><b>${when(folder === 'deleted' ? n.deleted_at : n.updated_at)}</b><span class="nb-grow">${n.snippet || (n.mine ? 'No more text' : `From ${first(n.owner.name)}`)}</span>${n.shared ? faces(n.people) : ''}</span></a>`)}`)
-          : html`<div class="nb-empty">${q.get('q') ? html`<b>No notes match</b><span>Try other words.</span>` : folder === 'deleted' ? html`<b>Nothing here</b><span>Notes you delete wait here until you delete them for good.</span>` : folder === 'shared' ? html`<b>Nothing shared with you yet</b><span>When someone shares a note with you, it shows here.</span>` : html`<b>No notes yet</b><span>Write the first one. Only you see it, until you share it.</span><button type="button" class="btn primary sm" data-act="nb-new">${I('new')} New note</button>`}</div>`}</div>
+      <section class="nk-l" aria-label="${folderName}">
+        <div class="nk-lh"><div class="nk-row"><a class="nk-back" href="#/notes?view=folders">${I('left')}<span>Folders</span></a></div>
+          <div class="nk-row"><h2 class="nk-grow">${folderName}</h2>${canNew ? html`<button type="button" class="nk-ib" data-act="nk-new" aria-label="New note" title="New note">${I('new')}</button>` : ''}</div>
+          <label class="nk-srch">${I('search')}<span class="sr">Search notes</span><input type="search" placeholder="Search notes" value="${q.get('q') || ''}" data-q="q"></label></div>
+        <div class="nk-items">${shown.length ? groups.map((g) => html`<h3 class="nk-gh">${g.name}</h3>${g.items.map((n) => html`<a href="${link(q, n.id)}" class="nk-i${note && note.id === n.id ? ' on' : ''}" data-k="n${n.id}" ${raw(note && note.id === n.id ? 'aria-current="true"' : '')}>
+            <b>${n.title}</b><span class="nk-m"><b>${when(folder === 'deleted' ? n.deleted_at : n.updated_at)}</b><span class="nk-grow">${n.snippet || (n.mine ? 'No more text' : `From ${first(n.owner.name)}`)}</span>${n.shared ? faces(n.people) : ''}</span></a>`)}`)
+          : html`<div class="nk-empty">${q.get('q') ? html`<b>No notes match</b><span>Try other words.</span>` : folder === 'deleted' ? html`<b>Nothing here</b><span>Notes you delete wait here until you delete them for good.</span>` : folder === 'shared' ? html`<b>Nothing shared with you yet</b><span>When someone shares a note with you, it shows here.</span>` : html`<b>No notes yet</b><span>Write the first one. Only you see it, until you share it.</span><button type="button" class="btn primary sm" data-act="nk-new">${I('new')} New note</button>`}</div>`}</div>
       </section>
-      <section class="nb-e" aria-label="${note && !note.gone ? note.title : 'Note'}">${note ? (note.gone ? html`<div class="nb-empty"><b>This note isn’t available</b><span>It was deleted, or it’s no longer shared with you.</span></div>` : editor(note, q)) : html`<div class="nb-empty"><b>No note open</b><span>Pick one from the list, or write a new one.</span>${canNew ? html`<button type="button" class="btn primary sm" data-act="nb-new">${I('new')} New note</button>` : ''}</div>`}</section>
+      <section class="nk-e" aria-label="${note && !note.gone ? note.title : 'Note'}">${note ? (note.gone ? html`<div class="nk-empty"><b>This note isn’t available</b><span>It was deleted, or it’s no longer shared with you.</span></div>` : editor(note, q)) : html`<div class="nk-empty"><b>No note open</b><span>Pick one from the list, or write a new one.</span>${canNew ? html`<button type="button" class="btn primary sm" data-act="nk-new">${I('new')} New note</button>` : ''}</div>`}</section>
     </div>`;
   },
   after(view, data) { mount(view, data); },
@@ -164,35 +164,35 @@ export default {
 
 function editor(n, q) {
   const can = (n.access === 'owner' || n.access === 'edit') && !n.deleted_at;
-  const tb = (act, ic, label, extra = '') => html`<button type="button" class="nb-tb" data-act="${act}" ${raw(extra)} aria-label="${label}" title="${label}">${I(ic)}</button>`;
+  const tb = (act, ic, label, extra = '') => html`<button type="button" class="nk-tb" data-act="${act}" ${raw(extra)} aria-label="${label}" title="${label}">${I(ic)}</button>`;
   const others = (n.here || []);
   const typing = others.filter((p) => p.typing).map((p) => first(p.name));
-  return html`<div class="nb-bar" role="toolbar" aria-label="Note tools">
-      <a class="nb-back" href="${link(q, null)}">${I('left')}<span>${FOLDERS[q.get('folder') || ''] || 'Notes'}</span></a>
-      ${can ? html`<span class="nb-fmt" role="group" aria-label="Formatting">${tb('nb-style', 'aa', 'Text styles')}${tb('nb-ck', 'ck', 'Checklist')}${tb('nb-ul', 'list', 'Bulleted list')}${tb('nb-table', 'table', 'Table')}<span class="nb-sep"></span>
-        <label class="nb-tb" title="Add a photo" aria-label="Add a photo">${I('cam')}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" data-nb-file hidden></label>
-        <label class="nb-tb" title="Attach a file" aria-label="Attach a file">${I('clip')}<input type="file" data-nb-file hidden></label>
-        ${tb('nb-at', 'at', 'Mention someone')}${tb('nb-link', 'task', 'Link a task')}</span>` : ''}
-      <span class="nb-grow"></span>
-      <span class="nb-st small" role="status" data-nb-status>${n.deleted_at ? '' : can ? 'Saved' : 'View only'}</span>
-      ${others.length ? html`<span class="nb-here" title="${others.map((p) => p.name).join(', ')} ${others.length === 1 ? 'has' : 'have'} it open">${faces(others)}${typing.length ? html`<span class="small">${typing.join(', ')} ${typing.length === 1 ? 'is' : 'are'} typing</span>` : ''}</span>` : ''}
-      ${!n.deleted_at ? html`<button type="button" class="nb-tb${n.pinned ? ' on' : ''}" data-act="nb-pin" aria-pressed="${n.pinned ? 'true' : 'false'}" aria-label="${n.pinned ? 'Unpin' : 'Pin'}" title="${n.pinned ? 'Unpin' : 'Pin to the top'}">${I('pin')}</button>` : ''}
-      ${n.access === 'owner' && !n.deleted_at ? html`<button type="button" class="nb-tb" data-act="nb-more" aria-label="Move or delete" title="Move or delete">${I('more')}</button><button type="button" class="btn sm" data-act="nb-share">${I('share')} Share</button>` : !n.mine ? html`<span class="nb-from small">${av(n.owner.id, n.owner.name, 'xs')}${first(n.owner.name)}’s note</span>` : ''}
+  return html`<div class="nk-bar" role="toolbar" aria-label="Note tools">
+      <a class="nk-back" href="${link(q, null)}">${I('left')}<span>${FOLDERS[q.get('folder') || ''] || 'Notes'}</span></a>
+      ${can ? html`<span class="nk-fmt" role="group" aria-label="Formatting">${tb('nk-style', 'aa', 'Text styles')}${tb('nk-ck', 'ck', 'Checklist')}${tb('nk-ul', 'list', 'Bulleted list')}${tb('nk-table', 'table', 'Table')}<span class="nk-sep"></span>
+        <label class="nk-tb" title="Add a photo" aria-label="Add a photo">${I('cam')}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" data-nk-file hidden></label>
+        <label class="nk-tb" title="Attach a file" aria-label="Attach a file">${I('clip')}<input type="file" data-nk-file hidden></label>
+        ${tb('nk-at', 'at', 'Mention someone')}${tb('nk-link', 'task', 'Link a task')}</span>` : ''}
+      <span class="nk-grow"></span>
+      <span class="nk-st small" role="status" data-nk-status>${n.deleted_at ? '' : can ? 'Saved' : 'View only'}</span>
+      ${others.length ? html`<span class="nk-here" title="${others.map((p) => p.name).join(', ')} ${others.length === 1 ? 'has' : 'have'} it open">${faces(others)}${typing.length ? html`<span class="small">${typing.join(', ')} ${typing.length === 1 ? 'is' : 'are'} typing</span>` : ''}</span>` : ''}
+      ${!n.deleted_at ? html`<button type="button" class="nk-tb${n.pinned ? ' on' : ''}" data-act="nk-pin" aria-pressed="${n.pinned ? 'true' : 'false'}" aria-label="${n.pinned ? 'Unpin' : 'Pin'}" title="${n.pinned ? 'Unpin' : 'Pin to the top'}">${I('pin')}</button>` : ''}
+      ${n.access === 'owner' && !n.deleted_at ? html`<button type="button" class="nk-tb" data-act="nk-more" aria-label="Move or delete" title="Move or delete">${I('more')}</button><button type="button" class="btn sm" data-act="nk-share">${I('share')} Share</button>` : !n.mine ? html`<span class="nk-from small">${av(n.owner.id, n.owner.name, 'xs')}${first(n.owner.name)}’s note</span>` : ''}
     </div>
-    ${n.deleted_at ? html`<div class="banner nb-ban"><span>This note is in Recently deleted. Restore it to change it.</span><span><button type="button" class="btn sm" data-act="nb-restore">${I('restore')} Restore</button> <button type="button" class="btn sm danger" data-act="nb-forever">Delete for good</button></span></div>`
-      : !can ? html`<div class="banner info nb-ban"><span>You can read this note. ${first(n.owner.name)} can let you edit it.</span></div>` : ''}
-    <article class="nb-doc">
-      <p class="nb-when">${dayLong(n.updated_at.slice(0, 10)) ? new Date(n.updated_at).toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(', ', ', ').replace(/ at /, ' at ') : ''}${n.updated_by && n.updated_by !== S.me.name ? ` · edited by ${first(n.updated_by)}` : ''}</p>
-      <label class="sr" for="nb-title">Title</label>
-      <textarea id="nb-title" class="nb-title" rows="1" maxlength="300" placeholder="Title" data-own="t${n.id}" ${raw(can ? '' : 'readonly')}></textarea>
-      <div class="nb-body" data-own="b${n.id}" ${raw(can ? 'contenteditable="true"' : '')} role="textbox" aria-multiline="true" aria-label="Note" data-placeholder="Start writing. Type @ to mention someone."></div>
+    ${n.deleted_at ? html`<div class="banner nk-ban"><span>This note is in Recently deleted. Restore it to change it.</span><span><button type="button" class="btn sm" data-act="nk-restore">${I('restore')} Restore</button> <button type="button" class="btn sm danger" data-act="nk-forever">Delete for good</button></span></div>`
+      : !can ? html`<div class="banner info nk-ban"><span>You can read this note. ${first(n.owner.name)} can let you edit it.</span></div>` : ''}
+    <article class="nk-doc">
+      <p class="nk-when">${dayLong(n.updated_at.slice(0, 10)) ? new Date(n.updated_at).toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(', ', ', ').replace(/ at /, ' at ') : ''}${n.updated_by && n.updated_by !== S.me.name ? ` · edited by ${first(n.updated_by)}` : ''}</p>
+      <label class="sr" for="nk-title">Title</label>
+      <textarea id="nk-title" class="nk-title" rows="1" maxlength="300" placeholder="Title" data-own="t${n.id}" ${raw(can ? '' : 'readonly')}></textarea>
+      <div class="nk-body" data-own="b${n.id}" ${raw(can ? 'contenteditable="true"' : '')} role="textbox" aria-multiline="true" aria-label="Note" data-placeholder="Start writing. Type @ to mention someone."></div>
     </article>`;
 }
 
 // ---------- putting a note in the editor, and keeping it current ----------
 function mount(view, data) {
   const n = data && data.note;
-  const el = view.querySelector('.nb-body'), ti = view.querySelector('.nb-title');
+  const el = view.querySelector('.nk-body'), ti = view.querySelector('.nk-title');
   clearInterval(ed.hereTimer);
   if (!n || n.gone || !el) { if (ed.id) leave(); ed.id = null; return; }
   const can = (n.access === 'owner' || n.access === 'edit') && !n.deleted_at;
@@ -207,16 +207,16 @@ function mount(view, data) {
     ed.note = n; ed.can = can;
     // someone else saved: show it, unless you are in the middle of typing (your next save keeps both)
     if (n.version > ed.version && !ed.dirty && !ed.saving && nowMs() - ed.typingAt > 2500) {
-      const scroll = el.closest('.nb-e').scrollTop;
+      const scroll = el.closest('.nk-e').scrollTop;
       el.innerHTML = cleanNote(n.body) || '<p><br></p>'; ti.value = n.titled ? n.title : ''; ed.version = n.version; ed.base = n.body; ed.title = ti.value;
-      decorate(el, n); fit(ti); blank(el); el.closest('.nb-e').scrollTop = scroll;
+      decorate(el, n); fit(ti); blank(el); el.closest('.nk-e').scrollTop = scroll;
     } else {
       decorate(el, n);
       // you were typing a moment ago: show their change once you pause (your own next save keeps both anyway)
       if (n.version > ed.version && !ed.dirty) { clearTimeout(ed.later); ed.later = setTimeout(() => S.refresh(), 2700); }
     }
   }
-  if (!n.deleted_at) { here(); ed.hereTimer = setInterval(() => { if (!document.querySelector(`.nb-body[data-own="b${ed.id}"]`)) { clearInterval(ed.hereTimer); leave(); return; } if (!document.hidden) here(); }, 15000); }
+  if (!n.deleted_at) { here(); ed.hereTimer = setInterval(() => { if (!document.querySelector(`.nk-body[data-own="b${ed.id}"]`)) { clearInterval(ed.hereTimer); leave(); return; } if (!document.hidden) here(); }, 15000); }
 }
 // the hint shows in an empty note; new lines are paragraphs, so each line is its own block (and merges well)
 const blank = (el) => { el.classList.toggle('blank', !el.textContent.trim() && !el.querySelector('img,table,ul,ol,.nt-task,.nt-file,.mention')); };
@@ -244,7 +244,7 @@ function decorate(el, n) {
 }
 
 // ---------- saving ----------
-const status = (t) => { const s = document.querySelector('[data-nb-status]'); if (s) s.textContent = t; };
+const status = (t) => { const s = document.querySelector('[data-nk-status]'); if (s) s.textContent = t; };
 function changed() {
   ed.dirty = true; ed.typingAt = nowMs(); status('Saving…');
   clearTimeout(ed.timer); ed.timer = setTimeout(saveNow, 700);
@@ -252,7 +252,7 @@ function changed() {
 }
 async function saveNow(beacon = false) {
   clearTimeout(ed.timer);
-  const el = document.querySelector(`.nb-body[data-own="b${ed.id}"]`), ti = document.querySelector('.nb-title');
+  const el = document.querySelector(`.nk-body[data-own="b${ed.id}"]`), ti = document.querySelector('.nk-title');
   if (!ed.id || !ed.dirty || !el || !ed.can) return;
   if (ed.saving) { ed.timer = setTimeout(saveNow, 300); return; }
   const body = serialize(el), title = ti ? ti.value : ed.title, id = ed.id;
@@ -281,13 +281,13 @@ async function saveNow(beacon = false) {
 
 // ---------- typing in the note ----------
 document.addEventListener('input', (e) => {
-  if (e.target.matches && e.target.matches('.nb-title')) { fit(e.target); changed(); return; }
-  const b = e.target.closest && e.target.closest('.nb-body');
+  if (e.target.matches && e.target.matches('.nk-title')) { fit(e.target); changed(); return; }
+  const b = e.target.closest && e.target.closest('.nk-body');
   if (b) { tidy(b); blank(b); changed(); mentionCheck(); }
 });
 document.addEventListener('keydown', (e) => {
-  const body = e.target.closest && e.target.closest('.nb-body');
-  if (e.target.matches && e.target.matches('.nb-title') && e.key === 'Enter') { e.preventDefault(); const b = document.querySelector('.nb-body'); if (b) { b.focus(); placeCaret(b, true); } return; }
+  const body = e.target.closest && e.target.closest('.nk-body');
+  if (e.target.matches && e.target.matches('.nk-title') && e.key === 'Enter') { e.preventDefault(); const b = document.querySelector('.nk-body'); if (b) { b.focus(); placeCaret(b, true); } return; }
   if (!body) return;
   if (menu) {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); mAt = (mAt + (e.key === 'ArrowDown' ? 1 : -1) + mHits.length) % mHits.length; paintMenu(); return; }
@@ -310,7 +310,7 @@ document.addEventListener('keydown', (e) => {
 });
 // ticking a checklist line: the circle at its start
 document.addEventListener('mousedown', (e) => {
-  const li = e.target.closest && e.target.closest('.nb-body ul.ck > li');
+  const li = e.target.closest && e.target.closest('.nk-body ul.ck > li');
   if (!li || !ed.can) return;
   const r = li.getBoundingClientRect();
   if (e.clientX - r.left > 26) return;
@@ -319,14 +319,14 @@ document.addEventListener('mousedown', (e) => {
   changed();
 });
 document.addEventListener('click', (e) => {
-  const t = e.target.closest && e.target.closest('.nb-body .nt-task');
+  const t = e.target.closest && e.target.closest('.nk-body .nt-task');
   if (t) { e.preventDefault(); if (t.dataset.status !== 'hidden') S.navigate(`#/task?id=${t.dataset.task}`); return; }
-  const f = e.target.closest && e.target.closest('.nb-body .nt-file');
+  const f = e.target.closest && e.target.closest('.nk-body .nt-file');
   if (f) { e.preventDefault(); download(`/api/notebook/${ed.id}/files/${f.dataset.file}`, f.textContent.trim()).catch((err) => toast(errMsg(err), true)); }
 });
 // pasting: words come in as plain text (no stray styles); pictures are added to the note
 document.addEventListener('paste', (e) => {
-  const body = e.target.closest && e.target.closest('.nb-body');
+  const body = e.target.closest && e.target.closest('.nk-body');
   if (!body || !ed.can) return;
   const files = [...(e.clipboardData && e.clipboardData.files || [])];
   e.preventDefault();
@@ -335,12 +335,12 @@ document.addEventListener('paste', (e) => {
   document.execCommand('insertText', false, text);
 });
 document.addEventListener('drop', (e) => {
-  const body = e.target.closest && e.target.closest('.nb-body');
+  const body = e.target.closest && e.target.closest('.nk-body');
   if (!body || !ed.can || !e.dataTransfer || !e.dataTransfer.files.length) return;
   e.preventDefault();
   for (const f of e.dataTransfer.files) addFile(f);
 });
-document.addEventListener('change', (e) => { if (e.target.matches && e.target.matches('[data-nb-file]')) { for (const f of e.target.files) addFile(f); e.target.value = ''; } });
+document.addEventListener('change', (e) => { if (e.target.matches && e.target.matches('[data-nk-file]')) { for (const f of e.target.files) addFile(f); e.target.value = ''; } });
 
 // text typed straight into the note (not in a paragraph) is put in one, keeping the caret where it was
 function tidy(b) {
@@ -374,9 +374,9 @@ function tidy(b) {
 }
 function caretBlock(sel) { const s = window.getSelection(); if (!s.rangeCount) return null; let n = s.anchorNode; if (n && n.nodeType === 3) n = n.parentNode; return n && n.closest ? n.closest(sel) : null; }
 function placeCaret(el, end) { const r = document.createRange(); const blk = end ? el.lastElementChild : el.firstElementChild; r.selectNodeContents(blk && !/^(TABLE|UL|OL|IMG|HR)$/.test(blk.tagName) ? blk : el); r.collapse(!end); const s = window.getSelection(); s.removeAllRanges(); s.addRange(r); }
-function focusBody() { const b = document.querySelector('.nb-body'); if (!b) return null; if (!b.contains(document.activeElement) && document.activeElement !== b) { b.focus(); if (!b.contains(window.getSelection().anchorNode)) placeCaret(b, true); } return b; }
+function focusBody() { const b = document.querySelector('.nk-body'); if (!b) return null; if (!b.contains(document.activeElement) && document.activeElement !== b) { b.focus(); if (!b.contains(window.getSelection().anchorNode)) placeCaret(b, true); } return b; }
 let savedRange = null;
-document.addEventListener('selectionchange', () => { const s = window.getSelection(); if (s.rangeCount && s.anchorNode && s.anchorNode.parentElement && s.anchorNode.parentElement.closest('.nb-body')) savedRange = s.getRangeAt(0).cloneRange(); });
+document.addEventListener('selectionchange', () => { const s = window.getSelection(); if (s.rangeCount && s.anchorNode && s.anchorNode.parentElement && s.anchorNode.parentElement.closest('.nk-body')) savedRange = s.getRangeAt(0).cloneRange(); });
 function restoreRange() {
   const b = focusBody(); if (!b) return null;
   const s = window.getSelection();
@@ -391,33 +391,33 @@ function restoreRange() {
 }
 
 // ---------- the toolbar ----------
-actions['nb-ck'] = () => {
+actions['nk-ck'] = () => {
   if (!restoreRange()) return;
   const ul = caretBlock('ul');
   if (ul && ul.classList.contains('ck')) { document.execCommand('insertUnorderedList'); }
   else { if (!ul) document.execCommand('insertUnorderedList'); const u = caretBlock('ul'); if (u) u.className = 'ck'; }
-  tidy(document.querySelector('.nb-body')); changed();
+  tidy(document.querySelector('.nk-body')); changed();
 };
-actions['nb-ul'] = () => {
+actions['nk-ul'] = () => {
   if (!restoreRange()) return;
   const ul = caretBlock('ul');
   if (ul && ul.classList.contains('ck')) ul.className = ''; else document.execCommand('insertUnorderedList');
-  tidy(document.querySelector('.nb-body')); changed();
+  tidy(document.querySelector('.nk-body')); changed();
 };
-actions['nb-table'] = () => {
+actions['nk-table'] = () => {
   if (!restoreRange()) return;
   document.execCommand('insertHTML', false, '<table><tbody><tr><th><br></th><th><br></th><th><br></th></tr><tr><td><br></td><td><br></td><td><br></td></tr><tr><td><br></td><td><br></td><td><br></td></tr></tbody></table><p><br></p>');
-  tidy(document.querySelector('.nb-body'));
+  tidy(document.querySelector('.nk-body'));
   const t = caretBlock('p'), prev = t && t.previousElementSibling;
   if (prev && prev.tagName === 'TABLE') { const r = document.createRange(); r.setStart(prev.querySelector('th'), 0); r.collapse(true); const s = window.getSelection(); s.removeAllRanges(); s.addRange(r); }
   changed();
 };
-actions['nb-style'] = (el) => {
+actions['nk-style'] = (el) => {
   const box = el.getBoundingClientRect();
   closePop();
   const pop = document.createElement('div');
-  pop.className = 'nb-pop'; pop.setAttribute('role', 'menu');
-  const items = [['h2', 'Heading', 'nb-h2'], ['h3', 'Subheading', 'nb-h3'], ['p', 'Body', ''], ['-'], ['bold', 'Bold', 'b'], ['italic', 'Italic', 'i'], ['underline', 'Underline', 'u'], ['strikeThrough', 'Strikethrough', 's'], ['-'], ['insertOrderedList', 'Numbered list', '']];
+  pop.className = 'nk-pop'; pop.setAttribute('role', 'menu');
+  const items = [['h2', 'Heading', 'nk-h2'], ['h3', 'Subheading', 'nk-h3'], ['p', 'Body', ''], ['-'], ['bold', 'Bold', 'b'], ['italic', 'Italic', 'i'], ['underline', 'Underline', 'u'], ['strikeThrough', 'Strikethrough', 's'], ['-'], ['insertOrderedList', 'Numbered list', '']];
   pop.innerHTML = items.map(([k, n, c]) => (k === '-' ? '<hr>' : `<button type="button" role="menuitem" data-cmd="${k}" class="${c}">${n}</button>`)).join('');
   pop.style.left = `${Math.min(window.innerWidth - 220, box.left)}px`; pop.style.top = `${box.bottom + 6}px`;
   pop.addEventListener('mousedown', (e) => e.preventDefault());
@@ -431,11 +431,11 @@ actions['nb-style'] = (el) => {
   document.body.appendChild(pop); pop.querySelector('button').focus();
 };
 let popEl = null;
-function closePop() { const p = document.querySelector('.nb-pop'); if (p) p.remove(); }
-document.addEventListener('mousedown', (e) => { if (!e.target.closest('.nb-pop') && !e.target.closest('[data-act="nb-style"]')) closePop(); });
+function closePop() { const p = document.querySelector('.nk-pop'); if (p) p.remove(); }
+document.addEventListener('mousedown', (e) => { if (!e.target.closest('.nk-pop') && !e.target.closest('[data-act="nk-style"]')) closePop(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
 void popEl;
-actions['nb-at'] = () => { if (!restoreRange()) return; document.execCommand('insertText', false, '@'); mentionCheck(); };
+actions['nk-at'] = () => { if (!restoreRange()) return; document.execCommand('insertText', false, '@'); mentionCheck(); };
 
 // pictures and files
 async function addFile(f) {
@@ -449,7 +449,7 @@ async function addFile(f) {
     restoreRange();
     if (r.image) document.execCommand('insertHTML', false, `<img data-file="${r.id}" alt="${esc(r.name)}"><p><br></p>`);
     else document.execCommand('insertHTML', false, `<a class="nt-file" data-file="${r.id}" contenteditable="false" href="#">${esc(r.name)}</a>&nbsp;`);
-    const b = document.querySelector('.nb-body'); if (b) decorate(b, ed.note);
+    const b = document.querySelector('.nk-body'); if (b) decorate(b, ed.note);
     changed();
   } catch (e) { status('Not saved'); toast(errMsg(e), true); }
 }
@@ -497,28 +497,28 @@ function pickMention(i) {
   const s = window.getSelection(); const after = document.createRange(); after.setStartAfter(sp); after.collapse(true); s.removeAllRanges(); s.addRange(after);
   closeMenu(); changed();
 }
-document.addEventListener('focusout', (e) => { if (e.target.closest && e.target.closest('.nb-body')) setTimeout(() => { if (!document.activeElement || !document.activeElement.closest('.nb-body')) closeMenu(); }, 150); });
+document.addEventListener('focusout', (e) => { if (e.target.closest && e.target.closest('.nk-body')) setTimeout(() => { if (!document.activeElement || !document.activeElement.closest('.nk-body')) closeMenu(); }, 150); });
 
 // ---------- a checklist line becomes a task ----------
 let hoverLi = null;
 document.addEventListener('mousemove', (e) => {
-  const doc = e.target.closest && e.target.closest('.nb-doc');
-  const btn = document.querySelector('.nb-mk-float');
-  if (!doc || !ed.can) { if (btn && !(e.target.closest && e.target.closest('.nb-mk-float'))) btn.remove(); return; }
-  const li = e.target.closest('.nb-body ul.ck > li');
-  if (!li) { if (btn && !e.target.closest('.nb-mk-float') && (!hoverLi || !hoverLi.contains(e.target))) { btn.remove(); hoverLi = null; } return; }
+  const doc = e.target.closest && e.target.closest('.nk-doc');
+  const btn = document.querySelector('.nk-mk-float');
+  if (!doc || !ed.can) { if (btn && !(e.target.closest && e.target.closest('.nk-mk-float'))) btn.remove(); return; }
+  const li = e.target.closest('.nk-body ul.ck > li');
+  if (!li) { if (btn && !e.target.closest('.nk-mk-float') && (!hoverLi || !hoverLi.contains(e.target))) { btn.remove(); hoverLi = null; } return; }
   if (li === hoverLi && btn) return;
   if (li.querySelector('.nt-task') || !li.textContent.trim()) { if (btn) btn.remove(); hoverLi = null; return; }
   hoverLi = li;
-  const b = btn || Object.assign(document.createElement('button'), { type: 'button', className: 'btn sm nb-mk-float' });
-  b.innerHTML = `${I('task')}<span>Make a task</span>`; b.dataset.act = 'nb-mktask';
+  const b = btn || Object.assign(document.createElement('button'), { type: 'button', className: 'btn sm nk-mk-float' });
+  b.innerHTML = `${I('task')}<span>Make a task</span>`; b.dataset.act = 'nk-mktask';
   const r = li.getBoundingClientRect(), d = doc.getBoundingClientRect();
   const tr = document.createRange(); tr.selectNodeContents(li); const end = tr.getBoundingClientRect().right;
   b.style.top = `${r.top - d.top + (Math.min(r.height, 30) - 30) / 2}px`;
   b.style.left = `${Math.min(end - d.left + 14, d.width - 150)}px`;
   if (!btn) doc.appendChild(b);
 });
-actions['nb-mktask'] = async () => {
+actions['nk-mktask'] = async () => {
   const li = hoverLi; if (!li) return;
   const text = li.textContent.replace(/\s+/g, ' ').trim();
   const [projects] = await Promise.all([get('/api/projects')]);
@@ -526,22 +526,22 @@ actions['nb-mktask'] = async () => {
   const noteProject = ed.note && ed.note.projects && ed.note.projects[0];
   const m = openModal({
     title: 'Make a task from this line', sub: 'The line turns into a link to the task, and shows how it’s going.', submit: 'Make the task',
-    body: html`<div class="field"><label class="f" for="nb-tt">Task</label><input id="nb-tt" name="title" maxlength="200" value="${text.slice(0, 200)}" required></div>
-      <div class="grid2"><div class="field"><label class="f" for="nb-tp">Project</label><select id="nb-tp" name="project_id"><option value="">No project</option>${mine.map((p) => html`<option value="${p.id}" ${raw(noteProject && noteProject.id === p.id ? 'selected' : '')}>${p.name}</option>`)}</select></div>
-        <div class="field"><label class="f" for="nb-ta">For</label><select id="nb-ta" name="assignee_id"><option value="${S.me.id}">Me</option></select></div></div>
-      <div class="field"><label class="f" for="nb-td">Due (optional)</label><input id="nb-td" name="due_day" type="date"></div>`,
+    body: html`<div class="field"><label class="f" for="nk-tt">Task</label><input id="nk-tt" name="title" maxlength="200" value="${text.slice(0, 200)}" required></div>
+      <div class="grid2"><div class="field"><label class="f" for="nk-tp">Project</label><select id="nk-tp" name="project_id"><option value="">No project</option>${mine.map((p) => html`<option value="${p.id}" ${raw(noteProject && noteProject.id === p.id ? 'selected' : '')}>${p.name}</option>`)}</select></div>
+        <div class="field"><label class="f" for="nk-ta">For</label><select id="nk-ta" name="assignee_id"><option value="${S.me.id}">Me</option></select></div></div>
+      <div class="field"><label class="f" for="nk-td">Due (optional)</label><input id="nk-td" name="due_day" type="date"></div>`,
     onSubmit: async (fd) => {
       const t = await post('/api/tasks', { title: fd.get('title'), project_id: fd.get('project_id') ? Number(fd.get('project_id')) : null, assignee_id: Number(fd.get('assignee_id')) || S.me.id, due_day: fd.get('due_day') || null });
       li.innerHTML = '';
       const chip = document.createElement('span'); chip.className = 'nt-task'; chip.dataset.task = t.id; chip.contentEditable = 'false'; chip.textContent = `${t.key ? `${t.key} ` : ''}${t.title}`;
       li.appendChild(chip);
       ed.note.tasks = { ...(ed.note.tasks || {}), [t.id]: { id: t.id, key: t.key, title: t.title, status: t.status } };
-      decorate(li.closest('.nb-body'), ed.note); changed();
+      decorate(li.closest('.nk-body'), ed.note); changed();
       toast(`${t.key || 'Task'} made`);
     },
   });
   // who it can go to: the project's team when you run the project, otherwise you
-  const ps = m.form.querySelector('#nb-tp'), as = m.form.querySelector('#nb-ta');
+  const ps = m.form.querySelector('#nk-tp'), as = m.form.querySelector('#nk-ta');
   const fill = () => {
     const p = mine.find((x) => x.id === Number(ps.value));
     const people = p && p.can_plan ? p.members.filter((x) => x.id !== S.me.id) : [];
@@ -550,21 +550,21 @@ actions['nb-mktask'] = async () => {
   ps.addEventListener('change', fill); fill();
 };
 // link a task that already exists
-actions['nb-link'] = () => {
+actions['nk-link'] = () => {
   const range = savedRange;
   const m = openModal({
     title: 'Link a task', submit: 'Link it', footer: true,
-    body: html`<div class="field"><label class="f" for="nb-ls">Find a task</label><input id="nb-ls" type="search" placeholder="Type a name or a key like WE-12" autocomplete="off"></div><div class="pickl" data-nb-res><p class="muted small" style="margin:6px">Start typing to find a task.</p></div>`,
+    body: html`<div class="field"><label class="f" for="nk-ls">Find a task</label><input id="nk-ls" type="search" placeholder="Type a name or a key like WE-12" autocomplete="off"></div><div class="pickl" data-nk-res><p class="muted small" style="margin:6px">Start typing to find a task.</p></div>`,
     onSubmit: async (fd) => {
       const id = Number(fd.get('task')); if (!id) throw new Error('Pick a task');
       const t = await get(`/api/tasks/${id}`);
       savedRange = range; restoreRange();
       document.execCommand('insertHTML', false, `<span class="nt-task" data-task="${t.id}" contenteditable="false">${esc(`${t.key ? `${t.key} ` : ''}${t.title}`)}</span>&nbsp;`);
       ed.note.tasks = { ...(ed.note.tasks || {}), [t.id]: { id: t.id, key: t.key, title: t.title, status: t.status } };
-      decorate(document.querySelector('.nb-body'), ed.note); changed();
+      decorate(document.querySelector('.nk-body'), ed.note); changed();
     },
   });
-  const inp = m.form.querySelector('#nb-ls'), box = m.form.querySelector('[data-nb-res]');
+  const inp = m.form.querySelector('#nk-ls'), box = m.form.querySelector('[data-nk-res]');
   let tm = null;
   inp.addEventListener('input', () => {
     clearTimeout(tm); tm = setTimeout(async () => {
@@ -577,7 +577,7 @@ actions['nb-link'] = () => {
 
 // ---------- notes and folders ----------
 const curQ = () => new URLSearchParams(location.hash.split('?')[1] || '');
-actions['nb-new'] = async () => {
+actions['nk-new'] = async () => {
   const q = curQ(), f = q.get('folder') || '';
   try {
     const r = await post('/api/notebook', { folder_id: /^f\d+$/.test(f) ? Number(f.slice(1)) : null, project_id: /^p\d+$/.test(f) ? Number(f.slice(1)) : null, title: '', body: '' });
@@ -585,69 +585,69 @@ actions['nb-new'] = async () => {
     S.navigate(`#/notes?${p}`);
   } catch (e) { toast(errMsg(e), true); }
 };
-actions['nb-pin'] = async () => { if (!ed.id) return; try { await patch(`/api/notebook/${ed.id}`, { pinned: !ed.note.pinned }); toast(ed.note.pinned ? 'Unpinned' : 'Pinned to the top'); S.refresh(); } catch (e) { toast(errMsg(e), true); } };
-actions['nb-more'] = async () => {
+actions['nk-pin'] = async () => { if (!ed.id) return; try { await patch(`/api/notebook/${ed.id}`, { pinned: !ed.note.pinned }); toast(ed.note.pinned ? 'Unpinned' : 'Pinned to the top'); S.refresh(); } catch (e) { toast(errMsg(e), true); } };
+actions['nk-more'] = async () => {
   const n = ed.note; if (!n) return;
   const list = await get('/api/notebook');
   openModal({
     title: `Move “${n.title}”`, submit: 'Move',
     body: html`<div class="pickl" role="radiogroup" aria-label="Folder"><label class="pick"><input type="radio" name="f" value="" ${raw(!n.folder_id ? 'checked' : '')}><span><b>No folder</b><span class="muted small"> · All notes</span></span></label>
       ${list.folders.map((f) => html`<label class="pick"><input type="radio" name="f" value="${f.id}" ${raw(n.folder_id === f.id ? 'checked' : '')}><span><b>${f.name}</b></span></label>`)}</div>
-      <div class="nb-danger"><span class="muted small">Deleted notes wait in Recently deleted until you delete them for good.</span><button type="button" class="btn sm danger" data-act="nb-del">${I('trash')} Delete note</button></div>`,
+      <div class="nk-danger"><span class="muted small">Deleted notes wait in Recently deleted until you delete them for good.</span><button type="button" class="btn sm danger" data-act="nk-del">${I('trash')} Delete note</button></div>`,
     onSubmit: async (fd) => { await patch(`/api/notebook/${n.id}`, { folder_id: fd.get('f') ? Number(fd.get('f')) : null }); toast('Moved'); S.refresh(); },
   });
 };
-actions['nb-del'] = async () => {
+actions['nk-del'] = async () => {
   const n = ed.note; if (!n) return;
   document.querySelectorAll('#overlay .scrim').forEach((s) => s.remove());
   if (ed.dirty) await saveNow();
   try { await del(`/api/notebook/${n.id}`); toast('Moved to Recently deleted'); const q = curQ(); q.delete('id'); S.navigate(`#/notes${q.toString() ? `?${q}` : ''}`); } catch (e) { toast(errMsg(e), true); }
 };
-actions['nb-restore'] = async () => { try { await post(`/api/notebook/${ed.note.id}/restore`); toast('Restored'); S.navigate(`#/notes?id=${ed.note.id}`); } catch (e) { toast(errMsg(e), true); } };
-actions['nb-forever'] = async () => {
+actions['nk-restore'] = async () => { try { await post(`/api/notebook/${ed.note.id}/restore`); toast('Restored'); S.navigate(`#/notes?id=${ed.note.id}`); } catch (e) { toast(errMsg(e), true); } };
+actions['nk-forever'] = async () => {
   const n = ed.note;
   if (!(await confirmBox({ title: 'Delete this note for good?', message: 'It can’t be brought back, and the people it was shared with lose it too.', confirm: 'Delete for good', danger: true }))) return;
   try { await del(`/api/notebook/${n.id}?forever=1`); toast('Deleted for good'); S.navigate('#/notes?folder=deleted'); } catch (e) { toast(errMsg(e), true); }
 };
-actions['nb-newfolder'] = () => openModal({ title: 'New folder', submit: 'Make folder', body: html`<div class="field"><label class="f" for="nb-fn">Name</label><input id="nb-fn" name="name" maxlength="60" required placeholder="Stand-ups"></div>`,
+actions['nk-newfolder'] = () => openModal({ title: 'New folder', submit: 'Make folder', body: html`<div class="field"><label class="f" for="nk-fn">Name</label><input id="nk-fn" name="name" maxlength="60" required placeholder="Stand-ups"></div>`,
   onSubmit: async (fd) => { const f = await post('/api/notebook/folders', { name: fd.get('name') }); S.navigate(`#/notes?folder=f${f.id}`); } });
-actions['nb-folder'] = (el) => {
+actions['nk-folder'] = (el) => {
   const id = el.dataset.id;
-  const m = openModal({ title: `“${el.dataset.name}”`, submit: 'Rename', body: html`<div class="field"><label class="f" for="nb-fr">Name</label><input id="nb-fr" name="name" maxlength="60" required value="${el.dataset.name}"></div>
-    <div class="nb-danger"><span class="muted small">Removing the folder keeps its notes, in All notes.</span><button type="button" class="btn sm danger" data-nb-rmf>Remove folder</button></div>`,
+  const m = openModal({ title: `“${el.dataset.name}”`, submit: 'Rename', body: html`<div class="field"><label class="f" for="nk-fr">Name</label><input id="nk-fr" name="name" maxlength="60" required value="${el.dataset.name}"></div>
+    <div class="nk-danger"><span class="muted small">Removing the folder keeps its notes, in All notes.</span><button type="button" class="btn sm danger" data-nk-rmf>Remove folder</button></div>`,
     onSubmit: async (fd) => { await patch(`/api/notebook/folders/${id}`, { name: fd.get('name') }); toast('Folder renamed'); S.refresh(); } });
-  m.form.querySelector('[data-nb-rmf]').addEventListener('click', async () => { try { await del(`/api/notebook/folders/${id}`); m.close(); toast('Folder removed. Its notes are in All notes.'); S.navigate('#/notes'); } catch (e) { m.setError(errMsg(e)); } });
+  m.form.querySelector('[data-nk-rmf]').addEventListener('click', async () => { try { await del(`/api/notebook/folders/${id}`); m.close(); toast('Folder removed. Its notes are in All notes.'); S.navigate('#/notes'); } catch (e) { m.setError(errMsg(e)); } });
 };
 
 // ---------- sharing ----------
-actions['nb-share'] = async () => {
+actions['nk-share'] = async () => {
   const n = await get(`/api/notebook/${ed.id}`);
   const [people, projects] = await Promise.all([get('/api/directory'), get('/api/projects')]);
   const teams = projects.filter((p) => !p.archived && p.my_role);
-  const perm = (s) => html`<select data-nb-perm="${s.id}" aria-label="${s.user_name || `${s.project_name} team`} ${s.perm === 'edit' ? 'can edit' : 'can view'}"><option value="view" ${raw(s.perm === 'view' ? 'selected' : '')}>Can view</option><option value="edit" ${raw(s.perm === 'edit' ? 'selected' : '')}>Can edit</option></select>`;
+  const perm = (s) => html`<select data-nk-perm="${s.id}" aria-label="${s.user_name || `${s.project_name} team`} ${s.perm === 'edit' ? 'can edit' : 'can view'}"><option value="view" ${raw(s.perm === 'view' ? 'selected' : '')}>Can view</option><option value="edit" ${raw(s.perm === 'edit' ? 'selected' : '')}>Can edit</option></select>`;
   const m = openModal({
     title: `Share “${n.title}”`, cancel: 'Done', footer: true,
-    body: html`<div class="nb-share">
-      <div class="nb-sh-add"><label class="sr" for="nb-sw">Person or project team</label><select id="nb-sw" data-nb-who><option value="">Add a person or a project team</option><optgroup label="People">${people.filter((u) => u.id !== S.me.id && !n.shares.some((s) => s.user_id === u.id)).map((u) => html`<option value="u${u.id}">${u.name}</option>`)}</optgroup>${teams.length ? html`<optgroup label="Project teams">${teams.filter((p) => !n.shares.some((s) => s.project_id === p.id)).map((p) => html`<option value="p${p.id}">${p.name} team</option>`)}</optgroup>` : ''}</select>
-        <label class="sr" for="nb-sp">Can</label><select id="nb-sp" data-nb-newperm><option value="edit">Can edit</option><option value="view">Can view</option></select><button type="button" class="btn sm primary" data-nb-add>Add</button></div>
-      <ul class="nb-sh-l">
-        <li>${av(S.me.id, S.me.name, '')}<span class="nb-grow"><b>${S.me.name} (you)</b><span class="muted small">Made this note</span></span><span class="muted small">Full access</span></li>
-        ${n.shares.map((s) => html`<li data-k="s${s.id}">${s.user_id ? av(s.user_id, s.user_name, '') : html`<span class="nb-team" style="background:${s.project_color}" aria-hidden="true"></span>`}<span class="nb-grow"><b>${s.user_id ? s.user_name : `${s.project_name} team`}</b><span class="muted small">${s.user_id ? s.user_title || '' : plural(s.team_size || 0, 'person', 'people')}</span></span>${perm(s)}<button type="button" class="nb-ib" data-nb-rm="${s.id}" aria-label="Stop sharing with ${s.user_name || `the ${s.project_name} team`}">${raw('<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>')}</button></li>`)}
+    body: html`<div class="nk-share">
+      <div class="nk-sh-add"><label class="sr" for="nk-sw">Person or project team</label><select id="nk-sw" data-nk-who><option value="">Add a person or a project team</option><optgroup label="People">${people.filter((u) => u.id !== S.me.id && !n.shares.some((s) => s.user_id === u.id)).map((u) => html`<option value="u${u.id}">${u.name}</option>`)}</optgroup>${teams.length ? html`<optgroup label="Project teams">${teams.filter((p) => !n.shares.some((s) => s.project_id === p.id)).map((p) => html`<option value="p${p.id}">${p.name} team</option>`)}</optgroup>` : ''}</select>
+        <label class="sr" for="nk-sp">Can</label><select id="nk-sp" data-nk-newperm><option value="edit">Can edit</option><option value="view">Can view</option></select><button type="button" class="btn sm primary" data-nk-add>Add</button></div>
+      <ul class="nk-sh-l">
+        <li>${av(S.me.id, S.me.name, '')}<span class="nk-grow"><b>${S.me.name} (you)</b><span class="muted small">Made this note</span></span><span class="muted small">Full access</span></li>
+        ${n.shares.map((s) => html`<li data-k="s${s.id}">${s.user_id ? av(s.user_id, s.user_name, '') : html`<span class="nk-team" style="background:${s.project_color}" aria-hidden="true"></span>`}<span class="nk-grow"><b>${s.user_id ? s.user_name : `${s.project_name} team`}</b><span class="muted small">${s.user_id ? s.user_title || '' : plural(s.team_size || 0, 'person', 'people')}</span></span>${perm(s)}<button type="button" class="nk-ib" data-nk-rm="${s.id}" aria-label="Stop sharing with ${s.user_name || `the ${s.project_name} team`}">${raw('<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>')}</button></li>`)}
       </ul>
       <p class="muted small" style="margin:0">Only the people here can open it. Managers and the owner can’t open your notes unless you share them.</p></div>`,
   });
   const f = m.form;
-  f.querySelector('[data-nb-add]').addEventListener('click', async () => {
-    const v = f.querySelector('[data-nb-who]').value; if (!v) { m.setError('Choose a person or a project team'); return; }
-    try { await put(`/api/notebook/${n.id}/shares`, { [v[0] === 'u' ? 'user_id' : 'project_id']: Number(v.slice(1)), perm: f.querySelector('[data-nb-newperm]').value }); m.close(); toast('Shared'); await actions['nb-share'](); } catch (e) { m.setError(errMsg(e)); }
+  f.querySelector('[data-nk-add]').addEventListener('click', async () => {
+    const v = f.querySelector('[data-nk-who]').value; if (!v) { m.setError('Choose a person or a project team'); return; }
+    try { await put(`/api/notebook/${n.id}/shares`, { [v[0] === 'u' ? 'user_id' : 'project_id']: Number(v.slice(1)), perm: f.querySelector('[data-nk-newperm]').value }); m.close(); toast('Shared'); await actions['nk-share'](); } catch (e) { m.setError(errMsg(e)); }
   });
   f.addEventListener('change', async (e) => {
-    const s = e.target.dataset.nbPerm; if (!s) return;
+    const s = e.target.dataset.nkPerm; if (!s) return;
     const sh = n.shares.find((x) => String(x.id) === s);
     try { await put(`/api/notebook/${n.id}/shares`, { [sh.user_id ? 'user_id' : 'project_id']: sh.user_id || sh.project_id, perm: e.target.value }); toast('Saved'); } catch (err) { m.setError(errMsg(err)); }
   });
   f.addEventListener('click', async (e) => {
-    const b = e.target.closest('[data-nb-rm]'); if (!b) return;
-    try { await del(`/api/notebook/${n.id}/shares/${b.dataset.nbRm}`); m.close(); toast('No longer shared with them'); await actions['nb-share'](); } catch (err) { m.setError(errMsg(err)); }
+    const b = e.target.closest('[data-nk-rm]'); if (!b) return;
+    try { await del(`/api/notebook/${n.id}/shares/${b.dataset.nkRm}`); m.close(); toast('No longer shared with them'); await actions['nk-share'](); } catch (err) { m.setError(errMsg(err)); }
   });
 };
