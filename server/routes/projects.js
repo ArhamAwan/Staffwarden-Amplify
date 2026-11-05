@@ -6,7 +6,10 @@ const { projectKey } = require('../db');
 // a lead, members, a colour, a description, dates and a status.
 //   Who sees a project: owners and managers see all of them; everyone else sees the projects they are
 //   members of, plus any project set to "everyone".
-//   Who runs a project: owners, managers and the project's lead (settings, members, assigning, review).
+//   Who runs a project: its manager (lead_id), chosen by the owner or a manager. The manager changes
+//   anything in it, decides who works on it, plans their days and approves their work. The stand-in
+//   (deputy_id), chosen by the manager, plans, assigns and approves when the manager is on leave or did
+//   the work. The owner and managers can still step in on any project, but are never asked to approve.
 const STATUSES = ['active', 'on_hold', 'done'];
 const ACCESS = ['members', 'everyone'];
 const COLORS = ['#0E5F88', '#B45309', '#7C3AED', '#0F766E', '#BE185D', '#4F46E5', '#15803D', '#C2410C'];
@@ -21,6 +24,12 @@ module.exports = (ctx) => {
   const isLead = (p, user) => !!p && p.lead_id === user.id;
   const projectVisible = (user, p) => !!p && (isManager(user) || p.access === 'everyone' || isMember(p.id, user.id));
   const canManageProject = (user, p) => !!p && (isManager(user) || isLead(p, user));
+  const isDeputy = (p, user) => !!p && !!p.deputy_id && p.deputy_id === user.id;
+  // plans days, assigns tasks to people in the project and approves when asked
+  const canRunProject = (user, p) => canManageProject(user, p) || isDeputy(p, user);
+  const activeUser = (id) => (id ? db.prepare('SELECT id, name, active FROM users WHERE id = ?').get(id) : null);
+  // approved time off that covers the day
+  const onLeave = (uid, day) => !!uid && !!db.prepare("SELECT 1 FROM leave_requests WHERE user_id = ? AND status = 'approved' AND start_day <= ? AND end_day >= ?").get(uid, day, day);
   function addMember(pid, uid, role = 'member') {
     db.prepare('INSERT INTO project_members (project_id, user_id, role) VALUES (?,?,?) ON CONFLICT(project_id, user_id) DO UPDATE SET role = excluded.role').run(pid, uid, role);
   }
@@ -30,9 +39,12 @@ module.exports = (ctx) => {
     db.prepare('UPDATE projects SET task_seq = task_seq + 1 WHERE id = ?').run(pid);
     return db.prepare('SELECT task_seq FROM projects WHERE id = ?').get(pid).task_seq;
   }
-  Object.assign(ctx, { projectVisible, canManageProject, isProjectMember: isMember, isProjectLead: isLead, ensureProjectMember: ensureMember, nextTaskNumber: nextNumber, getProject });
+  Object.assign(ctx, { projectVisible, canManageProject, canRunProject, isProjectMember: isMember, isProjectLead: isLead, isProjectDeputy: isDeputy, ensureProjectMember: ensureMember, nextTaskNumber: nextNumber, getProject, onLeave });
 
   const today = () => ctx.calc.companyToday();
+  const nameOf = (id) => (id ? (db.prepare('SELECT name FROM users WHERE id = ?').get(id) || {}).name || null : null);
+  const MANAGER_NOTE = (by) => `${by.name} made you the project manager: you choose who works on it, plan their days and approve their work.`;
+  const DEPUTY_NOTE = (by, mgr) => `${by.name} made you the stand-in${mgr ? ` for ${mgr}` : ''}: you plan and approve when ${mgr || 'the manager'} is on leave, and approve work ${mgr ? 'they do' : 'the manager does'} themselves.`;
 
   // Worked seconds per project (time entries minus their pauses).
   function trackedByProject(ids, sinceIso = null) {
@@ -85,20 +97,23 @@ module.exports = (ctx) => {
     const names = new Map(db.prepare('SELECT id, name FROM users').all().map((u) => [u.id, u.name]));
     return projects.map((p) => {
       const mine = tasks.filter((t) => t.project_id === p.id);
-      const mem = members.filter((m) => m.project_id === p.id && m.active).map((m) => ({ id: m.id, name: m.name, title: m.title || null, role: p.lead_id === m.id ? 'lead' : 'member' }));
+      const mem = members.filter((m) => m.project_id === p.id && m.active).map((m) => ({ id: m.id, name: m.name, title: m.title || null, role: p.lead_id === m.id ? 'lead' : p.deputy_id === m.id ? 'deputy' : 'member' }));
+      const dep = p.deputy_id ? activeUser(p.deputy_id) : null;
       const o = {
         id: p.id, key: p.key, name: p.name, client: p.client_id ? ((db.prepare('SELECT name FROM clients WHERE id = ?').get(p.client_id) || {}).name || p.client || null) : p.client || null, client_id: p.client_id || null, description: p.description || '', color: p.color || COLORS[p.id % COLORS.length],
         status: p.status || 'active', access: p.access || 'members', archived: !!p.archived, start_day: p.start_day || null, due_day: p.due_day || null,
         overdue: !!p.due_day && p.status !== 'done' && p.due_day < day,
-        lead: p.lead_id ? { id: p.lead_id, name: names.get(p.lead_id) || null } : null,
+        lead: p.lead_id ? { id: p.lead_id, name: names.get(p.lead_id) || null, away: onLeave(p.lead_id, day) } : null,
+        deputy: dep && dep.active ? { id: dep.id, name: dep.name } : null,
         members: mem, member_count: mem.length,
-        my_role: p.lead_id === user.id ? 'lead' : mem.some((m) => m.id === user.id) ? 'member' : null,
-        can_manage: canManageProject(user, p),
+        my_role: p.lead_id === user.id ? 'lead' : p.deputy_id === user.id && dep && dep.active ? 'deputy' : mem.some((m) => m.id === user.id) ? 'member' : null,
+        can_manage: canManageProject(user, p), can_plan: canRunProject(user, p), can_pick_manager: isManager(user),
         counts: counts(mine, day), tracked_secs: tracked.get(p.id) || 0, week_secs: week.get(p.id) || 0, month_secs: month.get(p.id) || 0,
         // kept for the desktop app and older pages: the project's tasks
         tasks: mine.map((t) => ({ id: t.id, key: `${p.key}-${t.number}`, name: t.title, done: t.status === 'done', status: t.status, assignee_id: t.assignee_id })),
       };
       if (detail) {
+        o.owner = (db.prepare("SELECT id, name FROM users WHERE role = 'owner' AND active = 1 ORDER BY id LIMIT 1").get()) || null;
         o.workload = mem.map((m) => {
           const ts = mine.filter((t) => t.assignee_id === m.id);
           return { user_id: m.id, name: m.name, title: m.title, role: m.role, ...counts(ts, day), tracked_secs: tracked.perUser ? tracked.perUser.get(`${p.id}:${m.id}`) || 0 : 0 };
@@ -144,15 +159,31 @@ module.exports = (ctx) => {
     if ('status' in body) { need(STATUSES.includes(body.status), 400, 'status must be active, on_hold or done'); set.status = body.status; }
     if ('access' in body) { need(ACCESS.includes(body.access), 400, 'access must be members or everyone'); set.access = body.access; }
     if ('archived' in body) set.archived = body.archived ? 1 : 0;
-    if ('lead_id' in body) {
+    if ('lead_id' in body && (!existing || Number(body.lead_id || 0) !== Number(existing.lead_id || 0))) {
+      need(isManager(user), 403, 'Only the owner or a manager can choose the project manager');
       if (body.lead_id == null || body.lead_id === '') set.lead_id = null;
       else {
         const id = int(Number(body.lead_id), 'lead_id', 1, 1e9);
         const u = db.prepare('SELECT id, active FROM users WHERE id = ?').get(id);
-        need(u && u.active, 404, 'Lead not found');
-        need(isManager(user), 403, 'Only a manager or the owner can choose the project lead');
+        need(u && u.active, 404, 'That person was not found');
         set.lead_id = id;
       }
+    }
+    if ('deputy_id' in body && (!existing || Number(body.deputy_id || 0) !== Number(existing.deputy_id || 0))) {
+      need(!existing || canManageProject(user, existing), 403, 'Only the project manager can choose their stand-in');
+      if (body.deputy_id == null || body.deputy_id === '') set.deputy_id = null;
+      else {
+        const id = int(Number(body.deputy_id), 'deputy_id', 1, 1e9);
+        const u = db.prepare('SELECT id, active FROM users WHERE id = ?').get(id);
+        need(u && u.active, 404, 'That person was not found');
+        set.deputy_id = id;
+      }
+    }
+    const leadAfter = 'lead_id' in set ? set.lead_id : existing ? existing.lead_id : null;
+    const depAfter = 'deputy_id' in set ? set.deputy_id : existing ? existing.deputy_id : null;
+    if (depAfter && depAfter === leadAfter) {
+      need(!('deputy_id' in set), 400, 'The stand-in has to be someone other than the project manager');
+      set.deputy_id = null;   // the stand-in became the manager
     }
     return set;
   }
@@ -168,14 +199,15 @@ module.exports = (ctx) => {
     const keys = Object.keys(set);
     const id = Number(db.prepare(`INSERT INTO projects (${keys.join(',')}) VALUES (${keys.map(() => '?').join(',')})`).run(...keys.map((k) => set[k])).lastInsertRowid);
     const memberIds = Array.isArray(body.member_ids) ? body.member_ids.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [];
-    for (const uid of new Set([...memberIds, ...(set.lead_id ? [set.lead_id] : [])])) {
+    for (const uid of new Set([...memberIds, ...(set.lead_id ? [set.lead_id] : []), ...(set.deputy_id ? [set.deputy_id] : [])])) {
       if (db.prepare('SELECT 1 FROM users WHERE id = ? AND active = 1').get(uid)) addMember(id, uid, uid === set.lead_id ? 'lead' : 'member');
     }
     audit(user, 'project.created', null, `${set.key} ${set.name}`);
     const link = `#/project?id=${id}`;
     if (ctx.notify) {
-      ctx.notify.notify(memberIds.filter((m) => m !== set.lead_id), { kind: 'project_added', title: `${user.name} added you to ${set.key} ${set.name}`, body: 'You can now see its tasks and track time on it.', link, actor: user });
-      if (set.lead_id) ctx.notify.notify(set.lead_id, { kind: 'project_lead', title: `You lead ${set.key} ${set.name}`, body: `${user.name} made you the project lead: you manage its members and review its tasks.`, link, actor: user });
+      ctx.notify.notify(memberIds.filter((m) => m !== set.lead_id && m !== set.deputy_id), { kind: 'project_added', title: `${user.name} added you to ${set.key} ${set.name}`, body: 'You can now see its tasks and track time on it.', link, actor: user });
+      if (set.lead_id) ctx.notify.notify(set.lead_id, { kind: 'project_lead', title: `You manage ${set.key} ${set.name}`, body: MANAGER_NOTE(user), link, actor: user });
+      if (set.deputy_id) ctx.notify.notify(set.deputy_id, { kind: 'project_lead', title: `You stand in on ${set.key} ${set.name}`, body: DEPUTY_NOTE(user, set.lead_id ? nameOf(set.lead_id) : null), link, actor: user });
     }
     emit('projects');
     return out([getProject(id)], user, { detail: true })[0];
@@ -184,15 +216,20 @@ module.exports = (ctx) => {
   route('PATCH', '/api/projects/:id', ({ user, params, body }) => {
     const p = getProject(params.id);
     need(p && projectVisible(user, p), 404, 'Project not found');
-    need(canManageProject(user, p), 403, 'Only a manager or the project lead can change this project');
+    need(canManageProject(user, p), 403, 'Only the project manager can change this project');
     const set = readFields(body, user, p);
     if (Object.keys(set).length) {
       const keys = Object.keys(set);
       db.prepare(`UPDATE projects SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => set[k]), p.id);
       if (set.lead_id) addMember(p.id, set.lead_id, 'lead');
       if ('lead_id' in set && p.lead_id && p.lead_id !== set.lead_id && isMember(p.id, p.lead_id)) addMember(p.id, p.lead_id, 'member');
-      if (set.lead_id && set.lead_id !== p.lead_id && ctx.notify) ctx.notify.notify(set.lead_id, { kind: 'project_lead', title: `You lead ${p.key} ${set.name || p.name}`, body: `${user.name} made you the project lead: you manage its members and review its tasks.`, link: `#/project?id=${p.id}`, actor: user });
+      if (set.deputy_id && !isMember(p.id, set.deputy_id)) addMember(p.id, set.deputy_id, 'member');
+      const pname = `${p.key} ${set.name || p.name}`, plink = `#/project?id=${p.id}&tab=members`;
+      if (set.lead_id && set.lead_id !== p.lead_id && ctx.notify) ctx.notify.notify(set.lead_id, { kind: 'project_lead', title: `You manage ${pname}`, body: MANAGER_NOTE(user), link: plink, actor: user });
+      if ('lead_id' in set && p.lead_id && p.lead_id !== set.lead_id && ctx.notify) ctx.notify.notify(p.lead_id, { kind: 'project_lead', title: `${set.lead_id ? nameOf(set.lead_id) : 'Nobody'} manages ${pname} now`, body: `${user.name} changed the project manager. You are still on the team.`, link: plink, actor: user });
+      if (set.deputy_id && set.deputy_id !== p.deputy_id && ctx.notify) ctx.notify.notify(set.deputy_id, { kind: 'project_lead', title: `You stand in on ${pname}`, body: DEPUTY_NOTE(user, nameOf(set.lead_id || p.lead_id)), link: plink, actor: user });
       audit(user, 'project.updated', null, `${p.key} ${keys.join(', ')}`);
+      if ('lead_id' in set || 'deputy_id' in set) emit('tasks');   // who approves changed
       emit('projects');
     }
     return out([getProject(p.id)], user, { detail: true })[0];
@@ -202,7 +239,7 @@ module.exports = (ctx) => {
   route('PUT', '/api/projects/:id/members', ({ user, params, body }) => {
     const p = getProject(params.id);
     need(p && projectVisible(user, p), 404, 'Project not found');
-    need(canManageProject(user, p), 403, 'Only a manager or the project lead can add members');
+    need(canManageProject(user, p), 403, 'Only the project manager can add people');
     const ids = (Array.isArray(body.user_ids) ? body.user_ids : [body.user_id]).map(Number).filter((n) => Number.isInteger(n) && n > 0);
     need(ids.length, 400, 'user_id is required');
     for (const uid of ids) {
@@ -220,10 +257,13 @@ module.exports = (ctx) => {
   route('DELETE', '/api/projects/:id/members/:uid', ({ user, params }) => {
     const p = getProject(params.id);
     need(p && projectVisible(user, p), 404, 'Project not found');
-    need(canManageProject(user, p), 403, 'Only a manager or the project lead can remove members');
+    need(canManageProject(user, p), 403, 'Only the project manager can remove people');
     const uid = Number(params.uid);
-    need(uid !== p.lead_id, 409, 'This person leads the project. Choose another lead first.');
+    need(uid !== p.lead_id, 409, 'This person manages the project. Choose another project manager first.');
     db.prepare('DELETE FROM project_members WHERE project_id = ? AND user_id = ?').run(p.id, uid);
+    if (p.deputy_id === uid) db.prepare('UPDATE projects SET deputy_id = NULL WHERE id = ?').run(p.id);
+    // their plans on this project from today on go back to "Not planned yet"
+    db.prepare('DELETE FROM task_plans WHERE project_id = ? AND user_id = ? AND day >= ?').run(p.id, uid, today());
     audit(user, 'project.member_removed', uid, p.key);
     emit('projects', uid); emit('projects');
     return out([getProject(p.id)], user, { detail: true })[0];

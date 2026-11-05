@@ -34,7 +34,7 @@ module.exports = (ctx) => {
     need(ctx.projectVisible(user, p), 403, 'Not allowed');
     return { p, c, s, client: false, manage: ctx.canManageProject(user, p) };
   }
-  const needManage = (a) => need(a.manage, 403, 'Only the project lead or a manager can do this');
+  const needManage = (a) => need(a.manage, 403, 'Only the project manager can do this');
   const visibleSql = (s) => (s.tasks === 'shared' ? 't.client_visible = 1' : '(t.client_visible IS NULL OR t.client_visible = 1)');
   const taskVisible = (t, s) => (s.tasks === 'shared' ? t.client_visible === 1 : t.client_visible !== 0);
   Object.assign(ctx, { portalAccess: access, portalTaskVisible: taskVisible });
@@ -384,7 +384,7 @@ module.exports = (ctx) => {
     const x = db.prepare('SELECT * FROM approvals WHERE id = ?').get(Number(params.id));
     need(x, 404, 'Not found');
     const a = access(user, x.project_id);
-    need(a.manage || x.created_by === user.id, 403, 'Only the person who asked, the lead or a manager can remove this');
+    need(a.manage || x.created_by === user.id, 403, 'Only the person who asked, the project manager can remove this');
     db.prepare('DELETE FROM approvals WHERE id = ?').run(x.id);
     emitPortal(a.p, 'portal');
     return { ok: true };

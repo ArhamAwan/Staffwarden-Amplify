@@ -16,7 +16,7 @@ const MAX_FILE = 5 * 1024 * 1024;        // sent as JSON (base64)
 const MAX_UPLOAD = 50 * 1024 * 1024;     // sent as the file itself (bigger designs, videos, PDFs)
 
 module.exports = (ctx) => {
-  const { db, cfg, route, emit, audit, isManager, canSee, calc, nowIso, clockNow, T, projectVisible, isProjectLead, ensureProjectMember, nextTaskNumber, getProject } = ctx;
+  const { db, cfg, route, emit, audit, isManager, canSee, calc, nowIso, clockNow, T, projectVisible, isProjectLead, isProjectDeputy, canRunProject, ensureProjectMember, nextTaskNumber, getProject, onLeave } = ctx;
   const fileDir = path.join(cfg.dataDir, 'files');
   fs.mkdirSync(fileDir, { recursive: true });
 
@@ -44,7 +44,9 @@ module.exports = (ctx) => {
     return t.assignee_id == null || canSee(user, t.assignee_id);
   }
   const leads = (user, t) => t.project_id != null && isProjectLead(getProject(t.project_id), user);
-  const manages = (user, t) => (isManager(user) && (t.assignee_id == null || t.assignee_id === user.id || canSee(user, t.assignee_id) || t.created_by === user.id || t.project_id != null)) || leads(user, t);
+  // the project's manager, or its stand-in: they run the project's tasks
+  const runs = (user, t) => t.project_id != null && canRunProject(user, getProject(t.project_id));
+  const manages = (user, t) => (isManager(user) && (t.assignee_id == null || t.assignee_id === user.id || canSee(user, t.assignee_id) || t.created_by === user.id || t.project_id != null)) || runs(user, t);
   // ---------- notifications ----------
   const N = ctx.notify;
   const label = (t) => { const p = t.project_id ? getProject(t.project_id) : null; return p && t.number ? `${p.key}-${t.number} ${t.title}` : t.title; };
@@ -52,30 +54,49 @@ module.exports = (ctx) => {
   const link = (t) => `#/tasks?task=${t.id}`;
   const pinLink = (t, pin) => `#/task?id=${t.id}&pin=${pin}`;
   // ---------- who approves ----------
-  // The manager assigned to the project (its lead). When the lead is the one doing the task, or there is no
-  // project or lead, the person's own managers. The owner can always approve. Nobody approves their own
-  // work, except the owner on a task they gave themselves when nobody else could.
+  // Work on a project is approved by the project's manager. Their stand-in approves it instead when the
+  // manager did the work, or is on leave today. The owner is never asked about project work while the
+  // project has a manager or stand-in who can approve; only a project with neither falls back to the
+  // person's managers (the owner last). Work outside any project goes to the person's managers.
+  // The owner can still step in and approve anything, and nobody approves their own work, except the
+  // owner on a task they gave themselves when nobody else could.
+  const isActive = (id) => !!id && !!(db.prepare('SELECT active FROM users WHERE id = ?').get(id) || {}).active;
   function approversOf(t) {
     const doer = t.assignee_id || t.created_by;
     const p = t.project_id ? getProject(t.project_id) : null;
-    if (p && p.lead_id && p.lead_id !== doer) {
-      const l = db.prepare('SELECT id, active FROM users WHERE id = ?').get(p.lead_id);
-      if (l && l.active) return { ids: [p.lead_id], why: 'project lead' };
+    if (p) {
+      const mgr = isActive(p.lead_id) && p.lead_id !== doer ? p.lead_id : null;
+      const dep = isActive(p.deputy_id) && p.deputy_id !== doer ? p.deputy_id : null;
+      const away = mgr && onLeave(mgr, calc.companyToday());
+      if (mgr && !(away && dep)) return { ids: [mgr], why: 'project manager' };
+      if (dep) return { ids: [dep], why: away ? 'stand-in, while the manager is on leave' : 'stand-in, since the manager did this task' };
+      // no manager or stand-in who can approve: the person's managers, people other than the owner first
+      const all = ctx.managersOf(doer);
+      const notOwner = all.filter((id) => (db.prepare('SELECT role FROM users WHERE id = ?').get(id) || {}).role !== 'owner');
+      return { ids: notOwner.length ? notOwner : all, why: 'manager' };
     }
     return { ids: ctx.managersOf(doer), why: 'manager' };
   }
+  // asked to approve it: the approvers above, and the project's manager on any work but their own
+  const askedToApprove = (user, t) => {
+    const doer = t.assignee_id || t.created_by;
+    if (user.id === doer) return false;
+    if (approversOf(t).ids.includes(user.id)) return true;
+    const p = t.project_id ? getProject(t.project_id) : null;
+    return !!p && p.lead_id === user.id;
+  };
   function canApprove(user, t) {
     if (user.kind === 'client') return false;
     const doer = t.assignee_id || t.created_by;
     const a = approversOf(t).ids;
     if (user.id === doer) return user.role === 'owner' && !user.dev_owner && !a.some((id) => id !== user.id);
-    return user.role === 'owner' || a.includes(user.id);
+    return user.role === 'owner' || askedToApprove(user, t);
   }
   // does this task need approval: its own choice, else the company setting
   const needsReview = (t) => (t.needs_review == null ? cfg.taskReviewRequired !== false : !!t.needs_review);
   const reviewersOf = (t) => approversOf(t).ids;
   const approverLabel = (t) => { const a = approversOf(t); const n = a.ids.map(nameOf).filter(Boolean); return n.length ? n.join(' or ') : 'A manager'; };
-  ctx.taskApprovers = approversOf; ctx.canApproveTask = canApprove;
+  ctx.taskApprovers = approversOf; ctx.canApproveTask = canApprove; ctx.askedToApprove = askedToApprove;
   const watchersOf = (t) => [t.assignee_id, t.created_by, ...db.prepare('SELECT DISTINCT user_id FROM task_comments WHERE task_id = ?').all(t.id).map((r) => r.user_id)];
   const tell = (to, kind, t, user, title, body = null) => N.notify(to, { kind, title, body, link: link(t), actor: user });
   function tellStatus(before, after, user, note) {
@@ -87,6 +108,55 @@ module.exports = (ctx) => {
     else if (after.status === 'done' && after.created_by !== user.id) tell(after.created_by, 'task_status', after, user, `${who} finished ${L}`);
   }
   const tellProject = (pid, uid, user) => { const p = getProject(pid); if (p) N.notify(uid, { kind: 'project_added', title: `${user.name} added you to ${p.key} ${p.name}`, body: 'You can now see its tasks and track time on it.', link: `#/project?id=${p.id}`, actor: user }); };
+
+  // ---------- @mentions ----------
+  // Anyone on the task's project can be mentioned anywhere on the task: comments, pins and their replies,
+  // the checklist, the steps and the details. On a task outside any project: the person doing it, whoever
+  // made it and the people who approve it. Mentions are written as "@Full Name", like in chat.
+  function mentionPool(t) {
+    const p = t.project_id ? getProject(t.project_id) : null;
+    const ids = p
+      ? [...db.prepare('SELECT user_id FROM project_members WHERE project_id = ?').all(p.id).map((r) => r.user_id), p.lead_id, p.deputy_id]
+      : [t.assignee_id, t.created_by, ...approversOf(t).ids];
+    const uniq = [...new Set(ids.filter(Boolean))];
+    if (!uniq.length) return [];
+    return db.prepare(`SELECT id, name, title FROM users WHERE active = 1 AND id IN (${uniq.map(() => '?').join(',')}) ORDER BY name`).all(...uniq)
+      .map((u) => ({ id: u.id, name: u.name, title: u.title || null, role: p && p.lead_id === u.id ? 'manager' : p && p.deputy_id === u.id ? 'stand-in' : null }));
+  }
+  ctx.taskMentionPool = mentionPool;
+  // the people a text mentions: the longest names first, so "@Ali Subhan" is never read as "@Ali"
+  function mentionsIn(text, pool) {
+    let rest = String(text || '');
+    const found = [];
+    for (const u of [...pool].sort((a, b) => b.name.length - a.name.length)) {
+      const tag = `@${u.name}`;
+      let i = rest.indexOf(tag), hit = false;
+      while (i !== -1) {
+        const next = rest.charAt(i + tag.length);
+        if (!/[\p{L}\p{N}_]/u.test(next)) { hit = true; rest = rest.slice(0, i) + ' '.repeat(tag.length) + rest.slice(i + tag.length); }
+        i = rest.indexOf(tag, i + 1);
+      }
+      if (hit) found.push(u.id);
+    }
+    return found;
+  }
+  const WHERE = { comment: '', pin: 'on a pin', reply: 'on a pin', check: 'in the checklist', step: 'in the steps', description: 'in the details' };
+  // record who a text mentions and tell them (once per text: editing it only tells people newly mentioned).
+  // Returns the people told, so the usual "commented on" notice can leave them out.
+  function mention(t, user, kind, refId, text, { link: to = null, pinNum = null } = {}) {
+    const ids = mentionsIn(text, mentionPool(t)).filter((id) => id !== user.id);
+    if (!ids.length) return [];
+    const already = new Set(db.prepare('SELECT user_id FROM task_mentions WHERE task_id = ? AND kind = ? AND COALESCE(ref_id, 0) = ?').all(t.id, kind, refId || 0).map((r) => r.user_id));
+    const fresh = ids.filter((id) => !already.has(id));
+    const ins = db.prepare('INSERT INTO task_mentions (task_id, user_id, by_id, kind, ref_id, created_at) VALUES (?,?,?,?,?,?)');
+    for (const id of fresh) ins.run(t.id, id, user.id, kind, refId || null, nowIso());
+    if (fresh.length) {
+      const where = pinNum != null ? `on pin ${pinNum}` : WHERE[kind];
+      N.notify(fresh, { kind: 'task_mention', title: `${user.name} mentioned you ${where ? `${where} ` : ''}in ${label(t)}`.replace(/\s+/g, ' '), body: String(text).slice(0, 200), link: to || link(t), actor: user });
+    }
+    return ids;
+  }
+  ctx.taskMention = mention;
 
   const loadVisible = (user, id) => { const t = getTask(id); need(t && canSeeTask(user, t), 404, 'Task not found'); return t; };
   ctx.loadTaskVisible = loadVisible;
@@ -162,7 +232,7 @@ module.exports = (ctx) => {
     if ('client_visible' in body) { need([null, 0, 1, true, false].includes(body.client_visible), 400, 'client_visible must be null, 0 or 1'); set.client_visible = body.client_visible == null ? null : body.client_visible ? 1 : 0; }
     if ('needs_review' in body) {
       const pid0 = 'project_id' in body ? body.project_id : existing ? existing.project_id : null;
-      need(user.role === 'owner' || (pid0 != null && isProjectLead(getProject(Number(pid0)), user)), 403, 'Only the project lead or the owner can change whether this needs approval');
+      need(user.role === 'owner' || (pid0 != null && isProjectLead(getProject(Number(pid0)), user)), 403, 'Only the project manager can change whether this needs approval');
       need([null, 0, 1, true, false].includes(body.needs_review), 400, 'needs_review must be null, 0 or 1');
       set.needs_review = body.needs_review == null ? null : body.needs_review ? 1 : 0;
     }
@@ -177,7 +247,7 @@ module.exports = (ctx) => {
     }
     // the project the task will be in after this change
     const pid = 'project_id' in set ? set.project_id : existing ? existing.project_id : null;
-    const lead = pid != null && isProjectLead(getProject(pid), user);
+    const lead = pid != null && canRunProject(user, getProject(pid));
     if (set.milestone_id) need(pid != null && db.prepare('SELECT 1 FROM milestones WHERE id = ? AND project_id = ?').get(set.milestone_id, pid), 400, 'That milestone is not on this project');
     if ('project_id' in set && existing && set.project_id !== existing.project_id && !('milestone_id' in set)) set.milestone_id = null;
     if ('assignee_id' in body) {
@@ -189,7 +259,7 @@ module.exports = (ctx) => {
         const a = db.prepare('SELECT id, active FROM users WHERE id = ?').get(aid);
         need(a && a.active, 404, 'Person not found');
         need(aid === user.id || (isManager(user) && canSee(user, aid)) || (lead && ctx.isProjectMember(pid, aid)),
-          403, lead ? 'Add this person to the project first' : 'You can only assign tasks to yourself, to people you manage, or (as project lead) to project members');
+          403, lead ? 'Add this person to the project team first' : 'You can only give tasks to yourself. The project manager gives tasks to other people.');
         set.assignee_id = aid;
       }
     }
@@ -245,7 +315,10 @@ module.exports = (ctx) => {
         need(approver, 403, `Only ${approverLabel(t)} can send this back`);
         sets.review_rounds = t.review_rounds + 1;
         event(t.id, user.id, 'sent_back', note);
-        if (note) db.prepare("INSERT INTO task_comments (task_id, user_id, body, team_only, kind, created_at) VALUES (?,?,?,1,'feedback',?)").run(t.id, user.id, note, now);   // review notes stay with the team
+        if (note) {   // review notes stay with the team
+          const cid = Number(db.prepare("INSERT INTO task_comments (task_id, user_id, body, team_only, kind, created_at) VALUES (?,?,?,1,'feedback',?)").run(t.id, user.id, note, now).lastInsertRowid);
+          mention(t, user, 'comment', cid, note);
+        }
       } else if (t.status === 'in_review') event(t.id, user.id, 'withdrawn', note);
       else if (to === 'in_review') { sets.submitted_at = now; event(t.id, user.id, 'submitted', note); }
       else event(t.id, user.id, 'status', `${t.status} -> ${to}`);
@@ -263,7 +336,7 @@ module.exports = (ctx) => {
 
   // ---------- list ----------
   route('GET', '/api/tasks', ({ user, query }) => {
-    const who = query.get('assignee') || (isManager(user) ? 'all' : 'me');
+    const who = query.get('assignee') || (isManager(user) || query.get('review') === 'mine' ? 'all' : 'me');
     const where = [], args = [];
     if (who === 'me') { where.push('(t.assignee_id = ? OR (t.assignee_id IS NULL AND t.created_by = ?))'); args.push(user.id, user.id); }
     else if (who === 'unassigned') where.push('t.assignee_id IS NULL');
@@ -282,7 +355,8 @@ module.exports = (ctx) => {
     where.push("(t.status != 'done' OR t.completed_at >= ?)"); args.push(T.iso(clockNow() - doneDays * 86400000));
     const rows = db.prepare(`SELECT t.* FROM tasks t ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY t.position, t.id`).all(...args)
       .filter((t) => canSeeTask(user, t));
-    let out = shape(rows).map((t, i) => ({ ...t, can_manage: manages(user, rows[i]), can_approve: rows[i].status === 'in_review' && canApprove(user, rows[i]) }));
+    let out = shape(rows).map((t, i) => ({ ...t, can_manage: manages(user, rows[i]), can_approve: rows[i].status === 'in_review' && canApprove(user, rows[i]), review_mine: rows[i].status === 'in_review' && askedToApprove(user, rows[i]) }));
+    if (query.get('review') === 'mine') out = out.filter((t) => t.review_mine);
     const due = query.get('due');
     if (due === 'overdue') out = out.filter((t) => t.overdue);
     else if (due === 'today') out = out.filter((t) => t.due_today || t.overdue);
@@ -299,8 +373,17 @@ module.exports = (ctx) => {
       in_review: mine.filter((t) => t.status === 'in_review').length,
       next: mine.filter((t) => t.status !== 'in_review').sort((a, b) => (a.due_day || '9999').localeCompare(b.due_day || '9999') || PRIORITIES.indexOf(a.priority) - PRIORITIES.indexOf(b.priority)).slice(0, 8),
     };
-    const rev = db.prepare("SELECT * FROM tasks WHERE status = 'in_review'").all().filter((t) => canApprove(user, t) && t.assignee_id !== user.id);
+    // work waiting for this person's approval (the owner stepping in on other work does not count)
+    const rev = db.prepare("SELECT * FROM tasks WHERE status = 'in_review'").all().filter((t) => askedToApprove(user, t));
     if (isManager(user) || rev.length) out.to_review = rev.length;
+    // today's planned work comes first, in the order the project manager put it
+    const day = todayFor(user.id);
+    const plan = new Map(db.prepare('SELECT pl.task_id, pl.position FROM task_plans pl JOIN plan_sends s ON s.project_id = pl.project_id AND s.day = pl.day WHERE pl.user_id = ? AND pl.day = ?').all(user.id, day).map((r) => [r.task_id, r.position]));
+    if (plan.size) {
+      const planned = mine.filter((t) => plan.has(t.id) && t.status !== 'in_review').sort((a, b) => plan.get(a.id) - plan.get(b.id)).map((t) => ({ ...t, planned_today: true }));
+      out.next = [...planned, ...out.next.filter((t) => !plan.has(t.id))].slice(0, 8);
+      out.planned_today = planned.length;
+    }
     if (isManager(user)) {
       const team = db.prepare("SELECT * FROM tasks WHERE status != 'done' AND due_day IS NOT NULL").all().filter((t) => manages(user, t));
       out.team_overdue = shape(team).filter((t) => t.overdue).length;
@@ -324,6 +407,7 @@ module.exports = (ctx) => {
       events: db.prepare('SELECT e.kind, e.at, e.detail, u.name AS user FROM task_events e LEFT JOIN users u ON u.id = e.user_id WHERE e.task_id = ? ORDER BY e.at, e.id').all(t.id),
       sessions: db.prepare('SELECT COUNT(*) n FROM time_entries WHERE task_id = ?').get(t.id).n,
       approver: (() => { const a = approversOf(t); return { ids: a.ids, names: a.ids.map(nameOf).filter(Boolean), why: a.why }; })(),
+      review_mine: t.status === 'in_review' && askedToApprove(user, t), mention_pool: mentionPool(t).filter((p) => p.id !== user.id),
       can_approve: canApprove(user, t), needs_review: needsReview(t), needs_review_set: t.needs_review == null ? null : !!t.needs_review,
       can_set_review: user.role === 'owner' || leads(user, t), can_edit: canEditTask(user, t),
       can_change: manages(user, t) || (t.created_by === user.id && (t.assignee_id === user.id || t.assignee_id == null)),
@@ -349,6 +433,7 @@ module.exports = (ctx) => {
     // whoever gets a project task becomes a member of the project
     if (cols.project_id && cols.assignee_id && ensureProjectMember(cols.project_id, cols.assignee_id)) { event(id, user.id, 'member', `${nameOf(cols.assignee_id)} added to the project`); tellProject(cols.project_id, cols.assignee_id, user); }
     const t = getTask(id);
+    if (t.description) mention(t, user, 'description', null, t.description);
     if (t.assignee_id !== user.id) tell(t.assignee_id, 'task_assigned', t, user, `${user.name} assigned you ${label(t)}`, t.due_day ? `Due ${T.human(t.due_day)}` : null);
     notify(t);
     return shape([t])[0];
@@ -366,7 +451,7 @@ module.exports = (ctx) => {
       const onlyPosition = fields.every((k) => k === 'position');
       // anyone in the project can pick up an open task by assigning it to themselves
       const pickUp = fields.length === 1 && fields[0] === 'assignee_id' && t.assignee_id == null && Number(body.assignee_id) === user.id && t.project_id != null;
-      need(mgr || own || pickUp || onlyPosition && (t.assignee_id === user.id), 403, 'Only a manager, the project lead or the person who created this task can change it');
+      need(mgr || own || pickUp || onlyPosition && (t.assignee_id === user.id), 403, 'Only a manager, the project manager or the person who created this task can change it');
       const set = readFields(body, user, t);
       if ('project_id' in set && set.project_id !== t.project_id) set.number = set.project_id ? nextTaskNumber(set.project_id) : null;
       if (Object.keys(set).length) {
@@ -374,11 +459,15 @@ module.exports = (ctx) => {
         const keys = Object.keys(set);
         db.prepare(`UPDATE tasks SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => set[k]), t.id);
         if ('assignee_id' in set && set.assignee_id !== t.assignee_id) event(t.id, user.id, 'assigned', set.assignee_id ? `To ${nameOf(set.assignee_id)}` : 'Unassigned');
+        if ('assignee_id' in set && set.assignee_id !== t.assignee_id && ctx.planReassigned) ctx.planReassigned(t, t.assignee_id, user);
+        // moved to another project: it leaves the days its old project planned
+        if ('project_id' in set && set.project_id !== t.project_id && !('assignee_id' in set && set.assignee_id !== t.assignee_id) && ctx.planReassigned) ctx.planReassigned(t, t.assignee_id, user);
         if ('due_day' in set && set.due_day !== t.due_day) event(t.id, user.id, 'due', set.due_day || 'No deadline');
         const after = getTask(t.id);
         if (after.project_id && after.assignee_id && ensureProjectMember(after.project_id, after.assignee_id)) { event(t.id, user.id, 'member', `${nameOf(after.assignee_id)} added to the project`); tellProject(after.project_id, after.assignee_id, user); }
         if ('assignee_id' in set && set.assignee_id && set.assignee_id !== t.assignee_id) tell(set.assignee_id, 'task_assigned', after, user, `${user.name} assigned you ${label(after)}`, after.due_day ? `Due ${T.human(after.due_day)}` : null);
         else if ('due_day' in set && set.due_day !== t.due_day) tell(after.assignee_id, 'task_due_changed', after, user, `${user.name} ${set.due_day ? `moved the deadline of ${label(after)} to ${T.human(set.due_day)}` : `removed the deadline of ${label(after)}`}`);
+        if ('description' in set && set.description) mention(after, user, 'description', null, set.description);
         const changed = keys.filter((k) => !['updated_at', 'position', 'assignee_id', 'due_day', 'number'].includes(k));
         if (changed.length) event(t.id, user.id, 'edited', changed.join(', '));
         t = getTask(t.id);
@@ -431,9 +520,8 @@ module.exports = (ctx) => {
     const teamOnly = body.team_only ? 1 : 0;
     const kind = body.kind === 'update' ? 'update' : 'comment';
     const id = Number(db.prepare('INSERT INTO task_comments (task_id, user_id, body, team_only, kind, created_at) VALUES (?,?,?,?,?,?)').run(t.id, user.id, text, teamOnly, kind, nowIso()).lastInsertRowid);
-    const p = t.project_id ? getProject(t.project_id) : null;
-    void p;
-    tell(watchersOf(t), 'task_comment', t, user, `${user.name} commented on ${label(t)}`, text.length > 140 ? text.slice(0, 137) + '…' : text);
+    const told = mention(t, user, 'comment', id, text);
+    tell(watchersOf(t).filter((w) => !told.includes(w)), 'task_comment', t, user, `${user.name} commented on ${label(t)}`, text.length > 140 ? text.slice(0, 137) + '…' : text);
     db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(nowIso(), t.id);
     // on a task the client sees, they hear about the team's comment (at most once an hour per task)
     const p2 = t.project_id ? getProject(t.project_id) : null;
@@ -542,15 +630,21 @@ module.exports = (ctx) => {
     need(db.prepare('SELECT COUNT(*) n FROM task_checks WHERE task_id = ?').get(t.id).n < 30, 400, 'A task can have at most 30 checks');
     const title = str(body.title, 'title', 200);
     const pos = db.prepare('SELECT COALESCE(MAX(position), 0) + 1 p FROM task_checks WHERE task_id = ?').get(t.id).p;
-    db.prepare('INSERT INTO task_checks (task_id, title, position, created_by, created_at) VALUES (?,?,?,?,?)').run(t.id, title, pos, user.id, nowIso());
+    const cid = Number(db.prepare('INSERT INTO task_checks (task_id, title, position, created_by, created_at) VALUES (?,?,?,?,?)').run(t.id, title, pos, user.id, nowIso()).lastInsertRowid);
     event(t.id, user.id, 'check_added', title);
+    mention(t, user, 'check', cid, title);
     notify(t);
     return checksOf(t.id);
   });
   route('PATCH', '/api/tasks/:id/checks/:cid', ({ user, params, body }) => {
     const t = loadVisible(user, params.id);
     const c = checkOf(t, params.cid);
-    if ('title' in body) { need(canEditTask(user, t), 403, 'Only the people on this task can change checks'); db.prepare('UPDATE task_checks SET title = ? WHERE id = ?').run(str(body.title, 'title', 200), c.id); }
+    if ('title' in body) {
+      need(canEditTask(user, t), 403, 'Only the people on this task can change checks');
+      const title = str(body.title, 'title', 200);
+      db.prepare('UPDATE task_checks SET title = ? WHERE id = ?').run(title, c.id);
+      mention(t, user, 'check', c.id, title);
+    }
     if ('checked' in body) {
       need(canApprove(user, t), 403, `Only ${approverLabel(t)} ticks these`);
       db.prepare('UPDATE task_checks SET checked_at = ?, checked_by = ? WHERE id = ?').run(body.checked ? nowIso() : null, body.checked ? user.id : null, c.id);
@@ -623,7 +717,8 @@ module.exports = (ctx) => {
     const id = Number(db.prepare('INSERT INTO task_pins (task_id, file_id, chain_id, page, x, y, num, user_id, body, round, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
       .run(t.id, f.id, chain, page, x, y, num, user.id, text, ROUND(t), nowIso()).lastInsertRowid);
     event(t.id, user.id, 'pin', `${workName(f)}, pin ${num}`);
-    N.notify(watchersOf(t), { kind: 'task_comment', title: `${user.name} pinned a comment on ${workName(f)} in ${label_(t)}`, body: text.slice(0, 200), link: pinLink(t, id), actor: user });
+    const told = mention(t, user, 'pin', id, text, { link: pinLink(t, id), pinNum: num });
+    N.notify(watchersOf(t).filter((w) => !told.includes(w)), { kind: 'task_comment', title: `${user.name} pinned a comment on ${workName(f)} in ${label_(t)}`, body: text.slice(0, 200), link: pinLink(t, id), actor: user });
     db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(nowIso(), t.id);
     notify(t, { teamOnly: true });
     return pinsOf(t.id).find((p) => p.id === id);
@@ -632,9 +727,10 @@ module.exports = (ctx) => {
     const t = loadVisible(user, params.id);
     const p = pinOf(t, params.pid);
     const text = str(body.body, 'body', 2000);
-    db.prepare('INSERT INTO task_pin_replies (pin_id, user_id, body, created_at) VALUES (?,?,?,?)').run(p.id, user.id, text, nowIso());
+    const rid = Number(db.prepare('INSERT INTO task_pin_replies (pin_id, user_id, body, created_at) VALUES (?,?,?,?)').run(p.id, user.id, text, nowIso()).lastInsertRowid);
     const others = db.prepare('SELECT DISTINCT user_id FROM task_pin_replies WHERE pin_id = ?').all(p.id).map((r) => r.user_id);
-    N.notify([p.user_id, t.assignee_id, ...others], { kind: 'task_comment', title: `${user.name} replied on pin ${p.num} in ${label_(t)}`, body: text.slice(0, 200), link: pinLink(t, p.id), actor: user });
+    const told = mention(t, user, 'reply', rid, text, { link: pinLink(t, p.id), pinNum: p.num });
+    N.notify([p.user_id, t.assignee_id, ...others].filter((w) => !told.includes(w)), { kind: 'task_comment', title: `${user.name} replied on pin ${p.num} in ${label_(t)}`, body: text.slice(0, 200), link: pinLink(t, p.id), actor: user });
     notify(t, { teamOnly: true });
     return pinsOf(t.id).find((x) => x.id === p.id);
   });
@@ -642,7 +738,12 @@ module.exports = (ctx) => {
   route('PATCH', '/api/tasks/:id/pins/:pid', ({ user, params, body }) => {
     const t = loadVisible(user, params.id);
     const p = pinOf(t, params.pid);
-    if ('body' in body) { need(p.user_id === user.id, 403, 'Only the person who pinned it can change what it says'); db.prepare('UPDATE task_pins SET body = ? WHERE id = ?').run(str(body.body, 'body', 2000), p.id); }
+    if ('body' in body) {
+      need(p.user_id === user.id, 403, 'Only the person who pinned it can change what it says');
+      const text = str(body.body, 'body', 2000);
+      db.prepare('UPDATE task_pins SET body = ? WHERE id = ?').run(text, p.id);
+      mention(t, user, 'pin', p.id, text, { link: pinLink(t, p.id), pinNum: p.num });
+    }
     if ('resolved' in body) {
       need(p.user_id === user.id || t.assignee_id === user.id || canApprove(user, t) || manages(user, t), 403, 'Only the person who pinned it, the person doing the task or the approver can mark it fixed');
       db.prepare('UPDATE task_pins SET resolved_at = ?, resolved_by = ? WHERE id = ?').run(body.resolved ? nowIso() : null, body.resolved ? user.id : null, p.id);

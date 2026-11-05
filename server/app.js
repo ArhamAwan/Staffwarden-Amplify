@@ -422,6 +422,7 @@ function createApp(opts = {}) {
     // the client portal's own schedule: weekly updates, call reminders, hour alerts, approval reminders
     if (ctx.portalSweep) { try { n += ctx.portalSweep(); } catch (e) { console.error('portal sweep', e); } }
     // the shift: idle nudges, check-in reminders, announcement reminders, fun modes that ran out
+    if (ctx.planSweep) { try { n += ctx.planSweep(); } catch (e) { console.error('plan sweep', e); } }
     if (ctx.shiftSweep) { try { n += ctx.shiftSweep(); } catch (e) { console.error('shift sweep', e); } }
     // after the last shift of the day: the shift report is ready
     if (ctx.shiftReportSweep) { try { n += ctx.shiftReportSweep(); } catch (e) { console.error('shift report sweep', e); } }
@@ -473,7 +474,7 @@ function createApp(opts = {}) {
   ctx.pnotify = createPortalNotify(ctx);
   ctx.changes = createChanges(ctx);
   ctx.payroll = createPayroll(ctx);
-  for (const f of ['auth', 'people', 'projects', 'tasks', 'performance', 'timer', 'capture', 'views', 'timeoff', 'admin', 'notifications', 'explain', 'hr', 'payroll', 'clients', 'portal', 'chat', 'portal2', 'team', 'shift', 'gifs', 'dev', 'leaderboard', 'shiftreport', 'assets', 'company']) require(`./routes/${f}`)(ctx);
+  for (const f of ['auth', 'people', 'projects', 'tasks', 'performance', 'timer', 'capture', 'views', 'timeoff', 'admin', 'notifications', 'explain', 'hr', 'payroll', 'clients', 'portal', 'chat', 'portal2', 'team', 'shift', 'gifs', 'dev', 'leaderboard', 'shiftreport', 'assets', 'company', 'plans']) require(`./routes/${f}`)(ctx);
 
   // ---------- server ----------
   // a file sent as it is (not as JSON), for uploads bigger than a JSON body allows

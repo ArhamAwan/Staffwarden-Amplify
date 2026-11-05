@@ -3,7 +3,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 // Schema v2. Fresh installs and v1 databases go through the same path: the v1 tables are created
 // if missing, then migrate() adds everything v2 needs without touching existing rows.
-const SCHEMA_VERSION = 31;
+const SCHEMA_VERSION = 32;
 
 function hasColumn(db, table, col) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
@@ -83,6 +83,7 @@ function openDb(file = ':memory:') {
 function migrate(db) {
   const version = db.prepare('PRAGMA user_version').get().user_version;
   if (version >= SCHEMA_VERSION) return;
+  if (version === 31) return migrateV32(db);
   if (version === 30) return migrateV31(db);
   if (version === 29) return migrateV30(db);
   if (version === 28) return migrateV29(db);
@@ -1162,6 +1163,40 @@ function migrateV31(db) {
   db.exec('BEGIN');
   try {
     addColumn(db, 'pay_runs', 'company', 'TEXT');
+    db.exec('PRAGMA user_version = 31');
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  migrateV32(db);
+}
+
+// Projects run by their manager: each project has a manager (lead_id) and a stand-in (deputy_id) who
+// approves and plans when the manager is away or did the work. The manager plans each person's day
+// (task_plans, and plan_sends for when that day was sent), and people are @mentioned on tasks
+// (task_mentions, so editing a text never mentions the same person twice).
+function migrateV32(db) {
+  db.exec('BEGIN');
+  try {
+    addColumn(db, 'projects', 'deputy_id', 'INTEGER');
+    db.exec(`CREATE TABLE IF NOT EXISTS task_plans (
+      task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      day TEXT NOT NULL, user_id INTEGER NOT NULL, project_id INTEGER,
+      position REAL NOT NULL DEFAULT 0, planned_by INTEGER, planned_at TEXT NOT NULL,
+      PRIMARY KEY (task_id, day))`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_plans_user ON task_plans(user_id, day)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_plans_project ON task_plans(project_id, day)');
+    db.exec(`CREATE TABLE IF NOT EXISTS plan_sends (
+      project_id INTEGER NOT NULL, day TEXT NOT NULL, sent_at TEXT NOT NULL, sent_by INTEGER,
+      PRIMARY KEY (project_id, day))`);
+    db.exec(`CREATE TABLE IF NOT EXISTS task_mentions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL, by_id INTEGER, kind TEXT NOT NULL, ref_id INTEGER,
+      created_at TEXT NOT NULL)`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_mentions_task ON task_mentions(task_id, kind, ref_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_mentions_user ON task_mentions(user_id, created_at)');
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {

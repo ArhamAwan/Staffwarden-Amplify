@@ -11,7 +11,7 @@ const T = require('../lib/time');
 const KINDS = {
   task_assigned: 'tasks', task_status: 'tasks', task_due_changed: 'deadlines', task_due: 'deadlines',
   task_review: 'reviews', task_approved: 'results', task_sent_back: 'results',
-  task_comment: 'comments', task_file: 'comments', task_from_message: 'tasks',
+  task_comment: 'comments', task_file: 'comments', task_mention: 'mentions', task_plan: 'tasks', task_from_message: 'tasks',
   project_added: 'projects', project_lead: 'projects',
   timeoff_request: 'timeoff', timeoff_decision: 'timeoff',
   no_signal: 'team', policy: 'account', app_update: 'account',
@@ -34,6 +34,7 @@ const CATEGORIES = {
   reviews: 'Tasks waiting for my review',
   results: 'My tasks approved or sent back',
   comments: 'Comments and files on my tasks',
+  mentions: 'Someone @mentions me on a task',
   deadlines: 'Deadlines: due today, overdue, changed',
   projects: 'Added to a project',
   clients: 'Messages, requests and sign-offs from clients',
@@ -50,7 +51,8 @@ const SUBS = {
   chat_channel: 'Muted channels never notify',
   announce: 'Always on: the owner needs everyone to read these',
   boost: 'The fun ones',
-  tasks: 'Includes tasks made from messages',
+  tasks: 'Includes tasks made from messages, and the day your project manager plans for you',
+  mentions: 'In a comment, on a pin, in the checklist or the steps',
   clients: 'Amber after 2 hours, red after 4',
   checkin: '15 minutes before your shift ends',
   nudge: 'Always on, so your hours stay right',
@@ -64,7 +66,7 @@ const IN_BELL_NOT = new Set(['chat_direct', 'chat_channel']);     // chats have 
 const DEVICES = ['phone', 'desktop', 'browser'];
 const DEFAULTS = {
   chat_direct: [1, 1, 1], chat_channel: [0, 1, 0], announce: [1, 1, 1], boost: [1, 1, 1], tasks: [1, 1, 0], reviews: [1, 1, 0], results: [1, 1, 0],
-  comments: [1, 1, 0], deadlines: [1, 1, 0], projects: [1, 1, 0], clients: [1, 1, 1], checkin: [1, 1, 0], timeoff: [1, 1, 1], team: [1, 1, 1], reports: [1, 1, 1],
+  comments: [1, 1, 0], mentions: [1, 1, 1], deadlines: [1, 1, 0], projects: [1, 1, 0], clients: [1, 1, 1], checkin: [1, 1, 0], timeoff: [1, 1, 1], team: [1, 1, 1], reports: [1, 1, 1],
   explain: [1, 1, 1], pay: [1, 1, 1], nudge: [1, 1, 1], account: [1, 1, 1],
 };
 const isPhone = (device) => /^(iphone|ipad|android)/i.test(String(device || ''));

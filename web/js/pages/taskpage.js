@@ -1,7 +1,7 @@
 // The task page: one page that changes with the stage (To do, In progress, In review, Done).
 // Designed on the "Task page redesign" canvas. The header always says what to do next; the side panel is
 // the conversation; "Done when" checks sit next to the decision when the approver is reviewing.
-// Approval: the project lead approves (their manager when the lead is doing it, or the person's manager
+// Approval: the project manager approves (their manager when the lead is doing it, or the person's manager
 // with no project); the owner always can. Review feedback is team only and never reaches a client.
 import { html, raw, esc, dur, plural, dayShort, todayIn, addDays, initials, avColor, relTime, callName } from '../util.js';
 import { get, post, patch, put, del, download, fileUrl, fileBytes, fileBase64, getToken } from '../api.js';
@@ -9,6 +9,9 @@ import { S, actions, toast, errMsg, openModal, confirmBox } from '../ui.js';
 import { morph } from '../morph.js';
 import { isMgr, loadPeople } from '../parts.js';
 import { assigneeOptions, PRIORITY } from './tasks.js';
+import { withMentions, setMentionPool } from './pm.js';
+// "@Full Name" lit up for everyone on the task's project (and me)
+const M = (text) => withMentions(text, cur && cur.t ? [...(cur.t.mention_pool || []).map((p) => p.name), S.me.name] : [S.me.name]);
 
 const RECUR = { none: 'Does not repeat', daily: 'Every day', weekdays: 'Every weekday', weekly: 'Every week', monthly: 'Every month' };
 const MANY = { check_added: (n) => `added ${n} “Done when” checks`, check_ticked: (n) => `ticked ${n} checks`, check_unticked: (n) => `unticked ${n} checks`, file: (n) => `added ${n} files`, link: (n) => `added ${n} links` };
@@ -73,6 +76,7 @@ const pageMod = {
   render({ t, projects }) {
     if (ui.id !== t.id) Object.assign(ui, { id: t.id, ...FRESH() });
     cur = { t, projects };
+    setMentionPool(t.mention_pool);
     // opened from a pin's notification: show that pin
     if (ui.wantPin) {
       const p = t.pins.find((x) => x.id === ui.wantPin);
@@ -267,7 +271,7 @@ function moreMenu(t, r) {
   if (r.change) items.push(mi('tk-move', 'move', 'Move to another project'));
   items.push(mi('tk-copy', 'task', 'Make a copy'));
   if (t.client && r.manage) items.push(mi('tk-who', 'eye', 'Who sees it', `${t.client_sees ? `${t.client} sees it now` : 'Only the team sees it now'}`));
-  if (t.can_set_review) items.push(html`<div class="tk-mlab">Project lead and owner</div>`, mi('tk-approval', 'shield', 'Approval', t.needs_review ? `${approverName(t)} approves it. Turn it off for this task` : 'Off for this task. Turn it on'));
+  if (t.can_set_review) items.push(html`<div class="tk-mlab">Project manager and owner</div>`, mi('tk-approval', 'shield', 'Approval', t.needs_review ? `${approverName(t)} approves it. Turn it off for this task` : 'Off for this task. Turn it on'));
   if (r.manage || (t.created_by === S.me.id && r.mine)) items.push(mi('tk-delete', 'trash', 'Delete', 'Its comments and files go too', 'tk-bad'));
   return html`<details class="tk-more"><summary class="tk-btn tk-icon" aria-label="More: move, copy, ${t.can_set_review ? 'approval, ' : ''}delete">${I('dots')}</summary><div class="tk-menu" role="menu">${items}</div></details>`;
 }
@@ -287,7 +291,7 @@ function liveStrip(t) {
 function brief(t, r) {
   if (!r.change && !t.description) return '';
   return html`<section class="tk-card tk-md"><h2>What to do</h2>
-    ${r.change ? html`<label class="tk-sr" for="tk-desc">What and why</label><textarea id="tk-desc" class="tk-desc" data-tf="description" maxlength="10000" placeholder="What needs doing, and why">${t.description}</textarea>` : html`<p class="tk-p">${t.description || 'No details yet.'}</p>`}
+    ${r.change ? html`<label class="tk-sr" for="tk-desc">What and why</label><textarea id="tk-desc" class="tk-desc" data-tf="description" data-mention maxlength="10000" placeholder="What needs doing, and why. Type @ to mention someone.">${t.description}</textarea>` : html`<p class="tk-p">${t.description ? M(t.description) : 'No details yet.'}</p>`}
     <p class="tk-small tk-muted" style="margin:0">Written by ${t.creator || 'someone'}${t.created_at ? ` · ${relTime(t.created_at)}` : ''}</p>
   </section>`;
 }
@@ -298,8 +302,8 @@ function checksCard(t, r, { tick = false } = {}) {
   return html`<section class="tk-card"><div class="tk-ch"><h2>Checklist</h2><span class="tk-small tk-muted">${t.checks.length ? `${done} of ${t.checks.length}${t.needs_review ? ` · ${first(t.approver.names[0]) || 'the approver'} ticks these before approving` : ''}` : 'What has to be true before it’s done'}</span></div>
     <ul class="tk-checks">${t.checks.map((c) => html`<li class="tk-check" data-k="ck${c.id}">${tick
       ? html`<input type="checkbox" data-act="tk-tick" data-id="${c.id}" ${raw(c.checked ? 'checked' : '')} aria-label="${c.title}" style="accent-color:#3DD68C">`
-      : html`<span class="tk-box" aria-hidden="true" style="${c.checked ? 'background:#3DD68C;border-color:#3DD68C' : ''}"></span>`}<span style="flex:1">${c.title}${c.checked && c.checked_by ? html` <span class="tk-small tk-muted">· ticked by ${first(c.checked_by)}</span>` : ''}</span>${r.edit && !c.checked && !tick ? html`<button type="button" class="tk-x-btn" data-act="tk-delcheck" data-id="${c.id}" aria-label="Remove ${c.title}">${I('x', 14)}</button>` : ''}</li>`)}</ul>
-    ${r.edit ? html`<form class="tk-row" data-tk-form="check"><label class="tk-sr" for="tk-nc">Add a check</label><input id="tk-nc" class="tk-in" name="title" maxlength="200" placeholder="Add an item, like “Works on a phone”" required><button type="submit" class="tk-btn tk-sm" style="height:40px">Add</button></form>` : ''}
+      : html`<span class="tk-box" aria-hidden="true" style="${c.checked ? 'background:#3DD68C;border-color:#3DD68C' : ''}"></span>`}<span style="flex:1">${M(c.title)}${c.checked && c.checked_by ? html` <span class="tk-small tk-muted">· ticked by ${first(c.checked_by)}</span>` : ''}</span>${r.edit && !c.checked && !tick ? html`<button type="button" class="tk-x-btn" data-act="tk-delcheck" data-id="${c.id}" aria-label="Remove ${c.title}">${I('x', 14)}</button>` : ''}</li>`)}</ul>
+    ${r.edit ? html`<form class="tk-row" data-tk-form="check"><label class="tk-sr" for="tk-nc">Add a check</label><input id="tk-nc" class="tk-in" name="title" maxlength="200" data-mention autocomplete="off" placeholder="Add an item, like “Works on a phone”" required><button type="submit" class="tk-btn tk-sm" style="height:40px">Add</button></form>` : ''}
   </section>`;
 }
 
@@ -310,8 +314,8 @@ function stepsCard(t, r) {
   const can = r.edit || r.mine;
   return html`<section class="tk-card"><div class="tk-ch"><h2>Steps</h2><span class="tk-small tk-muted">${list.length ? `${done} of ${list.length}` : ''}</span></div>
     ${list.length ? html`<div aria-hidden="true" style="height:6px;border-radius:99px;background:rgba(255,255,255,.08)"><div style="width:${Math.round((100 * done) / list.length)}%;height:100%;border-radius:99px;background:linear-gradient(90deg,#7C5CF0,#9B7BFF)"></div></div>` : ''}
-    <ul class="tk-checks">${list.map((x, i) => html`<li class="tk-check" data-k="st${x.id}"><label class="tk-check${x.done ? ' tk-did' : ''}" style="flex:1"><input type="checkbox" data-act="tk-step" data-i="${i}" ${raw(x.done ? 'checked' : '')} ${raw(can ? '' : 'disabled')}>${x.title}</label>${can ? html`<button type="button" class="tk-x-btn" data-act="tk-delstep" data-i="${i}" aria-label="Remove ${x.title}">${I('x', 14)}</button>` : ''}</li>`)}</ul>
-    ${can ? html`<form class="tk-row" data-tk-form="step"><label class="tk-sr" for="tk-ns">Add a step</label><input id="tk-ns" class="tk-in" name="title" maxlength="200" placeholder="Add a step" required><button type="submit" class="tk-btn tk-sm" style="height:40px">Add</button></form>` : ''}
+    <ul class="tk-checks">${list.map((x, i) => html`<li class="tk-check" data-k="st${x.id}"><label class="tk-check${x.done ? ' tk-did' : ''}" style="flex:1"><input type="checkbox" data-act="tk-step" data-i="${i}" ${raw(x.done ? 'checked' : '')} ${raw(can ? '' : 'disabled')}><span>${M(x.title)}</span></label>${can ? html`<button type="button" class="tk-x-btn" data-act="tk-delstep" data-i="${i}" aria-label="Remove ${x.title}">${I('x', 14)}</button>` : ''}</li>`)}</ul>
+    ${can ? html`<form class="tk-row" data-tk-form="step"><label class="tk-sr" for="tk-ns">Add a step</label><input id="tk-ns" class="tk-in" name="title" maxlength="200" data-mention autocomplete="off" placeholder="Add a step. Type @ to mention someone" required><button type="submit" class="tk-btn tk-sm" style="height:40px">Add</button></form>` : ''}
   </section>`;
 }
 
@@ -410,8 +414,8 @@ function pinCard(t, p, r, { float = true } = {}) {
   const side = p.x > 0.58 ? `right:calc(${(1 - p.x) * 100}% + 20px)` : `left:calc(${p.x * 100}% + 20px)`;
   return html`<div class="tk-pop${float ? ' tk-float' : ''}" style="${float ? `${side};top:clamp(0px, calc(${p.y * 100}% - 24px), calc(100% - 120px))` : ''}" role="dialog" aria-label="Pin ${p.num}" data-k="pop${p.id}">
     <div class="tk-poph"><span class="tk-pn${p.resolved ? ' tk-g' : ''}">${p.num}</span><b>Pin ${p.num} · ${p.resolved ? 'fixed' : 'open'}</b><span class="tk-tag">${I('lock', 12, 2.2)}Team only</span><button type="button" class="tk-x-btn" data-act="tk-pinsel" data-id="0" aria-label="Close">${I('x', 14)}</button></div>
-    <div class="tk-cm">${av(p.user_id, p.user)}<div class="tk-w"><div class="tk-by"><b>${p.user || 'Someone'}</b>${hm(p.created_at)}${verOf(t, p) > 1 || chainsOf(t).find((c) => c.id === p.chain_id)?.versions.length > 1 ? ` · on V${verOf(t, p)}` : ''}</div><p class="tk-feedtext">${p.body}</p></div></div>
-    ${p.replies.map((x) => html`<div class="tk-cm tk-rep" data-k="pr${x.id}">${av(x.user_id, x.user)}<div class="tk-w"><div class="tk-by"><b>${x.user || 'Someone'}</b>${hm(x.created_at)}</div><p class="tk-feedtext">${x.body}</p></div></div>`)}
+    <div class="tk-cm">${av(p.user_id, p.user)}<div class="tk-w"><div class="tk-by"><b>${p.user || 'Someone'}</b>${hm(p.created_at)}${verOf(t, p) > 1 || chainsOf(t).find((c) => c.id === p.chain_id)?.versions.length > 1 ? ` · on V${verOf(t, p)}` : ''}</div><p class="tk-feedtext">${M(p.body)}</p></div></div>
+    ${p.replies.map((x) => html`<div class="tk-cm tk-rep" data-k="pr${x.id}">${av(x.user_id, x.user)}<div class="tk-w"><div class="tk-by"><b>${x.user || 'Someone'}</b>${hm(x.created_at)}</div><p class="tk-feedtext">${M(x.body)}</p></div></div>`)}
     ${p.pending ? html`<div class="tk-popa"><span class="tk-small tk-muted">Saving…</span></div>` : html`<div class="tk-popa"><button type="button" class="tk-btn tk-sm" data-act="tk-reply" data-id="${p.id}">${I('reply', 15)}Reply on pin ${p.num}</button>
       ${can ? html`<button type="button" class="tk-btn tk-sm ${p.resolved ? '' : 'tk-ok'}" data-act="tk-resolve" data-id="${p.id}" data-v="${p.resolved ? '0' : '1'}">${p.resolved ? 'Reopen' : html`${I('check', 15, 2.6)}Mark fixed`}</button>` : ''}
       ${p.user_id === S.me.id || r.manage ? html`<button type="button" class="tk-lnk tk-small" data-act="tk-delpin" data-id="${p.id}" style="margin-left:auto;color:#8E87B5">Remove</button>` : ''}</div>`}
@@ -421,7 +425,7 @@ function draftCard(d) {
   const side = d.x > 0.58 ? `right:calc(${(1 - d.x) * 100}% + 20px)` : `left:calc(${d.x * 100}% + 20px)`;
   return html`<form class="tk-pop tk-float tk-draft" data-tk-form="pin" style="${side};top:clamp(0px, calc(${d.y * 100}% - 24px), calc(100% - 150px))" aria-label="Pin a comment here">
     <label class="f" for="tk-pd">Pin a comment here</label>
-    <textarea id="tk-pd" name="body" rows="3" maxlength="2000" required placeholder="What should change at this spot?"></textarea>
+    <textarea id="tk-pd" name="body" rows="3" maxlength="2000" data-mention required placeholder="What should change at this spot? Type @ to mention someone"></textarea>
     <div class="tk-popa"><span class="tk-tag">${I('lock', 12, 2.2)}Team only</span><button type="button" class="tk-btn tk-sm" data-act="tk-undraft" style="margin-left:auto">Cancel</button><button type="submit" class="tk-btn tk-sm tk-pri">Pin it</button></div>
   </form>`;
 }
@@ -519,8 +523,8 @@ function changesView(t, r) {
   const n = open.length + pins.length + (note ? 1 : 0);
   void n; void by; void note;
   return html`${open.length || pins.length ? html`<section class="tk-card"><div class="tk-ch"><h2>What to change</h2><span class="tk-small tk-muted">Mark each one fixed as you go</span></div>
-    <ul class="tk-list">${pins.map((p) => html`<li class="tk-item" data-k="op${p.id}"><span class="tk-pn">${p.num}</span><span class="tk-t"><b>${p.body}</b><span>${chainName(t, p.chain_id)} · V${verOf(t, p)} · ${first(p.user)}${p.replies.length ? ` · ${plural(p.replies.length, 'reply', 'replies')}` : ''}</span></span><button type="button" class="tk-btn tk-sm" data-act="tk-goto" data-id="${p.id}">Go to pin</button>${t.is_mine || r.manage ? html`<button type="button" class="tk-btn tk-sm tk-ok" data-act="tk-resolve" data-id="${p.id}" data-v="1">${I('check', 15, 2.6)}Mark fixed</button>` : ''}</li>`)}
-      ${open.map((c) => html`<li class="tk-item" data-k="oc${c.id}"><span class="tk-tag">Checklist</span><span class="tk-t"><b>${c.title}</b></span></li>`)}</ul></section>` : ''}
+    <ul class="tk-list">${pins.map((p) => html`<li class="tk-item" data-k="op${p.id}"><span class="tk-pn">${p.num}</span><span class="tk-t"><b>${M(p.body)}</b><span>${chainName(t, p.chain_id)} · V${verOf(t, p)} · ${first(p.user)}${p.replies.length ? ` · ${plural(p.replies.length, 'reply', 'replies')}` : ''}</span></span><button type="button" class="tk-btn tk-sm" data-act="tk-goto" data-id="${p.id}">Go to pin</button>${t.is_mine || r.manage ? html`<button type="button" class="tk-btn tk-sm tk-ok" data-act="tk-resolve" data-id="${p.id}" data-v="1">${I('check', 15, 2.6)}Mark fixed</button>` : ''}</li>`)}
+      ${open.map((c) => html`<li class="tk-item" data-k="oc${c.id}"><span class="tk-tag">Checklist</span><span class="tk-t"><b>${M(c.title)}</b></span></li>`)}</ul></section>` : ''}
   ${brief(t, r)}`;
 }
 
@@ -582,7 +586,7 @@ function rail(t, r) {
   const feed = items.map((x) => (x.p ? pinItem(t, x.p, r) : x.c ? commentItem(t, x.c, r) : html`<li class="tk-ev" data-k="e${x.e.at}${x.e.kind}"><i style="background:${/approved|completed/.test(x.e.kind) ? '#3DD68C' : /sent_back/.test(x.e.kind) ? '#F7B544' : /submitted/.test(x.e.kind) ? '#9B7BFF' : '#8E87B5'}"></i><span><b>${x.e.user || 'Someone'}</b> ${x.n ? `${MANY[x.e.kind](x.n)}: ${x.details.join(' · ')}` : `${EVENT[x.e.kind] || x.e.kind}${x.e.detail && !/^(sent_back|submitted)$/.test(x.e.kind) ? `: ${x.e.detail}` : ''}`} · ${relTime(x.last || x.e.at)}</span></li>`));
   return html`<aside class="tk-rail" aria-label="${deciding ? 'Decide and conversation' : 'Conversation'}">
     ${deciding ? html`<section class="tk-decide" aria-label="Checklist"><div class="tk-ch"><h3>Checklist</h3><span class="tk-small tk-muted">${t.checks.filter((c) => c.checked).length} of ${t.checks.length}</span></div>
-      <ul class="tk-checks">${t.checks.map((c) => html`<li data-k="dk${c.id}"><label class="tk-check tk-ok"><input type="checkbox" data-act="tk-tick" data-id="${c.id}" ${raw(c.checked ? 'checked' : '')}>${c.title}</label></li>`)}</ul>
+      <ul class="tk-checks">${t.checks.map((c) => html`<li data-k="dk${c.id}"><label class="tk-check tk-ok"><input type="checkbox" data-act="tk-tick" data-id="${c.id}" ${raw(c.checked ? 'checked' : '')}><span>${M(c.title)}</span></label></li>`)}</ul>
       <span class="tk-small tk-muted">Tick what’s right. Anything left unticked goes back when you ask for changes.</span></section>` : ''}
     <div class="tk-rh">
       <div class="tk-tabs" role="tablist" aria-label="Show">${[['talk', 'Comments'], ['activity', 'Activity']].map(([k, n]) => html`<button type="button" class="tk-tab" role="tab" aria-selected="${String(ui.tab === k)}" data-act="tk-tab" data-v="${k}">${n}${k === 'talk' && fbCount ? html`<span class="tk-n" title="${plural(fbCount, 'pin')} still open">${fbCount}</span>` : ''}</button>`)}</div>
@@ -597,8 +601,8 @@ function pinItem(t, p, r) {
   const can = p.user_id === S.me.id || t.is_mine || r.approver || r.manage;
   return html`<li class="tk-pinit${p.pending ? ' tk-pending' : ''}${p.resolved ? ' tk-res' : ''}${ui.pin === p.id ? ' tk-on' : ''}" data-k="fp${p.id}">
     <div class="tk-pinh"><span class="tk-pn${p.resolved ? ' tk-g' : ''}">${p.num}</span><span>${chainName(t, p.chain_id)}${multi ? ` · ${p.resolved ? `from V${verOf(t, p)}` : `V${verOf(t, p)}`}` : ''}${isPdf(fileOf(t, p.file_id) || {}) ? ` · page ${p.page}` : ''} · ${p.resolved ? 'fixed' : 'open'}</span><button type="button" class="tk-lnk tk-small" data-act="tk-goto" data-id="${p.id}">Go to pin</button></div>
-    <p class="tk-feedtext"><b>${first(p.user)}:</b> ${p.body}</p>
-    ${p.replies.map((x) => html`<p class="tk-feedtext tk-rep" data-k="fr${x.id}"><b>${first(x.user)}:</b> ${x.body}</p>`)}
+    <p class="tk-feedtext"><b>${first(p.user)}:</b> ${M(p.body)}</p>
+    ${p.replies.map((x) => html`<p class="tk-feedtext tk-rep" data-k="fr${x.id}"><b>${first(x.user)}:</b> ${M(x.body)}</p>`)}
     <div class="tk-popa">${p.pending ? html`<span class="tk-small tk-muted">Saving…</span>` : html`<button type="button" class="tk-lnk tk-small" data-act="tk-reply" data-id="${p.id}">Reply</button>`}${can && !p.pending ? html`<button type="button" class="tk-lnk tk-small" data-act="tk-resolve" data-id="${p.id}" data-v="${p.resolved ? '0' : '1'}">${p.resolved ? 'Reopen' : 'Mark fixed'}</button>` : ''}<span class="tk-small tk-muted" style="margin-left:auto">${relTime(p.created_at)}</span></div>
   </li>`;
 }
@@ -607,14 +611,14 @@ function pinItem(t, p, r) {
 function feedbackBody(body) {
   const [note, rest] = String(body).split(/(?:^|\n\n)Still to do:\n/);
   const items = rest ? rest.split('\n').filter(Boolean) : [];
-  return html`${note ? html`<p class="tk-feedtext">${note}</p>` : ''}${items.length ? html`<details class="tk-fbl"><summary>${plural(items.length, 'thing')} to fix</summary><p class="tk-feedtext">${items.join('\n')}</p></details>` : ''}`;
+  return html`${note ? html`<p class="tk-feedtext">${M(note)}</p>` : ''}${items.length ? html`<details class="tk-fbl"><summary>${plural(items.length, 'thing')} to fix</summary><p class="tk-feedtext">${items.join('\n')}</p></details>` : ''}`;
 }
 
 function commentItem(t, c, r) {
   const kind = c.kind === 'update' ? 'progress update' : c.kind === 'feedback' ? 'asked for changes' : '';
   const body = html`<li class="tk-cm${c.kind === 'feedback' ? ' tk-fb' : ''}${c.pending ? ' tk-pending' : ''}" data-k="c${c.id}">${av(c.user_id || c.client_user_id, c.user)}<div class="tk-w">
     <div class="tk-by"><b>${c.user || 'Someone'}</b>${c.pending ? 'Sending…' : relTime(c.created_at)}${kind ? html` · <span class="tk-kind">${kind}</span>` : ''}${c.from_client ? html` · <span class="tk-kind">${t.client || 'Client'}</span>` : ''}${c.team_only && c.kind !== 'feedback' ? html` · <span class="tk-kind">team only</span>` : ''}${!c.pending && (c.user_id === S.me.id || r.manage) ? html` <button type="button" class="tk-lnk" style="font-size:12px;min-height:0;color:#8E87B5" data-act="tk-delc" data-id="${c.id}">Delete</button>` : ''}</div>
-    ${c.kind === 'feedback' ? feedbackBody(c.body) : c.body ? html`<p class="tk-feedtext">${c.body}</p>` : ''}
+    ${c.kind === 'feedback' ? feedbackBody(c.body) : c.body ? html`<p class="tk-feedtext">${M(c.body)}</p>` : ''}
     ${c.file ? html`<button type="button" class="tk-lnk" style="min-height:0" data-act="tk-cfile" data-url="${c.file.url}" data-name="${c.file.name}">${I('clip', 14)} ${c.file.name}</button>` : ''}
   </div></li>`;
   return body;
@@ -632,7 +636,7 @@ function composer(t, r) {
         : ui.mode === 'update' ? html`<div class="tk-replying tk-upd"><span>Posting as a progress update</span><button type="button" class="tk-x-btn" data-act="tk-mode" data-v="comment" aria-label="Post as a normal comment">${I('x', 14)}</button></div>` : ''}
       <div class="tk-cin">
         <label for="tk-c" class="tk-sr">Write a comment</label>
-        <textarea id="tk-c" name="body" rows="2" maxlength="4000" placeholder="${rp ? `Reply on pin ${rp.num}` : ui.mode === 'update' ? 'How it’s going: what’s done, what’s next' : ui.mode === 'team' ? `Only the team sees this, never ${t.client}` : 'Write a comment'}"></textarea>
+        <textarea id="tk-c" name="body" rows="2" maxlength="4000" data-mention placeholder="${rp ? `Reply on pin ${rp.num}. Type @ to mention someone` : ui.mode === 'update' ? 'How it’s going: what’s done, what’s next' : ui.mode === 'team' ? `Only the team sees this, never ${t.client}` : 'Write a comment. Type @ to mention someone'}"></textarea>
         <div class="tk-tools">
           <details class="tk-more"><summary class="tk-ti" aria-label="More: progress update, step, checklist item or new task">${I('plus')}</summary><div class="tk-menu tk-cmenu" role="menu">
             <button type="button" class="tk-mi" data-act="tk-mode" data-v="update">${I('layers', 16)}<span class="tk-x">Post as a progress update<span>What’s done and what’s next</span></span></button>
@@ -645,7 +649,7 @@ function composer(t, r) {
           <span class="tk-send"><button type="submit">Send</button>${canAsk ? html`<details class="tk-more" style="display:flex"><summary aria-label="More ways to send" style="height:34px;width:30px;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#7C5CF0,#9B7BFF);color:#fff;border-left:1px solid rgba(255,255,255,.28);cursor:pointer">${I('chev', 14, 2.4)}</summary><div class="tk-menu" role="menu" style="bottom:calc(100% + 6px);top:auto"><button type="button" class="tk-mi" data-act="tk-sendask">${I('up', 16)}<span class="tk-x">Send and ask for changes<span>Sends it back with this note and the unticked checks</span></span></button></div></details>` : ''}</span>
         </div>
       </div>
-      <div class="tk-chint">Press Enter to send</div>
+      <div class="tk-chint">Press Enter to send · type @ to mention someone</div>
     </div>
   </form>`;
 }
@@ -769,7 +773,7 @@ actions['tk-who'] = () => {
 actions['tk-approval'] = () => {
   const t = T(); closeMenus();
   const v = t.needs_review_set == null ? '' : t.needs_review_set ? '1' : '0';
-  openModal({ title: 'Approval for this task', submit: 'Save', body: html`<div class="field"><label class="f" for="tk-ap">Does it need approval before it’s done?</label><select id="tk-ap" name="v"><option value="" ${raw(v === '' ? 'selected' : '')}>The company setting (${S.settings.task_review_required !== false ? 'yes' : 'no'})</option><option value="1" ${raw(v === '1' ? 'selected' : '')}>Yes, ${approverName(t)} approves it</option><option value="0" ${raw(v === '0' ? 'selected' : '')}>No, the person doing it marks it done</option></select><p class="hint">Who approves is the project lead. Change the lead on the project page.</p></div>`,
+  openModal({ title: 'Approval for this task', submit: 'Save', body: html`<div class="field"><label class="f" for="tk-ap">Does it need approval before it’s done?</label><select id="tk-ap" name="v"><option value="" ${raw(v === '' ? 'selected' : '')}>The company setting (${S.settings.task_review_required !== false ? 'yes' : 'no'})</option><option value="1" ${raw(v === '1' ? 'selected' : '')}>Yes, ${approverName(t)} approves it</option><option value="0" ${raw(v === '0' ? 'selected' : '')}>No, the person doing it marks it done</option></select><p class="hint">Who approves is the project manager. Change the lead on the project page.</p></div>`,
     onSubmit: async (fd) => { await patch(`/api/tasks/${t.id}`, { needs_review: fd.get('v') === '' ? null : Number(fd.get('v')) }); done(); } });
 };
 actions['tk-delete'] = run(async () => {

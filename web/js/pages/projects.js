@@ -7,6 +7,8 @@ import { isMgr, loadPeople, select } from '../parts.js';
 import { boardHtml, listHtml, setTasks, dueChip, STATUS } from './tasks.js';
 import { loadClientTab, clientTab, mountClientTab } from './clients.js';
 import { loadAssets, assetsPanel, assetsAfter } from './assets.js';
+import { teamTab, planTab, planAfter, loadPlan, setPlanRedraw } from './pm.js';
+import { morph } from '../morph.js';
 
 export const COLORS = ['#6B55D6', '#B45309', '#7C3AED', '#0F766E', '#BE185D', '#4F46E5', '#15803D', '#C2410C'];
 const PSTATUS = { active: 'Active', on_hold: 'On hold', done: 'Done' };
@@ -15,7 +17,7 @@ const today = () => todayIn((S.me.tz_offset_min ?? S.settings.tz_offset_min) - (
 const keyBlock = (p, big = false) => html`<span class="pkey${big ? ' big' : ''}" style="background:${p.color}" aria-hidden="true">${p.key}</span>`;
 function faces(members, max = 5) {
   const shown = members.slice(0, max), more = members.length - shown.length;
-  return html`<span class="faces">${shown.map((m) => html`<span class="avatar sm" style="background:${avColor(m.id)}" title="${m.name}${m.role === 'lead' ? ' (lead)' : ''}">${initials(m.name)}</span>`)}${more > 0 ? html`<span class="avatar sm more">+${more}</span>` : ''}</span>`;
+  return html`<span class="faces">${shown.map((m) => html`<span class="avatar sm" style="background:${avColor(m.id)}" title="${m.name}${m.role === 'lead' ? ' (project manager)' : m.role === 'deputy' ? ' (stand-in)' : ''}">${initials(m.name)}</span>`)}${more > 0 ? html`<span class="avatar sm more">+${more}</span>` : ''}</span>`;
 }
 function dueText(p) {
   if (!p.due_day) return null;
@@ -47,7 +49,7 @@ export const projectsPage = {
       ${show === 'open' && !term && shown.length ? summary(shown) : ''}
       ${shown.length ? grouped(shown)
         : html`<section class="panel">${empty(term ? 'No projects match' : show === 'open' ? (mine ? 'You are not in any project yet' : 'No projects yet') : `No ${show} projects`,
-          mine ? 'A manager or project lead adds you to a project. Its tasks then show up here and in the desktop app.' : show === 'open' ? html`<button class="btn primary mt" data-act="project-new">${raw('+')} Create the first project</button>` : '')}</section>`}`;
+          mine ? 'A manager or project manager adds you to a project. Its tasks then show up here and in the desktop app.' : show === 'open' ? html`<button class="btn primary mt" data-act="project-new">${raw('+')} Create the first project</button>` : '')}</section>`}`;
   },
 };
 
@@ -77,7 +79,7 @@ function grouped(list) {
 function cardHtml(p) {
   const c = p.counts;
   return html`<a class="pcard" href="#/project?id=${p.id}" data-k="p${p.id}" style="--pc:${p.color}">
-    <div class="pc-top">${keyBlock(p)}<div class="pc-name"><h2>${p.name}</h2><span>${p.client_id ? html`<b class="pc-cl">${icon('client')}${p.client}</b>` : 'Internal'} · ${p.lead ? `Led by ${p.lead.name}` : 'No lead yet'}</span></div>${statusTag(p)}</div>
+    <div class="pc-top">${keyBlock(p)}<div class="pc-name"><h2>${p.name}</h2><span>${p.client_id ? html`<b class="pc-cl">${icon('client')}${p.client}</b>` : 'Internal'} · ${p.lead ? `Run by ${p.lead.name}` : 'No manager yet'}</span></div>${statusTag(p)}</div>
     ${p.description ? html`<p class="pc-desc">${p.description}</p>` : ''}
     <div class="pc-prog"><div class="pc-prog-l"><b class="num">${c.progress_pct == null ? '–' : c.progress_pct + '%'}</b><span>${c.total ? `${c.done} of ${plural(c.total, 'task')} done` : 'No tasks yet'}</span></div>${meter(c.progress_pct || 0, 'good')}</div>
     <div class="pc-stats"><span><b class="num">${c.open}</b> open</span>${c.overdue ? html`<span class="bad-ink"><b class="num">${c.overdue}</b> overdue</span>` : ''}${c.in_review ? html`<span><b class="num">${c.in_review}</b> in review</span>` : ''}${p.tracked_secs ? html`<span>${icon('clock')}${dur(p.tracked_secs)}</span>` : ''}</div>
@@ -95,28 +97,44 @@ export const projectPage = {
     // the Client tab loads alongside the project (it knows the project from the last visit, if any)
     const known = cur && cur.id === id ? cur : null;
     const early = onClient && known ? loadClientTab(known, q).catch(() => null) : null;
-    const [p, tasks, , assets] = await Promise.all([get(`/api/projects/${id}`), get(`/api/tasks${qs({ assignee: 'all', project: id, done_days: 30 })}`), isMgr() ? loadPeople() : null, q.get('tab') === 'assets' ? loadAssets({ project: id }) : null]);
-    cur = p; setTasks(tasks);
+    // the day plan, for the manager and stand-in: on Plan today, and for the Today column on Team
+    const tab = q.get('tab');
+    // (asked for alongside the project when we already know this person plans it)
+    const planner = tab === 'plan' || (tab === 'members' && known && known.can_plan);
+    let [p, tasks, , assets, plan] = await Promise.all([get(`/api/projects/${id}`), get(`/api/tasks${qs({ assignee: 'all', project: id, done_days: 30 })}`), isMgr() ? loadPeople() : null, tab === 'assets' ? loadAssets({ project: id }) : null,
+      planner ? loadPlan({ id }, tab === 'plan' ? q.get('day') || null : null).catch(() => null) : null]);
+    if (!plan && tab === 'members' && p.can_plan) plan = await loadPlan(p, null).catch(() => null);
+    cur = p; S.project = p; setTasks(tasks);
     document.title = `${p.key} ${p.name} · Staffwarden`;
     const client = onClient && (p.client_id || isMgr()) ? ((early && (await early) && known.client_id === p.client_id ? await early : null) || await loadClientTab(p, q)) : null;
-    return { p, tasks, client, assets };
+    return { p, tasks, client, assets, plan };
   },
   after(view, data) {
     if (data && data.client) mountClientTab(view, data.client);
+    if (data && data.plan && view.querySelector('.pl-board')) {
+      planAfter(view);
+      setPlanRedraw((b) => {
+        data.plan = b;
+        const q = new URLSearchParams(location.hash.split('?')[1] || '');
+        morph(view, projectPage.render(data, q).toString());
+        planAfter(view);
+      });
+    }
     if (data && data.assets) assetsAfter(view);
     // on a narrow screen the tabs scroll sideways: keep the open one in sight
     const bar = view.querySelector('.page-h > .tabs'), t = bar && bar.querySelector('.tab[aria-current="page"]');
     if (t && bar.scrollWidth > bar.clientWidth) { const l = t.offsetLeft - bar.offsetLeft, r = l + t.offsetWidth; if (l < bar.scrollLeft || r > bar.scrollLeft + bar.clientWidth) bar.scrollLeft = Math.max(0, r - bar.clientWidth + 16); }
   },
-  render({ p, tasks, client, assets }, q) {
-    const tab = ['board', 'list', 'members', 'client', 'assets'].includes(q.get('tab')) && (q.get('tab') !== 'assets' || assets) && (q.get('tab') !== 'client' || client) ? q.get('tab') : 'overview';
+  render({ p, tasks, client, assets, plan }, q) {
+    const tab = ['board', 'list', 'members', 'client', 'assets', 'plan'].includes(q.get('tab')) && (q.get('tab') !== 'assets' || assets) && (q.get('tab') !== 'client' || client) && (q.get('tab') !== 'plan' || p.can_plan) ? q.get('tab') : 'overview';
     const whoF = q.get('who') || '';
     const shown = whoF ? tasks.filter((t) => (whoF === 'none' ? t.assignee_id == null : String(t.assignee_id) === whoF)) : tasks;
-    const tabs = [['overview', 'Overview'], ['board', 'Board'], ['list', 'List'], ['assets', 'Assets'], ['members', 'Members', p.members.length], ...(p.client_id || isMgr() ? [['client', p.client_id ? 'Client' : 'Share with a client']] : [])];
-    const lead = p.lead ? p.lead.name : 'No lead';
+    const tabs = [['overview', 'Overview'], ['board', 'Board'], ['list', 'List'], ...(p.can_plan ? [['plan', 'Plan today']] : []), ['assets', 'Assets'], ['members', 'Team', p.members.length], ...(p.client_id || isMgr() ? [['client', p.client_id ? 'Client' : 'Share with a client']] : [])];
+    const waiting = tasks.filter((t) => t.review_mine).length;
     let body, sub = '';
     if (tab === 'overview') body = overview(p, tasks);
-    else if (tab === 'members') body = membersTab(p);
+    else if (tab === 'members') body = teamTab(p, plan && plan.day === plan.today ? plan : null);
+    else if (tab === 'plan') body = planTab(p, plan);
     else if (tab === 'client') body = clientTab(p, client);
     else if (tab === 'assets') body = assetsPanel(assets, { onProject: true });
     else {
@@ -126,8 +144,8 @@ export const projectPage = {
     }
     return html`
       <div class="page-h phead" style="--pc:${p.color}"><a class="crumb" href="#/projects">${icon('left')}Projects</a><div class="ph-id">${keyBlock(p, true)}<div><h1>${p.name} ${statusTag(p)}</h1>
-          <p class="sub">${p.client ? `${p.client} · ` : ''}Lead: ${lead}${p.due_day ? ` · Due ${dayShort(p.due_day)}` : ''}${p.access === 'everyone' ? ' · Open to everyone' : ''}</p></div></div>
-        <div class="tools">${p.can_manage ? html`<button class="btn" data-act="project-settings">${icon('gear')} Settings</button>` : html`<button class="btn" data-act="guide-projects">${icon('help')} How it works</button>`}<button class="btn primary" data-act="task-new" data-project="${p.id}">${raw('+')} New task</button></div>
+          <p class="sub">${p.client ? `${p.client} · ` : ''}${p.lead ? `Run by ${p.lead.id === S.me.id ? 'you' : p.lead.name}` : 'No project manager yet'}${p.due_day ? ` · Due ${dayShort(p.due_day)}` : ''}${p.access === 'everyone' ? ' · Open to everyone' : ''}</p></div></div>
+        <div class="tools">${waiting ? html`<a class="btn" href="#/review">${icon('check')} Waiting for you <span class="tab-n">${waiting}</span></a>` : ''}${p.can_manage ? html`<button class="btn" data-act="project-settings">${icon('gear')} Settings</button>` : html`<button class="btn" data-act="guide-projects">${icon('help')} How it works</button>`}<button class="btn primary" data-act="task-new" data-project="${p.id}">${raw('+')} New task</button></div>
         <nav class="tabs" aria-label="Project views">${tabs.map(([v, n, count]) => html`<button type="button" class="tab" data-act="q" ${raw(qAttr('tab', v === 'overview' ? '' : v))} aria-current="${tab === v ? 'page' : 'false'}">${n}${count != null ? html`<span class="tab-n" aria-label="${plural(count, 'person', 'people')}">${count}</span>` : ''}${v === 'client' && client && client.pj && client.pj.unread ? html`<span class="badge" aria-label="${client.pj.unread} unread">${client.pj.unread}</span>` : ''}</button>`)}</nav>
         ${sub}</div>
       ${body}`;
@@ -159,7 +177,7 @@ function overview(p, tasks) {
       </div>
       <div>
         <section class="panel flush"><header><h2>Workload</h2><span class="muted small">Open tasks per person</span></header>
-          ${p.workload.length ? html`<ul class="plist">${[...p.workload].sort((a, b) => b.open - a.open).map((w) => html`<li><span class="avatar sm" style="background:${avColor(w.user_id)}">${initials(w.name)}</span><span class="pl-t"><b>${w.name}${w.role === 'lead' ? html` <span class="tag holiday" style="font-size:11px;padding:0 7px">Lead</span>` : ''}</b><span class="muted small">${w.done} done${w.tracked_secs ? ` · ${dur(w.tracked_secs)}` : ''}</span></span><span class="pl-n"><b class="num">${w.open}</b>${w.overdue ? html`<span class="bad-ink small"> ${w.overdue} late</span>` : ''}</span></li>`)}</ul>`
+          ${p.workload.length ? html`<ul class="plist">${[...p.workload].sort((a, b) => b.open - a.open).map((w) => html`<li><span class="avatar sm" style="background:${avColor(w.user_id)}">${initials(w.name)}</span><span class="pl-t"><b>${w.name}${w.role === 'lead' ? html` <span class="tag holiday" style="font-size:11px;padding:0 7px">Manager</span>` : ''}</b><span class="muted small">${w.done} done${w.tracked_secs ? ` · ${dur(w.tracked_secs)}` : ''}</span></span><span class="pl-n"><b class="num">${w.open}</b>${w.overdue ? html`<span class="bad-ink small"> ${w.overdue} late</span>` : ''}</span></li>`)}</ul>`
             : html`<div class="body pad"><p class="muted">No members yet.</p></div>`}</section>
         <section class="panel flush"><header><h2>Recent activity</h2></header>
           ${p.activity.length ? html`<ul class="feed">${p.activity.slice(0, 12).map((e) => html`<li><span class="muted small num">${relTime(e.at)}</span><span>${e.kind === 'member' ? html`<b>${e.user || 'Someone'}</b> added the person on <a href="#" data-act="open-task" data-id="${e.task_id}">${e.key}</a> to the project` : html`<b>${e.user || 'Someone'}</b> ${FEED[e.kind] || e.kind} <a href="#" data-act="open-task" data-id="${e.task_id}">${e.key}</a>${e.kind === 'created' ? html` <span class="muted">${e.title}</span>` : ''}`}</span></li>`)}</ul>`
@@ -168,17 +186,6 @@ function overview(p, tasks) {
     </div>`;
 }
 const FEED = { created: 'created', status: 'moved', submitted: 'sent for review', sent_back: 'sent back', approved: 'approved', completed: 'finished', reopened: 'reopened', withdrawn: 'withdrew', assigned: 'reassigned', due: 'changed the deadline of', edited: 'edited', file: 'attached a file to', member: 'added the assignee as a member with' };
-
-function membersTab(p) {
-  return html`<section class="panel flush"><header><h2>Members</h2>${p.can_manage ? html`<button class="btn primary sm" data-act="project-add-members">${raw('+')} Add people</button>` : ''}</header>
-    ${p.workload.length ? html`<div class="tbl-wrap"><table class="t"><thead><tr><th>Person</th><th>Role</th><th class="r">Open</th><th class="r">Overdue</th><th class="r">Done</th><th class="r">Time on project</th>${p.can_manage ? html`<th></th>` : ''}</tr></thead><tbody>
-      ${p.workload.map((w) => html`<tr data-k="m${w.user_id}"><td>${person({ id: w.user_id, name: w.name }, w.title || '')}</td>
-        <td>${w.role === 'lead' ? html`<span class="tag holiday"><i></i>Lead</span>` : html`<span class="muted">Member</span>`}</td>
-        <td class="r num">${w.open}</td><td class="r num">${w.overdue ? html`<b class="bad-ink">${w.overdue}</b>` : '0'}</td><td class="r num">${w.done}</td><td class="r num">${w.tracked_secs ? dur(w.tracked_secs) : html`<span class="faint">–</span>`}</td>
-        ${p.can_manage ? html`<td class="r">${w.role === 'lead' ? '' : html`<button class="linkbtn danger-ink" data-act="project-remove-member" data-id="${w.user_id}" data-name="${w.name}">Remove</button>`}</td>` : ''}</tr>`)}
-    </tbody></table></div>` : html`<div class="body pad">${empty('No members yet', p.can_manage ? 'Add the people working on this project. Only members see it, unless it is open to everyone.' : '')}</div>`}
-    <p class="small muted" style="padding:10px 18px 14px;border-top:1px solid var(--line-2)">${p.access === 'everyone' ? 'This project is open to everyone in the company; members are the people working on it.' : 'Only members (and managers) see this project and its tasks, and only they can track time on it.'} Assigning a task to someone adds them automatically.</p></section>`;
-}
 
 // ---------------- create, settings, members ----------------
 async function directory() { return get('/api/directory'); }
@@ -202,7 +209,8 @@ function projectFields(p, people) {
       <div class="field"><label class="f" for="psd">Start date</label><input id="psd" name="start_day" type="date" value="${(p && p.start_day) || ''}"></div>
       <div class="field"><label class="f" for="pdd">Deadline</label><input id="pdd" name="due_day" type="date" value="${(p && p.due_day) || ''}"></div></div>
     <div class="grid3">
-      <div class="field"><label class="f" for="pl">Lead</label>${isMgr() ? html`<select id="pl" name="lead_id"><option value="">No lead</option>${people.map((u) => html`<option value="${u.id}" ${p && p.lead && p.lead.id === u.id ? raw('selected') : ''}>${u.name}</option>`)}</select><p class="hint">Runs the project: members, assigning and review</p>` : html`<input id="pl" value="${p && p.lead ? p.lead.name : 'No lead'}" disabled>`}</div>
+      <div class="field"><label class="f" for="pl">Project manager</label>${isMgr() ? html`<select id="pl" name="lead_id"><option value="">Nobody yet</option>${people.map((u) => html`<option value="${u.id}" ${p && p.lead && p.lead.id === u.id ? raw('selected') : ''}>${u.name}</option>`)}</select><p class="hint">Runs it: the team, their days and approvals</p>` : html`<input id="pl" value="${p && p.lead ? p.lead.name : 'Nobody yet'}" disabled><p class="hint">The owner chooses the manager</p>`}</div>
+      ${p && p.can_manage ? html`<div class="field"><label class="f" for="pdp">Stand-in</label><select id="pdp" name="deputy_id"><option value="">Nobody</option>${p.members.filter((m) => !p.lead || m.id !== p.lead.id).map((u) => html`<option value="${u.id}" ${p.deputy && p.deputy.id === u.id ? raw('selected') : ''}>${u.name}</option>`)}</select><p class="hint">Plans and approves when the manager can’t</p></div>` : ''}
       ${p ? html`<div class="field"><label class="f" for="pst">Status</label><select id="pst" name="status">${Object.entries(PSTATUS).map(([v, n]) => html`<option value="${v}" ${p.status === v ? raw('selected') : ''}>${n}</option>`)}</select></div>` : ''}
       <div class="field"><label class="f" for="pac">Who can see it</label><select id="pac" name="access"><option value="members" ${!p || p.access === 'members' ? raw('selected') : ''}>Members only</option><option value="everyone" ${p && p.access === 'everyone' ? raw('selected') : ''}>Everyone in the company</option></select></div></div>
     <div class="field"><span class="f" style="display:block">Colour</span>${swatches(p && p.color)}</div>`;
@@ -211,6 +219,7 @@ const readProject = (fd) => ({
   name: fd.get('name'), key: String(fd.get('key') || '').trim().toUpperCase() || null, description: fd.get('description') || null, client: fd.get('client') || null,
   start_day: fd.get('start_day') || null, due_day: fd.get('due_day') || null, access: fd.get('access'), color: fd.get('color'),
   ...(fd.has('status') ? { status: fd.get('status') } : {}), ...(isMgr() ? { lead_id: fd.get('lead_id') ? Number(fd.get('lead_id')) : null } : {}),
+  ...(fd.has('deputy_id') ? { deputy_id: fd.get('deputy_id') ? Number(fd.get('deputy_id')) : null } : {}),
 });
 function memberPicker(people, exclude = new Set()) {
   const list = people.filter((u) => !exclude.has(u.id));

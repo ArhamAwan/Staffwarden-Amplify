@@ -196,7 +196,7 @@ module.exports = (ctx) => {
   });
   route('DELETE', '/api/assets/:id', ({ user, params }) => {
     const a = loadAsset(user, params.id);
-    need(canRemove(user, a), 403, 'Only the person who added it, a project lead or a manager can remove it');
+    need(canRemove(user, a), 403, 'Only the person who added it, the project manager can remove it');
     if (a.file) { try { fs.unlinkSync(path.join(dir, a.file)); } catch { /* gone */ } }
     db.prepare('DELETE FROM assets WHERE id = ?').run(a.id);
     // the next version down becomes the one shown

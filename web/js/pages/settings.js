@@ -110,7 +110,7 @@ export const settingsPage = {
             ${row('Weekly target', 'Hours each person aims for in a week.', num('s-wt', 'weekly_h', s.weekly_target_min / 60, 0, 100, 'hours', 0.5), { id: 's-wt' })}
             ${row('Time off per year', 'Paid days off each person gets.', num('s-lv', 'leave_days_per_year', s.leave_days_per_year, 0, 365, 'days'), { id: 's-lv' })}
             ${row('Time zone', 'The default for everyone. Set each remote person’s own zone on the People page.', html`<select id="s-tz" name="tz">${zoneOptions(s.tz_name || null, { fixed: s.tz_name ? null : s.tz_offset_min })}</select>`, { id: 's-tz' })}`)}
-          ${sec('tasks', 'Tasks', '', row('Review before done', 'Assigned tasks go to a manager or the project lead before they count as done. Task accuracy on Performance is the share approved first time.', sw('task_review_required', s.task_review_required !== false, 's-rv'), { id: 's-rv', tog: true }))}
+          ${sec('tasks', 'Tasks', '', row('Review before done', 'Assigned tasks go to a manager or the project manager before they count as done. Task accuracy on Performance is the share approved first time.', sw('task_review_required', s.task_review_required !== false, 's-rv'), { id: 's-rv', tog: true }))}
           </div><div class="set-col">
 
           ${sec('shots', 'Screenshots and activity', 'Everyone sees this same policy in the desktop app.', html`

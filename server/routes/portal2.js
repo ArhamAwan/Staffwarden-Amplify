@@ -16,7 +16,7 @@ module.exports = (ctx) => {
   const C = { client: true };
   const P = () => ctx.pnotify;
   const access = (u, pid) => ctx.portalAccess(u, pid);
-  const needManage = (a) => need(a.manage, 403, 'Only the project lead or a manager can do this');
+  const needManage = (a) => need(a.manage, 403, 'Only the project manager can do this');
   const staffName = (id) => ctx.portalStaffName(id);
   const clientName = (id) => (db.prepare('SELECT name FROM client_users WHERE id = ?').get(id) || {}).name || 'Client';
   const who = (kind, id) => ({ kind, id, name: kind === 'client' ? clientName(id) : staffName(id) });
@@ -376,7 +376,7 @@ module.exports = (ctx) => {
     const t = db.prepare('SELECT * FROM tasks WHERE id = ?').get(Number(params.id));
     need(t && ctx.taskVisible(user, t), 404, 'Task not found');
     const p = t.project_id ? ctx.getProject(t.project_id) : null;
-    need(t.assignee_id === user.id || t.created_by === user.id || (p && ctx.canManageProject(user, p)) || ctx.isManager(user), 403, 'Only the person on the task or the lead can change its steps');
+    need(t.assignee_id === user.id || t.created_by === user.id || (p && ctx.canRunProject(user, p)) || ctx.isManager(user), 403, 'Only the person on the task or the project manager can change its steps');
     need(Array.isArray(body.steps) && body.steps.length <= 30, 400, 'steps must be a list');
     const keep = new Set();
     body.steps.forEach((x, i) => {
@@ -386,6 +386,8 @@ module.exports = (ctx) => {
       if (ex) { db.prepare('UPDATE task_steps SET title = ?, done_at = ?, position = ? WHERE id = ?').run(title, done, i, ex.id); keep.add(ex.id); }
       else keep.add(Number(db.prepare('INSERT INTO task_steps (task_id, title, done_at, position) VALUES (?,?,?,?)').run(t.id, title, done, i).lastInsertRowid));
     });
+    // @mentions in the steps (each step tells a person once)
+    if (ctx.taskMention) for (const st of db.prepare('SELECT id, title FROM task_steps WHERE task_id = ?').all(t.id)) if (keep.has(st.id) && st.title.includes('@')) ctx.taskMention(t, user, 'step', st.id, st.title);
     for (const s of db.prepare('SELECT id FROM task_steps WHERE task_id = ?').all(t.id)) if (!keep.has(s.id)) db.prepare('DELETE FROM task_steps WHERE id = ?').run(s.id);
     ctx.emit('tasks', t.assignee_id);
     if (p && p.client_id) emitPortal(p, 'portal_task', { task_id: t.id });

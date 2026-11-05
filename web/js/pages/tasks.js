@@ -5,6 +5,7 @@ import { get, post, patch, put, del, qs, download } from '../api.js';
 import { S, actions, empty, toast, errMsg, openModal, confirmBox, qAttr, trap } from '../ui.js';
 import { isMgr, loadPeople, select } from '../parts.js';
 import { leave } from '../motion.js';
+import { loadMyDay, myDay } from './pm.js';
 
 export const STATUS = { todo: 'To do', in_progress: 'In progress', in_review: 'In review', done: 'Done' };
 // god mode (the owner turns it on for someone): the same board, as a quest board
@@ -47,15 +48,17 @@ export default {
   async load(q) {
     const mgr = isMgr();
     const assignee = q.get('who') || (mgr ? 'all' : 'me');
-    const [tasks, projects] = await Promise.all([
+    const [tasks, projects, , day, sum] = await Promise.all([
       get(`/api/tasks${qs({ assignee, project: q.get('project'), due: q.get('due'), q: q.get('q'), status: q.get('status') })}`),
       get('/api/projects'),
       mgr ? loadPeople() : Promise.resolve([]),
+      loadMyDay(),
+      get('/api/tasks/summary').catch(() => ({})),
     ]);
     cache = { tasks, projects, people: mgr ? S.people : [] };
-    return { tasks, projects, assignee };
+    return { tasks, projects, assignee, day, toReview: sum.to_review || 0 };
   },
-  render({ tasks, projects, assignee }, q) {
+  render({ tasks, projects, assignee, day, toReview }, q) {
     const mgr = isMgr();
     const view = q.get('view') === 'list' ? 'list' : 'board';
     const open = tasks.filter((t) => t.status !== 'done');
@@ -68,8 +71,8 @@ export default {
       <label class="sr" for="tq">Search tasks</label><input id="tq" class="search" type="search" placeholder="Search" value="${q.get('q') || ''}" data-q="q">
       ${S.me.role === 'employee' ? html`<button class="btn" data-act="guide-projects" aria-label="How tasks work" title="How tasks work">${icon('help')}</button>` : ''}
       <button class="btn primary" data-act="task-new" data-project="${/^\d+$/.test(q.get('project') || '') ? q.get('project') : ''}">${raw('+')} New task</button>`;
-    const toReview = tasks.filter((t) => t.status === 'in_review' && t.can_manage && t.assignee_id !== S.me.id).length;
-    const reviewBanner = toReview && q.get('status') !== 'in_review' ? html`<div class="banner info"><span><b>${plural(toReview, 'task')}</b> waiting for your review.</span><button class="btn sm" data-act="q" ${raw(qAttr('status', 'in_review'))}>Show them</button></div>` : '';
+    const reviewBanner = toReview ? html`<div class="banner info"><span><b>${plural(toReview, 'task')}</b> waiting for you to approve.</span><a class="btn sm" href="#/review">Review ${toReview === 1 ? 'it' : 'them'}</a></div>` : '';
+    const dayPanel = !q.get('q') && !q.get('status') && (!q.get('who') || q.get('who') === 'me' || !mgr) ? myDay(day, { focus: q.get('view') === 'day' }) : '';
     const filtered = q.get('status') ? html`<div class="banner"><span>Showing ${STATUS[q.get('status')] || q.get('status')} only.</span><button class="btn sm" data-act="q" ${raw(qAttr('status', ''))}>Show all</button></div>` : '';
     let body;
     if (!tasks.length) body = html`<section class="panel">${empty(q.get('q') || q.get('due') || q.get('project') ? 'No tasks match' : 'No tasks yet', html`<button class="btn primary mt" data-act="task-new" data-project="${/^\d+$/.test(q.get('project') || '') ? q.get('project') : ''}">${raw('+')} Create the first task</button>`)}</section>`;
@@ -77,7 +80,7 @@ export default {
     return html`
       <div class="page-h"><div><h1>Tasks</h1><p class="sub">${plural(open.length, 'open task')}${over ? html` · <b class="bad-ink">${over} overdue</b>` : ''}${review ? ` · ${review} in review` : ''}</p></div>
         <div class="tools">${tools}</div></div>
-      ${reviewBanner}${filtered}${body}`;
+      ${reviewBanner}${dayPanel}${filtered}${body}`;
   },
 };
 

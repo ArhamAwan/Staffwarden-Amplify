@@ -26,7 +26,7 @@ test('the project lead approves; the lead’s own work goes to their manager; th
   const t = await env.ok('POST', '/api/tasks', { token: T('mona'), body: { title: 'Fix names', project_id: proj.id, assignee_id: ids.dan } });
   const v = await one('dan', t.id);
   assert.deepEqual(v.approver.names, ['Leo']);
-  assert.equal(v.approver.why, 'project lead');
+  assert.equal(v.approver.why, 'project manager');
   assert.equal(v.can_approve, false, 'not the doer');
   assert.equal((await one('lead', t.id)).can_approve, true);
   assert.equal((await one('mona', t.id)).can_approve, false, 'a manager who is not the lead can comment, not approve');
