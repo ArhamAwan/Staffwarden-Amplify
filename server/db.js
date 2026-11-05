@@ -3,7 +3,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 // Schema v2. Fresh installs and v1 databases go through the same path: the v1 tables are created
 // if missing, then migrate() adds everything v2 needs without touching existing rows.
-const SCHEMA_VERSION = 32;
+const SCHEMA_VERSION = 33;
 
 function hasColumn(db, table, col) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
@@ -83,6 +83,7 @@ function openDb(file = ':memory:') {
 function migrate(db) {
   const version = db.prepare('PRAGMA user_version').get().user_version;
   if (version >= SCHEMA_VERSION) return;
+  if (version === 32) return migrateV33(db);
   if (version === 31) return migrateV32(db);
   if (version === 30) return migrateV31(db);
   if (version === 29) return migrateV30(db);
@@ -1197,6 +1198,20 @@ function migrateV32(db) {
       created_at TEXT NOT NULL)`);
     db.exec('CREATE INDEX IF NOT EXISTS idx_mentions_task ON task_mentions(task_id, kind, ref_id)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_mentions_user ON task_mentions(user_id, created_at)');
+    db.exec('PRAGMA user_version = 32');
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  migrateV33(db);
+}
+
+// Colour themes: the one each person picked (null = the company's default, set by the owner).
+function migrateV33(db) {
+  db.exec('BEGIN');
+  try {
+    addColumn(db, 'users', 'theme', 'TEXT');
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {

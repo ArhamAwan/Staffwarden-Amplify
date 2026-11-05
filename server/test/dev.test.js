@@ -61,7 +61,7 @@ test('a developer sees and does what the owner does, except change the owner or 
 
 test('health shows the server, the database and the backups', async () => {
   const h = await env.ok('GET', '/api/dev/health', { token: env.tokens.dev });
-  assert.equal(h.schema, 32);
+  assert.equal(h.schema, 33);
   assert.ok(h.uptime_s >= 0 && h.memory.total > 0 && h.build);
   assert.equal(h.backups.count, 2);
   assert.equal(h.backups.files[0].file, 'tracker-2026-10-23.db');

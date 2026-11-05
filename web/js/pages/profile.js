@@ -5,6 +5,7 @@ import { browserPopups, askBrowser } from '../notify.js';
 import { S, actions, toast, errMsg, kpis, openModal } from '../ui.js';
 import { UPD, updList } from './hr.js';
 import { changesPanel, agreedPanel } from './explain.js';
+import { appearanceTab } from './appearance.js';
 
 const DL = [['windows', 'Windows'], ['mac-arm', 'Mac with Apple chip (M1 and later)'], ['mac-intel', 'Mac with Intel chip']];
 function dlLinks(list) {
@@ -54,6 +55,7 @@ actions['det-upd'] = () => {
 export default {
   title: 'Profile',
   async load(q) {
+    if (q && q.get('tab') === 'appearance') return { tab: 'appearance', me: await get('/api/me') };
     if (q && q.get('tab') === 'notifications') {
       const [prefs, chats, push] = await Promise.all([get('/api/me/notify-prefs'), get('/api/team/threads').catch(() => ({ threads: [] })), pushState().catch(() => 'unsupported')]);
       return { tab: 'notifications', prefs, chats, push };
@@ -72,6 +74,7 @@ export default {
   },
   render(u) {
     if (u.tab === 'notifications') return notifyTab(u);
+    if (u.tab === 'appearance') return appearanceTab(u.me, ptabs('appearance'));
     detHr = u.hr;
     const pop = browserPopups();
     const sw = (name, on, label, sub) => html`<li><label for="np-${name}"><b>${label}</b>${sub ? html`<span class="sub2">${sub}</span>` : ''}</label><span class="switch"><input type="checkbox" id="np-${name}" data-pref="${name}" ${on ? raw('checked') : ''}><span></span></span></li>`;
@@ -119,7 +122,7 @@ export default {
   },
 };
 
-const ptabs = (cur) => html`<nav class="tabs" aria-label="Profile">${[['', 'Profile'], ['notifications', 'Notifications']].map(([v, n]) => html`<button type="button" class="tab" data-act="q" data-q="tab" data-v="${v}" aria-current="${cur === v ? 'page' : 'false'}">${n}</button>`)}</nav>`;
+export const ptabs = (cur) => html`<nav class="tabs" aria-label="Profile">${[['', 'Profile'], ['notifications', 'Notifications'], ['appearance', 'Appearance']].map(([v, n]) => html`<button type="button" class="tab" data-act="q" data-q="tab" data-v="${v}" aria-current="${cur === v ? 'page' : 'false'}">${n}</button>`)}</nav>`;
 
 // ---------- notifications: what reaches which device, quiet hours, devices, muted chats ----------
 const DEVS = [['phone', 'Phone', 'phone'], ['desktop', 'Desktop app', 'laptop'], ['browser', 'Browser', 'globe']];

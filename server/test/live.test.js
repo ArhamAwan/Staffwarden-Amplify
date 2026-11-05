@@ -136,7 +136,7 @@ test('a v1 database is upgraded in place without losing anything', async () => {
   await new Promise((r) => app.server.listen(0, r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
   try {
-    assert.equal(app.db.prepare('PRAGMA user_version').get().user_version, 32);
+    assert.equal(app.db.prepare('PRAGMA user_version').get().user_version, 33);
     const login = await (await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'emp@old.com', password: 'empass-1234' }) })).json();
     assert.ok(login.token);
     const get = async (u) => (await fetch(base + u, { headers: { Authorization: `Bearer ${login.token}` } })).json();

@@ -49,7 +49,7 @@ export default {
     const mgr = isMgr();
     const assignee = q.get('who') || (mgr ? 'all' : 'me');
     const [tasks, projects, , day, sum] = await Promise.all([
-      get(`/api/tasks${qs({ assignee, project: q.get('project'), due: q.get('due'), q: q.get('q'), status: q.get('status') })}`),
+      get(`/api/tasks${qs({ assignee, project: q.get('project') === 'all' ? null : q.get('project'), due: q.get('due'), q: q.get('q'), status: q.get('status') })}`),
       get('/api/projects'),
       mgr ? loadPeople() : Promise.resolve([]),
       loadMyDay(),
@@ -74,15 +74,44 @@ export default {
     const reviewBanner = toReview ? html`<div class="banner info"><span><b>${plural(toReview, 'task')}</b> waiting for you to approve.</span><a class="btn sm" href="#/review">Review ${toReview === 1 ? 'it' : 'them'}</a></div>` : '';
     const dayPanel = !q.get('q') && !q.get('status') && (!q.get('who') || q.get('who') === 'me' || !mgr) ? myDay(day, { focus: q.get('view') === 'day' }) : '';
     const filtered = q.get('status') ? html`<div class="banner"><span>Showing ${STATUS[q.get('status')] || q.get('status')} only.</span><button class="btn sm" data-act="q" ${raw(qAttr('status', ''))}>Show all</button></div>` : '';
+    // a manager (or anyone who runs a project) starts from a box per project; one opens its board
+    const runsAny = mgr || projects.some((p) => p.can_plan);
+    const boxes = runsAny && !q.get('project') && !q.get('q') && !q.get('status') && !q.get('due') && (!q.get('who') || q.get('who') === 'all') && q.get('view') !== 'list';
+    const pid = /^\d+$/.test(q.get('project') || '') ? Number(q.get('project')) : null;
+    const back = runsAny && (pid || q.get('project') === 'none' || q.get('project') === 'all') ? html`<a class="crumb" href="#/tasks">${icon('left')}All projects</a>` : '';
     let body;
-    if (!tasks.length) body = html`<section class="panel">${empty(q.get('q') || q.get('due') || q.get('project') ? 'No tasks match' : 'No tasks yet', html`<button class="btn primary mt" data-act="task-new" data-project="${/^\d+$/.test(q.get('project') || '') ? q.get('project') : ''}">${raw('+')} Create the first task</button>`)}</section>`;
-    else body = view === 'board' ? boardHtml(tasks) : listHtml(tasks);
+    if (boxes) body = projectBoxes(projects, tasks);
+    else if (!tasks.length) body = html`<section class="panel">${empty(q.get('q') || q.get('due') || q.get('project') ? 'No tasks match' : 'No tasks yet', html`<button class="btn primary mt" data-act="task-new" data-project="${/^\d+$/.test(q.get('project') || '') ? q.get('project') : ''}">${raw('+')} Create the first task</button>`)}</section>`;
+    else body = view === 'board' ? boardHtml(tasks, { showProject: !pid }) : listHtml(tasks, { showProject: !pid });
     return html`
-      <div class="page-h"><div><h1>Tasks</h1><p class="sub">${plural(open.length, 'open task')}${over ? html` · <b class="bad-ink">${over} overdue</b>` : ''}${review ? ` · ${review} in review` : ''}</p></div>
+      <div class="page-h">${back}<div><h1>${pid && projects.find((p) => p.id === pid) ? projects.find((p) => p.id === pid).name : q.get('project') === 'none' ? 'Not in a project' : 'Tasks'}</h1><p class="sub">${boxes ? `${plural(projects.filter((p) => !p.archived && p.status !== 'done').length, 'project')} · ` : ''}${plural(open.length, 'open task')}${over ? html` · <b class="bad-ink">${over} overdue</b>` : ''}${review ? ` · ${review} in review` : ''}</p></div>
         <div class="tools">${tools}</div></div>
       ${reviewBanner}${dayPanel}${filtered}${body}`;
   },
 };
+
+// ---------- a box per project, for the people who run them ----------
+function projectBoxes(projects, tasks) {
+  const open = projects.filter((p) => !p.archived && p.status !== 'done');
+  const mineFirst = [...open].sort((a, b) => (b.can_plan - a.can_plan) || (b.counts.in_review - a.counts.in_review) || (b.counts.overdue - a.counts.overdue) || a.name.localeCompare(b.name));
+  const loose = tasks.filter((t) => !t.project_id && t.status !== 'done');
+  const looseOver = loose.filter((t) => t.overdue).length;
+  const box = (p) => {
+    const c = p.counts, waiting = tasks.filter((t) => t.project_id === p.id && t.review_mine).length;
+    return html`<a class="pbox" href="#/tasks?project=${p.id}" data-k="pb${p.id}" style="--pc:${p.color}">
+      <span class="pb-top"><span class="pkey" style="background:${p.color}" aria-hidden="true">${p.key}</span><span class="pb-n"><b>${p.name}</b><span class="muted small">${p.lead ? (p.lead.id === S.me.id ? 'Run by you' : `Run by ${p.lead.name}`) : 'No manager yet'}${p.client ? ` · ${p.client}` : ''}</span></span></span>
+      <span class="pb-c"><span><b class="num">${c.open}</b> open</span>${c.overdue ? html`<span class="bad-ink"><b class="num">${c.overdue}</b> overdue</span>` : ''}${c.in_review ? html`<span><b class="num">${c.in_review}</b> in review</span>` : ''}${c.unassigned ? html`<span><b class="num">${c.unassigned}</b> not assigned</span>` : ''}</span>
+      <span class="pb-bar" aria-hidden="true"><i style="width:${c.progress_pct || 0}%"></i></span>
+      <span class="pb-f"><span class="muted small">${c.total ? `${c.progress_pct}% done` : 'No tasks yet'}</span>${waiting ? html`<span class="tag pending"><i></i>${waiting} waiting for you</span>` : html`<span class="pb-go">Open board ${icon('right')}</span>`}</span>
+    </a>`;
+  };
+  return html`<section class="pboxes" aria-label="Projects">
+    ${mineFirst.map(box)}
+    ${loose.length ? html`<a class="pbox loose" href="#/tasks?project=none" data-k="pb-none"><span class="pb-top"><span class="pkey none" aria-hidden="true">${icon('tasks')}</span><span class="pb-n"><b>Not in a project</b><span class="muted small">Personal and loose tasks</span></span></span>
+      <span class="pb-c"><span><b class="num">${loose.length}</b> open</span>${looseOver ? html`<span class="bad-ink"><b class="num">${looseOver}</b> overdue</span>` : ''}</span><span class="pb-f"><span></span><span class="pb-go">Open board ${icon('right')}</span></span></a>` : ''}
+    <a class="pbox all" href="#/tasks?project=all" data-k="pb-all"><span class="pb-top"><span class="pkey none" aria-hidden="true">${icon('dash')}</span><span class="pb-n"><b>Everything</b><span class="muted small">Every task on one board</span></span></span><span class="pb-f"><span></span><span class="pb-go">Open board ${icon('right')}</span></span></a>
+  </section>`;
+}
 
 // The board and the list, shared with the project page.
 export function boardHtml(tasks, { showProject = true } = {}) {

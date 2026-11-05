@@ -26,6 +26,9 @@ import shiftReport from './pages/shiftreport.js';
 import people from './pages/people.js';
 import { projectsPage as projects, projectPage as project } from './pages/projects.js';
 import { reviewPage as review } from './pages/pm.js';
+import { applyTheme, clearTheme } from './theme.js';
+// the person's colour theme (a client always sees the company's own look)
+const syncTheme = () => { if (!S.me || S.me.kind === 'client') clearTheme(); else applyTheme(S.me.theme, S.me.brand); };
 import { settingsPage, auditPage } from './pages/settings.js';
 import profile from './pages/profile.js';
 import { requestsPage } from './pages/explain.js';
@@ -487,6 +490,7 @@ async function onEvent(ev) {
   if (ev.type === 'settings') { try { S.settings = await get('/api/settings'); S.me = await get('/api/me'); } catch { /* keep old */ } }
   if (ev.type === 'users') invalidatePeople();
   if (ev.type === 'users' && ev.user_id === S.me.id) { try { S.me = await get('/api/me'); } catch { /* keep old */ } }
+  if (['me', 'settings', 'users', 'fun', 'leaderboard'].includes(ev.type)) syncTheme();
   if (ev.type === 'timeoff' || ev.type === 'tasks' || ev.type === 'requests') badgeAt = 0;
   if ((ev.type === 'timer' || ev.type === 'pause') && S.me && ev.user_id === S.me.id) { clockAt = 0; refreshClock(); }
   schedule();
@@ -544,6 +548,7 @@ async function boot() {
     return;
   }
   teardown();
+  syncTheme();
   // someone from a client: the portal, a separate little app with only their own projects
   if (S.me.kind === 'client') { const m = await import('./portal/app.js'); m.startPortal(app); return; }
   registerSW();

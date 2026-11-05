@@ -255,6 +255,9 @@ function createApp(opts = {}) {
       leaderboard: ctx.leaderboardSettings ? (ctx.leaderboardSettings().audience === 'everyone' || isManager(u) || !!u.is_dev) : false,
       // what everyone can see about each other on the leaderboard (for the "What is tracked" list)
       leaderboard_public: ctx.leaderboardSettings && ctx.leaderboardSettings().audience === 'everyone' ? ctx.leaderboardSettings().columns : [],
+      // the colour theme: theirs, else the company's default; and the logo colour for "Your company"
+      theme: ctx.themeOf ? ctx.themeOf(u) : 'night', theme_own: u.theme || null, theme_default: ctx.themeDefault ? ctx.themeDefault() : 'night',
+      brand: ctx.companyPublic ? ctx.companyPublic().brand_now : null,
     };
   };
 
@@ -474,7 +477,7 @@ function createApp(opts = {}) {
   ctx.pnotify = createPortalNotify(ctx);
   ctx.changes = createChanges(ctx);
   ctx.payroll = createPayroll(ctx);
-  for (const f of ['auth', 'people', 'projects', 'tasks', 'performance', 'timer', 'capture', 'views', 'timeoff', 'admin', 'notifications', 'explain', 'hr', 'payroll', 'clients', 'portal', 'chat', 'portal2', 'team', 'shift', 'gifs', 'dev', 'leaderboard', 'shiftreport', 'assets', 'company', 'plans']) require(`./routes/${f}`)(ctx);
+  for (const f of ['auth', 'people', 'projects', 'tasks', 'performance', 'timer', 'capture', 'views', 'timeoff', 'admin', 'notifications', 'explain', 'hr', 'payroll', 'clients', 'portal', 'chat', 'portal2', 'team', 'shift', 'gifs', 'dev', 'leaderboard', 'shiftreport', 'assets', 'company', 'plans', 'themes']) require(`./routes/${f}`)(ctx);
 
   // ---------- server ----------
   // a file sent as it is (not as JSON), for uploads bigger than a JSON body allows
