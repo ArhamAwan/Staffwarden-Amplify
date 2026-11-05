@@ -527,7 +527,8 @@ module.exports = (ctx) => {
     row('Income tax', -o.tax, o.facts.tax_note);
     y += 2; doc.rect(L, y, R - L, 2, { fill: INK }); y += 26;
     doc.text(L, y, 'Net pay', { size: 14, bold: true, color: INK }); doc.text(R, y, m(o.net), { size: 20, bold: true, color: brand, align: 'right' }); y += 30;
-    if (o.employer && o.employer.length) doc.para(L, y, `Paid by ${co.name} for you, not from your pay: ${o.employer.map((e) => `${e.label} ${m(e.amount)}`).join(', ')}.`, { size: 9, maxW: R - L, color: MUTED });
+    if (o.employer && o.employer.length) y = doc.para(L, y, `Paid by ${co.name} for you, not from your pay: ${o.employer.map((e) => `${e.label} ${m(e.amount)}`).join(', ')}.`, { size: 9, maxW: R - L, color: MUTED });
+    D.signOff(doc, co, y);
     D.foot(doc, co, 'Questions? Ask in Staffwarden, under Your pay.');
     if (isHR(user) && s.user_id !== user.id) audit(user, 'payroll.slip_viewed', s.user_id, `${r.period} (PDF)`);
     return pdfOut(doc, `${o.name} payslip ${P().periodName(r.period)}`, `payslip-${safeName(o.name)}-${r.period}.pdf`, co);

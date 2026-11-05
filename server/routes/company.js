@@ -215,7 +215,17 @@ module.exports = (ctx) => {
     if (co.signer_title) doc.text(L, y + 88, co.signer_title, { size: 9, color: MUTED });
     if (stamp) doc.image(R - 110, y - 20, 110, 110, stamp, { align: 'right' });
   }
-  ctx.docParts = { head, foot, signature, brandOf, INK, MUTED, SOFT, L, R };
+  // a payslip's sign-off: the signature and stamp near the foot, when the company has them. Returns false
+  // when there's nothing to add. Goes on a new page when the lines have filled this one.
+  function signOff(doc, co, y) {
+    if (!co.pic('signature') && !co.pic('stamp')) return false;
+    let at = Math.max(y + 24, 650);
+    if (at > 668) { foot(doc, co); doc.page(); at = 70; }
+    doc.text(L, at - 8, 'Approved for payment', { size: 9, color: MUTED });
+    signature(doc, co, at);
+    return true;
+  }
+  ctx.docParts = { head, foot, signature, signOff, brandOf, INK, MUTED, SOFT, L, R };
 
   // a sample payslip with today's details, to check the look before payroll is run
   route('GET', '/api/company/sample.pdf', ({ user }) => {
@@ -237,6 +247,7 @@ module.exports = (ctx) => {
     doc.rect(L, y, R - L, 2, { fill: INK }); y += 26;
     doc.text(L, y, 'Net pay', { size: 14, bold: true, color: INK }); doc.text(R, y, m(101500), { size: 19, bold: true, color: brand, align: 'right' });
     doc.text(L, y + 30, 'Sample figures, not a real payslip.', { size: 9, color: MUTED });
+    signOff(doc, co, y + 40);
     foot(doc, co, 'Sample');
     return { raw: doc.toBuffer({ title: 'Sample payslip', author: co.legal }), type: 'application/pdf', headers: { 'Content-Disposition': 'attachment; filename="sample-payslip.pdf"', 'Cache-Control': 'private, no-store' } };
   });

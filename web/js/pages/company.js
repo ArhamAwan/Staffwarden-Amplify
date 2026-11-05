@@ -11,7 +11,7 @@ const SLOTS = {
   logo: ['Full logo', 'For payslips and certificates, on white. PNG, JPG or SVG.'],
   logo_light: ['Light version', 'Optional. For dark headers, like the client portal.'],
   icon: ['Small icon', 'Optional. A square mark for small spaces.'],
-  signature: ['Signature', 'A phone photo of it on paper works. The paper and its shadows are taken out.'],
+  signature: ['Signature', 'On payslips and certificates. A phone photo of it on paper works; the paper is taken out.'],
   stamp: ['Stamp', 'Optional. A photo of it stamped on paper; the paper is taken out.'],
 };
 const ok = icon('check');
@@ -53,6 +53,7 @@ function preview(c, tab) {
     <div class="cp-sum"><span>Gross<b>Rs 126,500</b></span><span>Taken off<b>Rs 25,000</b></span><span>Net pay<b style="color:${brand}">Rs 101,500</b></span></div>
     <div class="cp-lines">${row('Base salary', 'Rs 120,000')}${row('Unpaid leave', '− Rs 10,909', true)}${row('Late arrivals', '− Rs 13,636', true)}${row('Expense: headset', 'Rs 6,500')}${row('Income tax', '− Rs 455', true)}</div>
     <div class="cp-net"><b>Net pay</b><b style="color:${brand}">Rs 101,500</b></div>
+    ${c.images.signature || c.images.stamp ? html`<div class="cp-b"><span class="cp-mut">Approved for payment</span><div class="cp-sign" style="margin-top:4px"><div><span class="cp-sigimg" data-co-sig>${c.images.signature ? '' : html`<em>Signature</em>`}</span><i></i><b>${c.signer_name || 'Who signs'}</b><span>${c.signer_title || ''}</span></div><span class="cp-stamp" data-co-stamp></span></div></div>` : ''}
     ${foot}</div>`;
 }
 
@@ -88,7 +89,7 @@ export function companyBlock(c) {
             ${PRESETS.map(([h, n]) => html`<label class="co-sw" title="${n}" data-own="sw-${h}"><input type="radio" name="brand" value="${h}" ${raw(cur.toLowerCase() === h.toLowerCase() ? 'checked' : '')}><i style="background:${h}"></i><span class="sr">${n}</span></label>`)}
             <label class="co-sw co-custom ${!isPreset && cur ? 'set' : ''}" title="Your own colour" data-own="sw-custom"><input type="radio" name="brand" value="${!isPreset && cur ? cur : '#3a6ea5'}" data-co-custom ${raw(cur && !isPreset ? 'checked' : '')}><i style="${!isPreset && cur ? `background:${cur}` : ''}" data-co-customsw></i><span class="sr">Your own colour</span></label>
             <label class="co-hex"><input type="color" value="${cur || c.auto_brand || '#6b4fe0'}" data-co-picker aria-label="Pick your own colour"><b data-co-hex>${cur || c.auto_brand || '#6b4fe0'}</b></label></div></div>
-        <div class="co-sec"><h3>Who signs</h3><p class="hint">Goes on salary and tax certificates. Payslips don’t need a signature.</p>
+        <div class="co-sec"><h3>Who signs</h3><p class="hint">Goes at the foot of payslips and certificates.</p>
           <div class="co-grid">${field('signer_name', 'Name', '', { max: 80 })}${field('signer_title', 'Title', '', { max: 80 })}</div>
           <div class="co-logos two">${slotCard(c, 'signature', { tall: true })}${slotCard(c, 'stamp', { tall: true })}</div></div>
         <div class="co-sec"><h3>Where this shows</h3>
