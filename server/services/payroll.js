@@ -134,7 +134,9 @@ function createPayroll(ctx) {
       if (left) add({ key: 'leave_payout', label: 'Unused leave paid out', amount: Math.round(dayRate * left), source: `${plural(left, 'day')} earned this year and not taken`, kind: 'leaving' });
     }
     // their first, part month, carried into this one: its base and what attendance took off it
-    if (startsLate(u, rec, prevPeriod(period))) {
+    // (not if that month was already run and paid with them on it)
+    const paidBefore = (pp) => !!db.prepare("SELECT 1 FROM payslips s JOIN pay_runs r ON r.id = s.run_id WHERE r.period = ? AND s.user_id = ? AND r.status IN ('approved','paid')").get(pp, u.id);
+    if (startsLate(u, rec, prevPeriod(period)) && !paidBefore(prevPeriod(period))) {
       const pp = prevPeriod(period), first = slipFor(u, pp, null), mon = periodName(pp).split(' ')[0];
       if (first) for (const l of first.lines) if (l.kind === 'base' || l.kind === 'attendance' || /^alw:/.test(l.key)) {
         add({ ...l, key: `prev:${l.key}`, label: l.kind === 'base' ? `${mon}: first days` : `${mon}: ${l.label.toLowerCase()}`, source: l.kind === 'base' ? `${l.source}. Paid with this month` : l.source, carry: true });
@@ -202,6 +204,8 @@ function createPayroll(ctx) {
       const rec = recordOf(u.id), joined = localJoin(u, rec);
       if (joined && joined > monthDays(run.period).slice(-1)[0]) continue;
       // joined part-way through: those days are paid with their first full month, unless they also leave in it
+      // left off this month by HR, from the month's list
+      if (db.prepare("SELECT 1 FROM pay_waivers WHERE run_id = ? AND user_id = ? AND line_key = '*'").get(run.id, u.id)) continue;
       if (startsLate(u, rec, run.period) && !(rec && rec.leaving_on && rec.leaving_on <= monthDays(run.period).slice(-1)[0])) continue;
       if (rec && rec.leaving_on && rec.leaving_on < `${run.period}-01`) continue;
       const s = slipFor(u, run.period, run);

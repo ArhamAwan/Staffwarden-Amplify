@@ -21,7 +21,7 @@ export function payBar(s, { dark = false } = {}) {
 // the lines of a payslip; ask: show "Ask about this" on each
 export function slipLines(s, { ask = false, hr = false } = {}) {
   // a line worked out by Staffwarden (absent, late, a fixed deduction...) can be taken off this month by HR
-  const removable = (l) => hr && !l.item && !l.expense && l.kind !== 'base' && !/^adv:/.test(l.key);
+  const removable = (l) => hr && !l.item && !l.expense && (l.kind !== 'base' || /^prev:/.test(l.key)) && !/^adv:/.test(l.key);
   const act = (l) => (ask ? html`<button type="button" class="linkbtn" data-act="pay-ask" data-id="${s.id}" data-line="${l.label}">Ask about this</button>`
     : hr && l.item ? html`<button type="button" class="linkbtn danger" data-act="pr-del-item" data-id="${l.item}" data-label="${l.label}">Remove</button>`
       : removable(l) && l.removed ? html`<button type="button" class="linkbtn" data-act="pr-line-back" data-id="${s.id}" data-key="${l.key}" data-label="${l.label}">Put back</button>`

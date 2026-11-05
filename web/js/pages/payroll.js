@@ -16,7 +16,7 @@ export const ptabs = (cur) => html`<nav class="tabs" aria-label="Payroll">${[['m
   .map(([k, n, h]) => html`<a class="tab" href="${h}" aria-current="${cur === k ? 'page' : 'false'}">${n}</a>`)}</nav>`;
 const av = (s) => html`<span class="avatar" style="background:${avColor(s.user_id ?? s.id)}" aria-hidden="true">${initials(s.name)}</span>`;
 const changes = (s) => {
-  const c = s.lines.filter((l) => l.kind !== 'base' && l.counted);
+  const c = s.lines.filter((l) => (l.kind !== 'base' || /^prev:/.test(l.key)) && l.counted);
   const shown = s.lines.filter((l) => !l.counted);
   if (!c.length && !shown.length) return html`<span class="muted">None</span>`;
   return html`<div class="pchg">${c.map((l) => html`<span class="${l.amount < 0 ? 'neg' : 'pos'} num">${l.amount < 0 ? '−' : '+'} ${money(Math.abs(l.amount), s.currency)} <i>${l.label.toLowerCase()}</i></span>`)}${shown.map((l) => html`<span class="shown num">${money(Math.abs(l.amount), s.currency)} <i>${l.label.toLowerCase()}, ${l.removed ? 'removed' : 'shown only'}</i></span>`)}</div>`;
@@ -94,14 +94,17 @@ function runView(ov, d) {
       <div class="pr-checks"><b>${s === 'draft' || s === 'review' ? 'Before it is approved' : 'This month'}</b>
         ${d.checks.length ? d.checks.map((c) => html`<a class="pr-check ${c.kind}" href="${c.kind === 'missing' ? '#/hr' : c.people && c.people[0] && c.kind !== 'missing' ? `#/payroll?id=${c.people[0].id}` : '#/payroll'}" data-k="c${c.kind}">${icon({ question: 'msg', bank: 'bank', attendance: 'flag', shown: 'eye', missing: 'users' }[c.kind])}<span>${c.text}</span>${icon('right')}</a>`)
           : html`<p class="pr-ok">${icon('check')} Nothing to look at.</p>`}</div></div>`;
-  const paidCol = s === 'approved' || s === 'paid';
+  const paidCol = s === 'approved' || s === 'paid', canEdit = s === 'draft' || s === 'review';
   const rows = d.slips.map((x) => html`<tr class="link" data-k="s${x.id}" data-act="go" data-href="#/payroll?id=${x.id}" tabindex="0">
       <td class="nm"><span class="person">${av(x)}<span><b>${x.name}</b><span>${x.title || ''}</span></span></span></td>
       <td class="r num">${money(x.lines.find((l) => l.kind === 'base').amount, x.currency)}${x.facts.employed_days < x.facts.workdays ? html`<div class="small muted">${x.facts.employed_days} of ${x.facts.workdays} days</div>` : ''}</td>
       <td>${changes(x)}</td><td class="r num">${x.tax ? money(x.tax, x.currency) : html`<span class="muted">None</span>`}</td><td class="r num"><b>${money(x.net, x.currency)}</b></td>
       ${paidCol ? html`<td class="nowrap">${x.paid_on ? html`<span class="pr-paid">${icon('check')} ${dayShort(x.paid_on)}</span>${s === 'approved' ? html` <button class="linkbtn small" data-act="pr-unpay" data-id="${x.id}" data-name="${x.name}">Undo</button>` : ''}` : html`<button class="btn sm" data-act="pr-pay-one" data-id="${x.id}" data-name="${x.name}" data-net="${money(x.net, x.currency)}" data-from="${r.period}-01">Mark paid</button>`}</td>` : ''}
-      <td><div class="chips">${x.open_questions ? tag('break', 'Question') : ''}${!x.facts.bank ? (x.by_hand ? tag('idle', 'Paid by hand') : tag('absent', 'No bank details')) : ''}${x.currency === 'USD' ? tag('idle', 'Dollars, no tax') : ''}${!x.open_questions && x.facts.bank && x.currency !== 'USD' ? tag('working', 'Ready') : ''}</div></td></tr>`);
-  const totalRow = pk ? html`<tr class="tot"><td><b>Total in rupees</b></td><td></td><td></td><td class="r num"><b>${money(pk.tax)}</b></td><td class="r num"><b>${money(pk.net)}</b></td>${paidCol ? html`<td></td>` : ''}<td></td></tr>` : '';
+      <td><div class="chips">${x.open_questions ? tag('break', 'Question') : ''}${!x.facts.bank ? (x.by_hand ? tag('idle', 'Paid by hand') : tag('absent', 'No bank details')) : ''}${x.currency === 'USD' ? tag('idle', 'Dollars, no tax') : ''}${!x.open_questions && x.facts.bank && x.currency !== 'USD' ? tag('working', 'Ready') : ''}</div></td>
+      ${canEdit ? html`<td class="pr-off"><button type="button" class="linkbtn small" data-act="pr-leave-off" data-run="${r.id}" data-id="${x.user_id}" data-name="${x.name}" data-net="${money(x.net, x.currency)}" title="Leave ${x.name} off ${periodLabel(r.period).split(' ')[0]}">Leave off</button></td>` : ''}</tr>`);
+  const off = d.left_off || [];
+  const offList = off.length ? html`<section class="panel pr-offl"><header><h2>Left off ${periodLabel(r.period).split(' ')[0]} <span class="faint">${off.length}</span></h2><span class="muted small">Not paid this month. Their HR record is unchanged.</span></header><div class="body"><ul class="pr-offu">${off.map((o) => html`<li data-k="o${o.user_id}"><span class="person">${av(o)}<span><b>${o.name}</b><span>${o.reason} · ${String(o.by_name || 'HR').split(' ')[0]}, ${relTime(o.created_at)}</span></span></span>${canEdit ? html`<button type="button" class="btn sm" data-act="pr-put-back" data-run="${r.id}" data-id="${o.user_id}" data-name="${o.name}">Put back</button>` : ''}</li>`)}</ul></div></section>` : '';
+  const totalRow = pk ? html`<tr class="tot"><td><b>Total in rupees</b></td><td></td><td></td><td class="r num"><b>${money(pk.tax)}</b></td><td class="r num"><b>${money(pk.net)}</b></td>${paidCol ? html`<td></td>` : ''}<td></td>${canEdit ? html`<td></td>` : ''}</tr>` : '';
   return html`
     <div class="page-h pr-head"><div><h1>Payroll</h1><p class="sub">Pay for work in <b>${periodLabel(r.period)}</b>, paid out ${dayShort(r.pay_day)} to ${dayShort(r.pay_by)}. Worked out from Staffwarden hours, attendance and time off.</p></div>
       <div class="tools">${tools}</div>
@@ -109,7 +112,8 @@ function runView(ov, d) {
       ${hero}
       ${ptabs('month')}</div>
     <section class="panel flush"><header><h2>Everyone this month</h2><span class="muted small">Open a person to see every line and where it came from</span></header><div class="body">
-      ${d.slips.length ? html`<div class="tbl-wrap"><table class="t prt"><thead><tr><th>Person</th><th class="r">Base</th><th>This month</th><th class="r">Income tax</th><th class="r">Net pay</th>${paidCol ? html`<th>Paid</th>` : ''}<th>Check</th></tr></thead><tbody>${rows}${totalRow}</tbody></table></div>` : empty('Nobody on this month', 'Set pay for people on People and pay, then work it out again.')}</div></section>
+      ${d.slips.length ? html`<div class="tbl-wrap"><table class="t prt"><thead><tr><th>Person</th><th class="r">Base</th><th>This month</th><th class="r">Income tax</th><th class="r">Net pay</th>${paidCol ? html`<th>Paid</th>` : ''}<th>Check</th>${canEdit ? html`<th><span class="sr">Leave off</span></th>` : ''}</tr></thead><tbody>${rows}${totalRow}</tbody></table></div>` : empty('Nobody on this month', 'Set pay for people on People and pay, then work it out again.')}</div></section>
+    ${offList}
     ${s === 'draft' ? html`<p class="small muted">${icon('lock')} Only HR and the owner see this page. Every change is in the audit log. <button class="linkbtn danger" data-act="pr-remove" data-id="${r.id}" data-period="${periodLabel(r.period)}">Remove this draft</button></p>` : html`<p class="small muted">${icon('lock')} Only HR and the owner see this page. Every change is in the audit log.${S.me.role === 'owner' || S.me.is_dev ? html` <button class="linkbtn danger" data-act="pr-remove-any" data-id="${r.id}" data-period="${periodLabel(r.period)}" data-status="${s}">Remove this month</button>` : ''}</p>`}`;
 }
 
@@ -310,6 +314,13 @@ actions['pr-line-off'] = (el) => openModal({
   body: html`<div class="field"><label class="f" for="rl-r">Why (they see this)</label><input id="rl-r" name="reason" maxlength="300" required placeholder="Worked from home those days, agreed with the manager" autocomplete="off"></div>`,
   onSubmit: async (fd) => { const reason = String(fd.get('reason') || '').trim(); if (!reason) throw new Error('Say why, in a few words'); await post(`/api/payroll/slips/${el.dataset.id}/remove-line`, { key: el.dataset.key, reason }); toast(`${el.dataset.label} removed`); S.refresh(); },
 });
+actions['pr-leave-off'] = (el) => openModal({
+  title: `Leave ${el.dataset.name.split(' ')[0]} off this month?`, submit: 'Leave off', danger: true,
+  sub: `${el.dataset.net} isn’t paid to ${el.dataset.name} this month and they get no payslip. Their pay and HR record don’t change, and next month works as usual. You can put them back until the month is approved.`,
+  body: html`<div class="field"><label class="f" for="lo-r">Why</label><input id="lo-r" name="reason" maxlength="300" required placeholder="Joined mid-month, paid with November" autocomplete="off"></div>`,
+  onSubmit: async (fd) => { const reason = String(fd.get('reason') || '').trim(); if (!reason) throw new Error('Say why, in a few words'); await post(`/api/payroll/runs/${el.dataset.run}/leave-off`, { user_id: Number(el.dataset.id), reason }); toast(`${el.dataset.name} left off this month`); S.refresh(); },
+});
+actions['pr-put-back'] = async (el) => { try { await post(`/api/payroll/runs/${el.dataset.run}/leave-off`, { user_id: Number(el.dataset.id), undo: true }); toast(`${el.dataset.name} is back on this month`); S.refresh(); } catch (e) { toast(errMsg(e), true); } };
 actions['pr-line-back'] = async (el) => { try { await post(`/api/payroll/slips/${el.dataset.id}/remove-line`, { key: el.dataset.key, undo: true }); toast(`${el.dataset.label} put back`); S.refresh(); } catch (e) { toast(errMsg(e), true); } };
 actions['pr-answer'] = async (form) => {
   try { await post(`/api/payroll/questions/${form.dataset.id}/answer`, { answer: new FormData(form).get('answer') }); toast('Answered'); S.refresh(); } catch (e) { toast(errMsg(e), true); }

@@ -77,7 +77,8 @@ module.exports = (ctx) => {
     const missing = db.prepare("SELECT id, name FROM users WHERE active = 1 AND role != 'owner' AND COALESCE((SELECT employed FROM hr_records WHERE user_id = users.id), CASE WHEN users.is_dev = 1 AND users.tracks_time = 0 THEN 0 ELSE 1 END) = 1 AND id NOT IN (SELECT user_id FROM pay_setup) ORDER BY name").all();
     if (missing.length && !P().LOCKED(r.status)) checks.push({ kind: 'missing', text: `${missing.map((m) => m.name).join(', ')} ${missing.length === 1 ? 'has' : 'have'} no pay set, so ${missing.length === 1 ? 'is' : 'are'} not on this month`, people: missing });
     const prev = db.prepare("SELECT * FROM pay_runs WHERE period < ? AND status IN ('approved','paid') ORDER BY period DESC LIMIT 1").get(r.period);
-    return { run: runOut(r), slips, totals: totals(slips), checks, previous: prev ? { period: prev.period, name: P().periodName(prev.period), totals: totals(db.prepare('SELECT * FROM payslips WHERE run_id = ?').all(prev.id)) } : null, can_approve: canApprove(user), rules: JSON.parse(r.rules || '{}') };
+    const leftOff = db.prepare("SELECT w.user_id, w.reason, w.created_at, u.name, u.title, b.name by_name FROM pay_waivers w JOIN users u ON u.id = w.user_id LEFT JOIN users b ON b.id = w.by_id WHERE w.run_id = ? AND w.line_key = '*' ORDER BY u.name").all(r.id);
+    return { run: runOut(r), slips, totals: totals(slips), checks, left_off: leftOff, previous: prev ? { period: prev.period, name: P().periodName(prev.period), totals: totals(db.prepare('SELECT * FROM payslips WHERE run_id = ?').all(prev.id)) } : null, can_approve: canApprove(user), rules: JSON.parse(r.rules || '{}') };
   }
   route('GET', '/api/payroll/runs/:id', ({ user, params }) => { needHR(user); return runDetail(params.id, user); });
 
@@ -132,7 +133,7 @@ module.exports = (ctx) => {
     return { id, slip: slipOut(db.prepare('SELECT * FROM payslips WHERE run_id = ? AND user_id = ?').get(r.id, uid)) };
   });
   // take a worked-out line (absent, late, unpaid leave, a fixed deduction...) off one person's month, or put it back
-  const WAIVABLE = (l) => !l.item && !l.expense && l.kind !== 'base' && !/^adv:/.test(l.key);
+  const WAIVABLE = (l) => !l.item && !l.expense && (l.kind !== 'base' || /^prev:/.test(l.key)) && !/^adv:/.test(l.key);
   route('POST', '/api/payroll/slips/:id/remove-line', ({ user, params, body }) => {
     needHR(user);
     const s = db.prepare('SELECT * FROM payslips WHERE id = ?').get(Number(params.id));
@@ -150,6 +151,20 @@ module.exports = (ctx) => {
     audit(user, undo ? 'payroll.line_restored' : 'payroll.line_removed', s.user_id, `${r.period}: ${l.label}${undo ? '' : ` (${body.reason})`}`);
     emit('payroll', s.user_id);
     return { slip: slipOut(db.prepare('SELECT * FROM payslips WHERE id = ?').get(s.id)) };
+  });
+  // leave one person off this month (paid another way, joined late, a test account...), or put them back
+  route('POST', '/api/payroll/runs/:id/leave-off', ({ user, params, body }) => {
+    needHR(user);
+    const r = runOf(params.id); editable(r);
+    const uid = Number(body.user_id);
+    need(db.prepare('SELECT id FROM users WHERE id = ?').get(uid), 404, 'Person not found');
+    const undo = body.undo === true;
+    if (undo) db.prepare("DELETE FROM pay_waivers WHERE run_id = ? AND user_id = ? AND line_key = '*'").run(r.id, uid);
+    else db.prepare("INSERT OR REPLACE INTO pay_waivers (run_id, user_id, line_key, reason, by_id, created_at) VALUES (?,?,'*',?,?,?)").run(r.id, uid, str(body.reason, 'reason', 300), user.id, nowIso());
+    P().compute(r);
+    audit(user, undo ? 'payroll.person_back' : 'payroll.person_left_off', uid, `${r.period}${undo ? '' : `: ${body.reason}`}`);
+    emit('payroll', uid);
+    return runDetail(r.id, user);
   });
   route('DELETE', '/api/payroll/items/:id', ({ user, params }) => {
     needHR(user);

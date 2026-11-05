@@ -1353,3 +1353,11 @@ table.t.grid tr:hover td.nm { background: #221A4E !important; }
 .pr-po.taken { cursor: default; opacity: .6; }
 .pr-po.taken:hover { border-color: rgba(255,255,255,.1); }
 @media (max-width: 760px) { .pr-po { padding: 10px 12px; } }
+/* payroll: leave someone off a month, from the month's list */
+.prt td.pr-off { width: 1%; white-space: nowrap; text-align: right; }
+.prt td.pr-off .linkbtn { color: #ABA4CE; }
+.prt tr:hover td.pr-off .linkbtn, .prt td.pr-off .linkbtn:focus-visible { color: #FFB3A8; }
+.pr-offu { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.pr-offu li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pr-offu .person > span > span { color: #ABA4CE; font-size: 13px; }
+.pr-offl { margin-top: 16px; }

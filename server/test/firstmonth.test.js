@@ -51,3 +51,50 @@ test('paid with their next month: off October, and November carries her October 
   assert.match(z.facts.tax_note, /each on the brackets/);
   assert.ok(!s.lines.some((l) => /^prev:/.test(l.key)), 'only for someone who joined in October');
 });
+
+test('the carried first days can be removed like any other line', async () => {
+  const { ok, tokens } = env;
+  const nov = (await ok('GET', '/api/payroll', { token: tokens.owner })).runs.find((r) => r.period === '2026-11');
+  const d = await ok('GET', `/api/payroll/runs/${nov.id}`, { token: tokens.owner });
+  const z = d.slips.find((s) => s.user_id === zara.id);
+  const r = await ok('POST', `/api/payroll/slips/${z.id}/remove-line`, { token: tokens.owner, body: { key: 'prev:base', reason: 'Paid in cash in October' } });
+  assert.equal(r.slip.lines.find((l) => l.key === 'prev:base').counted, false);
+  await ok('POST', `/api/payroll/slips/${z.id}/remove-line`, { token: tokens.owner, body: { key: 'prev:base', undo: true } });
+});
+
+test('someone can be left off a month from its list, and put back', async () => {
+  const { ok, api, tokens } = env;
+  const nov = (await ok('GET', '/api/payroll', { token: tokens.owner })).runs.find((r) => r.period === '2026-11');
+  assert.equal((await api('POST', `/api/payroll/runs/${nov.id}/leave-off`, { token: tokens.sara, body: { user_id: zara.id, reason: 'x' } })).status, 403);
+  assert.equal((await api('POST', `/api/payroll/runs/${nov.id}/leave-off`, { token: tokens.owner, body: { user_id: zara.id } })).status, 400, 'a reason is needed');
+  let d = await ok('POST', `/api/payroll/runs/${nov.id}/leave-off`, { token: tokens.owner, body: { user_id: zara.id, reason: 'Paid by the client directly' } });
+  assert.ok(!d.slips.some((s) => s.user_id === zara.id));
+  assert.equal(d.left_off[0].name, 'Zara Malik');
+  // still off after working it out again; her HR record is untouched
+  d = await ok('POST', `/api/payroll/runs/${nov.id}/refresh`, { token: tokens.owner });
+  assert.ok(!d.slips.some((s) => s.user_id === zara.id));
+  d = await ok('POST', `/api/payroll/runs/${nov.id}/leave-off`, { token: tokens.owner, body: { user_id: zara.id, undo: true } });
+  assert.ok(d.slips.some((s) => s.user_id === zara.id));
+  assert.equal(d.left_off.length, 0);
+});
+
+test('first days already paid in their own month are not carried again', async () => {
+  const { ok, tokens } = env;
+  // the rule was "paid that month" when October ran with Zara on it, then switched
+  const zed = await env.person('zed', 'Zed Khan');
+  await ok('PUT', `/api/hr/people/${zed.id}/record`, { token: tokens.owner, body: { contract: 'full_time', joined_on: '2026-12-14', iban: 'PK36MEZN0000001122334821' } });
+  await ok('PUT', `/api/hr/people/${zed.id}/pay`, { token: tokens.owner, body: { base: 90000, currency: 'PKR', tax_mode: 'pk' } });
+  await ok('PUT', '/api/payroll/rules', { token: tokens.owner, body: { first_month: 'same' } });
+  const nov = (await ok('GET', '/api/payroll', { token: tokens.owner })).runs.find((r) => r.period === '2026-11');
+  await ok('POST', `/api/payroll/runs/${nov.id}/submit`, { token: tokens.owner });
+  await ok('POST', `/api/payroll/runs/${nov.id}/approve`, { token: tokens.owner });
+  env.set(Date.UTC(2027, 0, 2, 5));
+  const dec = await ok('POST', '/api/payroll/runs', { token: tokens.owner, body: { period: '2026-12' } });
+  assert.ok(dec.slips.some((s) => s.user_id === zed.id), 'paid December on its own');
+  await ok('POST', `/api/payroll/runs/${dec.run.id}/submit`, { token: tokens.owner });
+  await ok('POST', `/api/payroll/runs/${dec.run.id}/approve`, { token: tokens.owner });
+  await ok('PUT', '/api/payroll/rules', { token: tokens.owner, body: { first_month: 'next' } });
+  env.set(Date.UTC(2027, 1, 2, 5));
+  const jan = await ok('POST', '/api/payroll/runs', { token: tokens.owner, body: { period: '2027-01' } });
+  assert.ok(!jan.slips.find((s) => s.user_id === zed.id).lines.some((l) => /^prev:/.test(l.key)), 'December is not paid twice');
+});
