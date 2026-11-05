@@ -337,7 +337,7 @@ const LABEL = {
   'hr.record': 'Changed an HR record', 'hr.pay': 'Changed someone’s pay', 'hr.step': 'Moved an HR step', 'hr.viewed': 'Opened an HR record',
   'hr.doc_added': 'Added an HR document', 'hr.doc_changed': 'Changed an HR document', 'hr.doc_opened': 'Opened an HR document', 'hr.doc_removed': 'Removed an HR document',
   'payroll.started': 'Started a payroll month', 'payroll.submitted': 'Sent payroll for approval', 'payroll.approved': 'Approved payroll', 'payroll.paid': 'Marked payroll paid',
-  'payroll.reopened': 'Reopened payroll', 'payroll.removed': 'Removed a payroll draft', 'payroll.item_added': 'Added a payroll line', 'payroll.item_removed': 'Removed a payroll line',
+  'payroll.reopened': 'Reopened payroll', 'payroll.removed': 'Removed a payroll draft', 'payroll.item_added': 'Added a payroll line', 'payroll.item_removed': 'Removed a payroll line', 'payroll.line_removed': 'Took a line off a payslip', 'payroll.line_restored': 'Put a payslip line back',
   'payroll.question': 'Asked about a payslip', 'payroll.answered': 'Answered a payslip question', 'payroll.slip_viewed': 'Opened a payslip', 'payroll.bank_sheet': 'Downloaded the bank sheet',
   'payroll.register': 'Downloaded the payroll register', 'payroll.rules': 'Changed payroll rules',
   'expense.sent': 'Sent an expense claim', 'expense.approved': 'Approved an expense', 'expense.declined': 'Declined an expense',

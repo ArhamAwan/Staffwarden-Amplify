@@ -3,7 +3,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 // Schema v2. Fresh installs and v1 databases go through the same path: the v1 tables are created
 // if missing, then migrate() adds everything v2 needs without touching existing rows.
-const SCHEMA_VERSION = 29;
+const SCHEMA_VERSION = 30;
 
 function hasColumn(db, table, col) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
@@ -83,6 +83,7 @@ function openDb(file = ':memory:') {
 function migrate(db) {
   const version = db.prepare('PRAGMA user_version').get().user_version;
   if (version >= SCHEMA_VERSION) return;
+  if (version === 29) return migrateV30(db);
   if (version === 28) return migrateV29(db);
   if (version === 27) return migrateV28(db);
   if (version === 26) return migrateV27(db);
@@ -1113,12 +1114,13 @@ function migrateV29(db) {
     db.exec('CREATE INDEX IF NOT EXISTS idx_assets_client ON assets(client_id, section)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_assets_project ON assets(project_id, section)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_assets_source ON assets(source_task_id)');
-    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    db.exec('PRAGMA user_version = 29');
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
   }
+  migrateV30(db);
 }
 
 // Starting ratings. Anything not listed is neutral until a manager rates it.
@@ -1132,5 +1134,24 @@ const DEFAULT_RULES = [
   ...['Steam', 'Netflix', 'Epic Games Launcher']
     .map((n) => ['app', n, 'unproductive']),
 ];
+
+// Payroll: a line worked out from attendance or a rule can be taken off one person's month by HR, with a
+// reason. It stays on the payslip, not counted, saying who removed it and why; undo puts it back.
+function migrateV30(db) {
+  db.exec('BEGIN');
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS pay_waivers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id INTEGER NOT NULL REFERENCES pay_runs(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL, line_key TEXT NOT NULL,
+      reason TEXT NOT NULL, by_id INTEGER, created_at TEXT NOT NULL,
+      UNIQUE (run_id, user_id, line_key))`);
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
 
 module.exports = { openDb, SCHEMA_VERSION, DEFAULT_RULES, projectKey };

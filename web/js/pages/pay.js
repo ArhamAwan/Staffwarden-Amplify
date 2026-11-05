@@ -20,11 +20,18 @@ export function payBar(s, { dark = false } = {}) {
 }
 // the lines of a payslip; ask: show "Ask about this" on each
 export function slipLines(s, { ask = false, hr = false } = {}) {
-  const ln = (l) => html`<div class="sl${l.counted ? '' : ' shown'}" data-k="l${l.key}">
-      <b>${l.label}${l.counted ? '' : html` <span class="tag idle"><i></i>Shown only</span>`}</b>
+  // a line worked out by Staffwarden (absent, late, a fixed deduction...) can be taken off this month by HR
+  const removable = (l) => hr && !l.item && !l.expense && l.kind !== 'base' && !/^adv:/.test(l.key);
+  const act = (l) => (ask ? html`<button type="button" class="linkbtn" data-act="pay-ask" data-id="${s.id}" data-line="${l.label}">Ask about this</button>`
+    : hr && l.item ? html`<button type="button" class="linkbtn danger" data-act="pr-del-item" data-id="${l.item}" data-label="${l.label}">Remove</button>`
+      : removable(l) && l.removed ? html`<button type="button" class="linkbtn" data-act="pr-line-back" data-id="${s.id}" data-key="${l.key}" data-label="${l.label}">Put back</button>`
+        : removable(l) && l.counted ? html`<button type="button" class="linkbtn danger" data-act="pr-line-off" data-id="${s.id}" data-key="${l.key}" data-label="${l.label}" data-amount="${money(Math.abs(l.amount), s.currency)}" data-name="${s.name || ''}">Remove</button>`
+          : html`<span></span>`);
+  const ln = (l) => html`<div class="sl${l.counted ? '' : ' shown'}${l.removed ? ' removed' : ''}" data-k="l${l.key}">
+      <b>${l.label}${l.removed ? html` <span class="tag idle"><i></i>Taken off this month</span>` : l.counted ? '' : html` <span class="tag idle"><i></i>Shown only</span>`}</b>
       <b class="num ${l.amount < 0 ? 'neg' : ''}">${l.amount < 0 ? '− ' : ''}${money(Math.abs(l.amount), s.currency).replace('− ', '')}</b>
-      <span class="src">${l.source}${l.link && hr ? html` · <a href="${l.link}">See the days</a>` : ''}</span>
-      ${ask ? html`<button type="button" class="linkbtn" data-act="pay-ask" data-id="${s.id}" data-line="${l.label}">Ask about this</button>` : hr && l.item ? html`<button type="button" class="linkbtn danger" data-act="pr-del-item" data-id="${l.item}" data-label="${l.label}">Remove</button>` : html`<span></span>`}</div>`;
+      <span class="src">${l.removed ? html`Removed by ${l.removed.by}: ${l.removed.reason}` : html`${l.source}${l.link && hr ? html` · <a href="${l.link}">See the days</a>` : ''}`}</span>
+      ${act(l)}</div>`;
   return html`<div class="slines">${s.lines.map(ln)}
     ${s.tax || s.facts.tax_note ? html`<div class="sl" data-k="ltax"><b>Income tax</b><b class="num tax">${s.tax ? '− ' + money(s.tax, s.currency) : money(0, s.currency)}</b><span class="src">${s.facts.tax_note}</span>${ask ? html`<button type="button" class="linkbtn" data-act="pay-ask" data-id="${s.id}" data-line="Income tax">Ask about this</button>` : html`<span></span>`}</div>` : ''}
     <div class="sl-total"><b>Net pay</b><b class="num">${money(s.net, s.currency)}</b></div>

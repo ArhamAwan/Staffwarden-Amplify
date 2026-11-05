@@ -153,6 +153,11 @@ function createPayroll(ctx) {
       add({ key: 'eobi', label: 'EOBI, your share', amount: -Math.round((R.eobi.min_wage * R.eobi.ee) / 100), source: `${R.eobi.ee}% of the Rs ${Number(R.eobi.min_wage).toLocaleString('en-US')} minimum wage`, kind: 'contribution', taxable: false });
       employer.push({ label: 'EOBI', amount: Math.round((R.eobi.min_wage * R.eobi.er) / 100), source: `${R.eobi.er}% of the minimum wage, paid by the company` });
     }
+    // lines HR took off this month for this person: kept on the slip, not counted
+    for (const w of run ? db.prepare('SELECT w.*, u.name by_name FROM pay_waivers w LEFT JOIN users u ON u.id = w.by_id WHERE w.run_id = ? AND w.user_id = ?').all(run.id, u.id) : []) {
+      const l = lines.find((x) => x.key === w.line_key);
+      if (l) Object.assign(l, { counted: false, removed: { reason: w.reason, by: w.by_name || 'HR', at: w.created_at } });
+    }
     // income tax
     const counted = lines.filter((l) => l.counted);
     const taxable = counted.filter((l) => l.taxable).reduce((n, l) => n + l.amount, 0);

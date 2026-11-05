@@ -279,3 +279,28 @@ test('a month that has not begun cannot be started', async () => {
   assert.equal(r.status, 400);
   assert.match(r.data.error, /hasn’t started yet/);
 });
+
+test('HR can take a worked-out line off one payslip, with a reason, and put it back', async () => {
+  const { ok, api, tokens } = env;
+  const runs = (await ok('GET', '/api/payroll', { token: tokens.fatima })).runs;
+  const open = runs.find((r) => ['draft', 'review'].includes(r.status));
+  const run = open ? await ok('GET', `/api/payroll/runs/${open.id}`, { token: tokens.fatima }) : await startRun('2027-01');
+  const slip = run.slips.find((s) => s.lines.some((l) => l.counted && l.kind !== 'base' && !l.item && !l.expense && !/^adv:/.test(l.key)));
+  assert.ok(slip, 'a slip with a worked-out line');
+  const line = slip.lines.find((l) => l.counted && l.kind !== 'base' && !l.item && !l.expense && !/^adv:/.test(l.key));
+  const before = slip.net;
+  assert.equal((await api('POST', `/api/payroll/slips/${slip.id}/remove-line`, { token: tokens.sara, body: { key: line.key, reason: 'x' } })).status, 403);
+  assert.equal((await api('POST', `/api/payroll/slips/${slip.id}/remove-line`, { token: tokens.fatima, body: { key: 'base', reason: 'x' } })).status, 400);
+  assert.equal((await api('POST', `/api/payroll/slips/${slip.id}/remove-line`, { token: tokens.fatima, body: { key: line.key } })).status, 400, 'a reason is needed');
+  const r = await ok('POST', `/api/payroll/slips/${slip.id}/remove-line`, { token: tokens.fatima, body: { key: line.key, reason: 'Agreed with the manager' } });
+  const off = r.slip.lines.find((l) => l.key === line.key);
+  assert.equal(off.counted, false);
+  assert.equal(off.removed.reason, 'Agreed with the manager');
+  assert.ok(line.amount < 0 ? r.slip.net > before : r.slip.net < before, 'net pay moves the right way (tax is worked out again too)');
+  // it survives working the month out again
+  const again = await ok('POST', `/api/payroll/runs/${run.run.id}/refresh`, { token: tokens.fatima });
+  assert.equal(again.slips.find((s) => s.id === slip.id).lines.find((l) => l.key === line.key).counted, false);
+  const back = await ok('POST', `/api/payroll/slips/${slip.id}/remove-line`, { token: tokens.fatima, body: { key: line.key, undo: true } });
+  assert.equal(back.slip.lines.find((l) => l.key === line.key).counted, true);
+  assert.equal(back.slip.net, before);
+});

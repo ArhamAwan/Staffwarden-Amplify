@@ -131,6 +131,26 @@ module.exports = (ctx) => {
     emit('payroll', uid);
     return { id, slip: slipOut(db.prepare('SELECT * FROM payslips WHERE run_id = ? AND user_id = ?').get(r.id, uid)) };
   });
+  // take a worked-out line (absent, late, unpaid leave, a fixed deduction...) off one person's month, or put it back
+  const WAIVABLE = (l) => !l.item && !l.expense && l.kind !== 'base' && !/^adv:/.test(l.key);
+  route('POST', '/api/payroll/slips/:id/remove-line', ({ user, params, body }) => {
+    needHR(user);
+    const s = db.prepare('SELECT * FROM payslips WHERE id = ?').get(Number(params.id));
+    need(s, 404, 'Payslip not found');
+    const r = runOf(s.run_id); editable(r);
+    need(s.user_id !== user.id || (user.role === 'owner' && !user.dev_owner) || P().rules().hr_own_pay, 403, 'Your own pay is changed by the owner');
+    const key = str(body.key, 'key', 80);
+    const l = JSON.parse(s.lines).find((x) => x.key === key);
+    need(l, 404, 'That line is not on this payslip');
+    need(WAIVABLE(l), 400, l.item ? 'Delete a line you added instead' : l.expense ? 'Expenses are changed from Expenses' : 'This line can’t be removed');
+    const undo = body.undo === true;
+    if (undo) db.prepare('DELETE FROM pay_waivers WHERE run_id = ? AND user_id = ? AND line_key = ?').run(r.id, s.user_id, key);
+    else db.prepare('INSERT OR REPLACE INTO pay_waivers (run_id, user_id, line_key, reason, by_id, created_at) VALUES (?,?,?,?,?,?)').run(r.id, s.user_id, key, str(body.reason, 'reason', 300), user.id, nowIso());
+    P().compute(r);
+    audit(user, undo ? 'payroll.line_restored' : 'payroll.line_removed', s.user_id, `${r.period}: ${l.label}${undo ? '' : ` (${body.reason})`}`);
+    emit('payroll', s.user_id);
+    return { slip: slipOut(db.prepare('SELECT * FROM payslips WHERE id = ?').get(s.id)) };
+  });
   route('DELETE', '/api/payroll/items/:id', ({ user, params }) => {
     needHR(user);
     const it = db.prepare('SELECT * FROM pay_items WHERE id = ?').get(Number(params.id));

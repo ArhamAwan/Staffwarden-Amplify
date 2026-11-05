@@ -19,7 +19,7 @@ const changes = (s) => {
   const c = s.lines.filter((l) => l.kind !== 'base' && l.counted);
   const shown = s.lines.filter((l) => !l.counted);
   if (!c.length && !shown.length) return html`<span class="muted">None</span>`;
-  return html`<div class="pchg">${c.map((l) => html`<span class="${l.amount < 0 ? 'neg' : 'pos'} num">${l.amount < 0 ? '−' : '+'} ${money(Math.abs(l.amount), s.currency)} <i>${l.label.toLowerCase()}</i></span>`)}${shown.map((l) => html`<span class="shown num">${money(Math.abs(l.amount), s.currency)} <i>${l.label.toLowerCase()}, shown only</i></span>`)}</div>`;
+  return html`<div class="pchg">${c.map((l) => html`<span class="${l.amount < 0 ? 'neg' : 'pos'} num">${l.amount < 0 ? '−' : '+'} ${money(Math.abs(l.amount), s.currency)} <i>${l.label.toLowerCase()}</i></span>`)}${shown.map((l) => html`<span class="shown num">${money(Math.abs(l.amount), s.currency)} <i>${l.label.toLowerCase()}, ${l.removed ? 'removed' : 'shown only'}</i></span>`)}</div>`;
 };
 
 export default {
@@ -303,6 +303,13 @@ actions['pr-del-item'] = async (el) => {
   if (!(await confirmBox({ title: `Remove “${el.dataset.label}”?`, message: 'It comes off this month. The audit log keeps a record.', confirm: 'Remove', danger: true }))) return;
   try { await del(`/api/payroll/items/${el.dataset.id}`); toast('Removed'); S.refresh(); } catch (e) { toast(errMsg(e), true); }
 };
+actions['pr-line-off'] = (el) => openModal({
+  title: `Remove “${el.dataset.label}”?`, submit: 'Remove from this month', danger: true,
+  sub: `${el.dataset.amount} won’t count on ${el.dataset.name ? `${el.dataset.name.split(' ')[0]}’s` : 'this'} pay this month. The line stays on the payslip, crossed out, with your reason. You can put it back until the month is approved.`,
+  body: html`<div class="field"><label class="f" for="rl-r">Why (they see this)</label><input id="rl-r" name="reason" maxlength="300" required placeholder="Worked from home those days, agreed with the manager" autocomplete="off"></div>`,
+  onSubmit: async (fd) => { const reason = String(fd.get('reason') || '').trim(); if (!reason) throw new Error('Say why, in a few words'); await post(`/api/payroll/slips/${el.dataset.id}/remove-line`, { key: el.dataset.key, reason }); toast(`${el.dataset.label} removed`); S.refresh(); },
+});
+actions['pr-line-back'] = async (el) => { try { await post(`/api/payroll/slips/${el.dataset.id}/remove-line`, { key: el.dataset.key, undo: true }); toast(`${el.dataset.label} put back`); S.refresh(); } catch (e) { toast(errMsg(e), true); } };
 actions['pr-answer'] = async (form) => {
   try { await post(`/api/payroll/questions/${form.dataset.id}/answer`, { answer: new FormData(form).get('answer') }); toast('Answered'); S.refresh(); } catch (e) { toast(errMsg(e), true); }
 };
