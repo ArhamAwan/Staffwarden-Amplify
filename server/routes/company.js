@@ -34,11 +34,11 @@ module.exports = (ctx) => {
     const im = c.images[slot];
     if (!im) return null;
     if (!PUBLIC.has(slot) && !(viewer && canEdit(viewer))) return { set: true };
-    return { url: `/api/company/images/${slot}?v=${im.file.slice(0, 12)}`, w: im.w, h: im.h };
+    return { url: `/api/company/images/${slot}?v=${im.file.slice(-16, -4)}`, w: im.w, h: im.h };
   };
   const out = (viewer) => {
     const c = current();
-    return { ...c, auto_brand: autoColour(c), images: Object.fromEntries(SLOTS.map((s) => [s, imgOut(c, s, viewer)])), can_edit: !!(viewer && viewer.kind !== 'client' && canEdit(viewer)) };
+    return { ...c, auto_brand: autoColour(c), logo_inked: logoInked(c), images: Object.fromEntries(SLOTS.map((s) => [s, imgOut(c, s, viewer)])), can_edit: !!(viewer && viewer.kind !== 'client' && canEdit(viewer)) };
   };
 
   // decoded pictures for PDFs, kept in memory by file name (they never change once written)
@@ -69,6 +69,16 @@ module.exports = (ctx) => {
     return `#${[r, g, b].map((x) => Math.round(x).toString(16).padStart(2, '0')).join('')}`;
   }
   const autoColour = (c) => (c.images && c.images.logo ? logoColour(picture(c.images.logo.file)) : null);
+  // the full logo as it goes on white paper: a logo made for dark backgrounds gets its white parts in dark ink
+  const inkCache = new Map();
+  const paperLogo = (file) => {
+    if (!file) return null;
+    if (inkCache.has(file)) return inkCache.get(file);
+    const img = picture(file), out = img && PNG.whiteParts(img) ? PNG.inked(img) : img;
+    inkCache.set(file, out);
+    return out;
+  };
+  const logoInked = (c) => { const f = c.images.logo && c.images.logo.file; return !!(f && paperLogo(f) && paperLogo(f) !== picture(f)); };
   // what a document is made with: the details now, or the copy a month kept when it was approved
   const snapshot = () => { const c = current(); return { ...c, brand: c.brand || autoColour(c) || '', images: Object.fromEntries(Object.entries(c.images).map(([k, v]) => [k, { file: v.file, w: v.w, h: v.h }])) }; };
   ctx.companySnapshot = snapshot;
@@ -76,9 +86,9 @@ module.exports = (ctx) => {
     let c = null;
     if (saved) { try { c = JSON.parse(saved); } catch { c = null; } }
     c = c || snapshot();
-    return { ...c, brand: c.brand || '', name: c.name || cfg.orgName || '', legal: c.legal_name || c.name || cfg.orgName || '', pic: (slot) => picture(c.images && c.images[slot] && c.images[slot].file) };
+    return { ...c, brand: c.brand || '', name: c.name || cfg.orgName || '', legal: c.legal_name || c.name || cfg.orgName || '', pic: (slot) => (slot === 'logo' ? paperLogo(c.images && c.images.logo && c.images.logo.file) : picture(c.images && c.images[slot] && c.images[slot].file)) };
   };
-  ctx.companyPublic = () => { const c = current(); return { brand_now: c.brand || autoColour(c) || null, name: c.name, details: !!(c.address || c.ntn), logo: imgOut(c, 'logo', null), logo_light: imgOut(c, 'logo_light', null), icon: imgOut(c, 'icon', null), brand: c.brand || null }; };
+  ctx.companyPublic = () => { const c = current(); const origLight = !c.images.logo_light && logoInked(c) ? { url: `/api/company/images/logo?orig=1&v=${c.images.logo.file.slice(-16, -4)}`, w: c.images.logo.w, h: c.images.logo.h } : null; return { brand_now: c.brand || autoColour(c) || null, name: c.name, details: !!(c.address || c.ntn), logo: imgOut(c, 'logo', null), logo_light: imgOut(c, 'logo_light', null) || origLight, icon: imgOut(c, 'icon', null), brand: c.brand || null }; };
 
   route('GET', '/api/company', ({ user }) => out(user));
 
@@ -129,13 +139,21 @@ module.exports = (ctx) => {
 
   // the logo and icon are open to anyone (the sign-in page and the client portal show them); a signature or
   // stamp only to the owner and HR
-  route('GET', '/api/company/images/:slot', ({ user, params }) => {
+  const inkPng = new Map();
+  route('GET', '/api/company/images/:slot', ({ user, params, query }) => {
     need(SLOTS.includes(params.slot), 404, 'Not found');
     if (!PUBLIC.has(params.slot)) need(user && user.kind !== 'client' && canEdit(user), 404, 'Not found');
     const im = current().images[params.slot];
     need(im, 404, 'Not found');
     const p = path.join(dir, path.basename(im.file));
     need(fs.existsSync(p), 404, 'Not found');
+    if (params.slot === 'logo' && query.get('orig') !== '1') {
+      const pl = paperLogo(im.file);
+      if (pl && pl !== picture(im.file)) {
+        if (!inkPng.has(im.file)) inkPng.set(im.file, PNG.encode(pl));
+        return { raw: inkPng.get(im.file), type: 'image/png', headers: { 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' } };
+      }
+    }
     return { raw: fs.readFileSync(p), type: 'image/png', headers: { 'Cache-Control': PUBLIC.has(params.slot) ? 'public, max-age=86400' : 'private, no-store', 'X-Content-Type-Options': 'nosniff' } };
   }, { open: true, client: true });
 

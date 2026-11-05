@@ -52,3 +52,33 @@ function decode(buf) {
 }
 
 module.exports = { info, decode };
+
+// writes RGB(A) samples as a PNG (no filters: small logos only)
+function encode({ w, h, rgb, alpha }) {
+  const crcT = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crcT[n] = c >>> 0; }
+  const crc = (b) => { let x = 0xffffffff; for (const v of b) x = crcT[(x ^ v) & 255] ^ (x >>> 8); return (x ^ 0xffffffff) >>> 0; };
+  const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const td = Buffer.concat([Buffer.from(type, 'latin1'), data]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([len, td, c]); };
+  const ch = alpha ? 4 : 3, hd = Buffer.alloc(13); hd.writeUInt32BE(w, 0); hd.writeUInt32BE(h, 4); hd[8] = 8; hd[9] = alpha ? 6 : 2;
+  const raw = Buffer.alloc((w * ch + 1) * h);
+  for (let y = 0, o = 0; y < h; y++) { raw[o++] = 0; for (let x = 0; x < w; x++) { const k = y * w + x; raw[o++] = rgb[k * 3]; raw[o++] = rgb[k * 3 + 1]; raw[o++] = rgb[k * 3 + 2]; if (alpha) raw[o++] = alpha[k]; } }
+  return Buffer.concat([SIG, chunk('IHDR', hd), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
+// a see-through logo with white parts, made for dark backgrounds: they vanish on white paper
+function whiteParts(img) {
+  if (!img || !img.alpha) return false;
+  let see = 0, solid = 0, white = 0;
+  for (let k = 0; k < img.w * img.h; k++) { const a = img.alpha[k]; if (a < 250) see++; if (a > 200) { solid++; if (img.rgb[k * 3] > 235 && img.rgb[k * 3 + 1] > 235 && img.rgb[k * 3 + 2] > 235) white++; } }
+  return see > img.w * img.h * 0.05 && solid > 0 && white / solid > 0.06;
+}
+// the same logo with its white and pale grey parts in dark ink, for white paper
+function inked(img) {
+  const rgb = Buffer.from(img.rgb);
+  for (let k = 0; k < img.w * img.h; k++) {
+    const r = rgb[k * 3], g = rgb[k * 3 + 1], b = rgb[k * 3 + 2], l = 0.299 * r + 0.587 * g + 0.114 * b;
+    if ((!img.alpha || img.alpha[k] > 0) && l > 200 && Math.max(r, g, b) - Math.min(r, g, b) < 40) { rgb[k * 3] = 22; rgb[k * 3 + 1] = 18; rgb[k * 3 + 2] = 58; }
+  }
+  return { ...img, rgb };
+}
+module.exports.encode = encode;
+module.exports.whiteParts = whiteParts;
+module.exports.inked = inked;

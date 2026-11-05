@@ -62,7 +62,7 @@ const slotCard = (c, slot, { tall = false } = {}) => {
   return html`<div class="co-lg ${im ? 'set' : ''}" data-k="co-${slot}">
     <label class="co-well ${im ? (dark ? 'dark' : 'paper') : 'empty'} ${tall ? 'tall' : ''}" for="${id}">${im ? (im.url && !PRIVATE.has(slot) ? html`<img src="${im.url}" alt="${t}">` : html`<img data-co-auth="${slot}" alt="${t}" src="${authUrls.get(slot) || BLANK}">`) : html`${icon('up')}<span>${slot === 'icon' ? 'Add a square icon' : slot === 'stamp' ? 'Add the company stamp' : `Add the ${t.toLowerCase()}`}</span>`}</label>
     <input type="file" id="${id}" class="sr" accept="image/png,image/jpeg,image/svg+xml,image/webp" data-co-file="${slot}">
-    <b>${t}</b><small>${sub}</small>
+    <b>${t}</b><small>${slot === 'logo' && c.logo_inked ? 'Its white parts are printed in dark ink, so they show on white paper.' : sub}</small>
     <div class="co-acts"><label for="${id}" class="linkbtn">${im ? 'Replace' : 'Upload'}</label>${im ? html`<button type="button" class="linkbtn danger" data-act="co-img-rm" data-slot="${slot}" data-label="${t}">Remove</button>` : ''}</div></div>`;
 };
 

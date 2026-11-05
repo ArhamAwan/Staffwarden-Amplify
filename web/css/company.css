@@ -70,7 +70,7 @@
 .cp-band { display: block; height: 6px; background: var(--b); }
 .cp-h { padding: 18px 20px 12px; display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .cp-h > div { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.cp-logo { display: block; max-width: 150px; max-height: 38px; object-fit: contain; object-position: left center; }
+.cp-logo { display: block; max-width: 170px; max-height: 48px; object-fit: contain; object-position: left center; }
 .cp-name { font-size: 15px; font-weight: 700; }
 .cp-addr { display: flex; flex-direction: column; font-size: 9px; color: #5E5A80; line-height: 1.45; overflow-wrap: anywhere; }
 .cp-title { display: block; font-size: 14px; font-weight: 700; }
