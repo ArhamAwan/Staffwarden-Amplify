@@ -227,19 +227,22 @@ function navHtml() {
     const open = t === 'Today' || (pref === undefined ? mine : pref);
     const items = list.map(link).join('');
     const bad = (items.match(/class="badge[^"]*"[^>]*>(\d+)/g) || []).reduce((a, m) => a + Number(m.replace(/.*>/, '')), 0);
+    // a section is a small label, never an icon row like a page; closed, it shows only what waits inside it
+    // (on the slim rail, a closed section is a labelled tile with a dashed edge, so it never reads as a page)
+    const say = `${t}${open ? '' : `, ${list.length} pages`}${!open && bad ? `, ${bad} waiting` : ''}`;
     return `<div class="nav-g${open ? '' : ' shut'}" data-g="${t}">${t === 'Today' ? `<div class="nav-h">${t}</div>`
-      : `<button type="button" class="nav-h nav-ht" data-act="nav-g" data-g="${t}" aria-expanded="${open}">${icon(GI[t] || 'folder')}<span class="nav-ht-t">${t}</span>${!open && bad ? `<span class="badge">${bad}</span>` : ''}<span class="nav-ht-end"><span class="nav-ht-n">${open ? '' : list.length + ' pages'}</span><svg class="ic nav-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span></button>`}${t === 'Today' ? items : `<div class="nav-gi"><div>${items}</div></div>`}</div>`;
+      : `<button type="button" class="nav-h nav-ht" data-act="nav-g" data-g="${t}" aria-expanded="${open}" aria-label="${esc(say)}" title="${esc(say)}"><span class="nav-tile" aria-hidden="true">${icon(GI[t] || 'folder')}<span>${t}</span>${!open && bad ? `<span class="nav-tc">${bad}</span>` : ''}</span><span class="nav-ht-t">${t}</span><span class="nav-ht-end">${!open && bad ? `<span class="nav-dot">${bad}</span>` : ''}<svg class="ic nav-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span></button>`}${t === 'Today' ? items : `<div class="nav-gi"><div>${items}</div></div>`}</div>`;
   };
   const pick = (nav, keys) => keys.map((k) => nav.find((n) => n[0] === k)).filter(Boolean);
   const payNav = ['pay', 'Pay', 'wallet'];
   queueMicrotask(() => { navGroup = navGroupNow; });
   if (isMgr()) {
     const money = isHR() ? HR_NAV : [HR_NAV[2]];
-    return grp('Today', [...(god() ? [['', 'Home', 'dash'], ['team', 'Team', 'users']] : pick(MGR_NAV, [''])), ...(S.me.tracks_time || S.me.fun_mode ? [['me', 'Your day', 'user']] : []), CHAT_NAV, ['checkins', 'Check-ins', 'checkin'], ...LB_NAV(), ...pick(MGR_NAV, ['timeline', 'screenshots'])]) + grp('Work', [...pick(MGR_NAV, ['projects']), ['clients', 'Clients', 'client'], ['inbox', 'Client inbox', 'chat'], ...pick(MGR_NAV, ['tasks']), ['notes', 'Notes', 'note'], ...pick(MGR_NAV, ['performance'])])
+    return grp('Today', [...(god() ? [['', 'Home', 'dash'], ['team', 'Team', 'users']] : pick(MGR_NAV, [''])), ...(S.me.tracks_time || S.me.fun_mode ? [['me', 'Your day', 'user']] : []), CHAT_NAV, ['checkins', 'Check-ins', 'checkin'], ...LB_NAV(), ...pick(MGR_NAV, ['timeline', 'screenshots'])]) + grp('Work', [...pick(MGR_NAV, ['projects']), ['clients', 'Clients', 'building'], ['inbox', 'Client inbox', 'inbox'], ...pick(MGR_NAV, ['tasks']), ['notes', 'Notes', 'note'], ...pick(MGR_NAV, ['performance'])])
       + grp('Time', pick(MGR_NAV, ['timesheets', 'attendance', 'timeoff', 'requests', 'reports', 'shift-report'])) + grp(isHR() ? 'HR' : 'Money', [...money, ...(S.me.role === 'owner' && !S.me.dev_owner ? [] : [payNav])])
       + grp('Manage', [['announcements', 'Announcements', 'mega'], ...MGR_NAV2.filter((n) => n[0] !== 'settings' || S.me.role === 'owner'), ...DEV_NAV()]);
   }
-  return grp('Today', [...(god() ? [['', 'Home', 'dash'], ['me', 'Your day', 'user']] : pick(EMP_NAV, [''])), CHAT_NAV, ...(S.me.tracks_time ? [['checkin', 'Check-in', 'checkin']] : []), ...LB_NAV(), ...pick(EMP_NAV, ['timeline', 'screenshots'])]) + grp('Work', [...pick(EMP_NAV, ['projects']), ...(hasClients ? [['inbox', 'Client inbox', 'chat']] : []), ...pick(EMP_NAV, ['tasks']), ['notes', 'Notes', 'note'], ...pick(EMP_NAV, ['performance'])])
+  return grp('Today', [...(god() ? [['', 'Home', 'dash'], ['me', 'Your day', 'user']] : pick(EMP_NAV, [''])), CHAT_NAV, ...(S.me.tracks_time ? [['checkin', 'Check-in', 'checkin']] : []), ...LB_NAV(), ...pick(EMP_NAV, ['timeline', 'screenshots'])]) + grp('Work', [...pick(EMP_NAV, ['projects']), ...(hasClients ? [['inbox', 'Client inbox', 'inbox']] : []), ...pick(EMP_NAV, ['tasks']), ['notes', 'Notes', 'note'], ...pick(EMP_NAV, ['performance'])])
     + grp('Time', pick(EMP_NAV, ['timesheets', 'attendance', 'timeoff'])) + (isHR() ? grp('HR', HR_NAV) : '') + grp('You', [['announcements', 'Announcements', 'mega'], payNav, ...pick(EMP_NAV, ['profile'])]) + (S.me.is_dev ? grp('Build', DEV_NAV()) : '');
 }
 function buildShell() {

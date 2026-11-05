@@ -1,0 +1,53 @@
+/* themeable: violet colours are --v-* variables */
+/* The sidebar, readable at a glance: sections are small labels (never icon rows like pages), the page you are on
+   is solid violet, the row under the pointer only a faint wash, and counts sit at the end of the row.
+   On the slim rail, a closed section is a labelled tile with a dashed edge, and a thin line marks where an open
+   section starts. Loaded last: it refines the rail rules in glass.css. Phones keep their own menu. */
+.nav-tile, .nav-dot { display: none; }
+
+@media (min-width: 901px) {
+  /* ---------- sections ---------- */
+  .rail .nav-h:not(.nav-ht) { height: 28px !important; margin: 2px 0 0 !important; padding: 0 0 0 12px !important; font-size: 12px !important; font-weight: 650 !important; letter-spacing: .02em; color: rgb(var(--v-a69ecb, 166 158 203)) !important; }
+  .rail .nav-ht { height: 28px !important; margin: 12px 0 0 !important; padding: 0 10px 0 12px !important; gap: 8px !important; border-radius: 8px !important; background: transparent !important;
+    font-size: 12px !important; font-weight: 650 !important; letter-spacing: .02em; color: rgb(var(--v-a69ecb, 166 158 203)) !important; }
+  .rail .nav-ht:hover { background: rgba(255,255,255,.045) !important; color: rgb(var(--v-d9d3f2, 217 211 242)) !important; }
+  .rail .nav-ht[aria-expanded="true"] { color: rgb(var(--v-a69ecb, 166 158 203)) !important; }
+  .rail .nav-ht[aria-expanded="true"]:hover { color: rgb(var(--v-d9d3f2, 217 211 242)) !important; }
+  .rail .nav-ht .nav-ht-t { flex: none !important; }
+  .rail .nav-ht .nav-chev { width: 14px !important; height: 14px !important; stroke-width: 2.2 !important; color: currentColor !important; }
+  /* on the slim rail, an open section starts with a thin line under the icons */
+  .rail .nav-ht::before { content: "" !important; display: block !important; position: absolute; left: 12px; top: 50%; width: 28px; height: 1px; background: rgba(255,255,255,.16); transition: opacity .16s ease; }
+  .rail:hover .nav-ht::before, .rail:has(:focus-visible) .nav-ht::before { opacity: 0; transition: opacity .12s ease; }
+
+  /* closed sections sit together at the end, under one line */
+  .nav-g:not(.shut) + .nav-g.shut { margin-top: 10px !important; padding-top: 6px !important; border-top: 1px solid rgba(255,255,255,.09) !important; }
+  .nav-g.shut + .nav-g.shut { margin-top: 0 !important; padding-top: 0 !important; border-top: 0 !important; }
+  .rail .nav-g.shut > .nav-ht { height: 46px !important; margin: 4px 0 0 !important; }
+  .rail .nav-g.shut > .nav-ht::before { display: none !important; }
+  /* slim rail: a labelled tile with a dashed edge; open rail: just the label, with what waits inside */
+  .nav-tile { display: flex; position: absolute; left: 0; top: 1px; width: 52px; height: 44px; box-sizing: border-box; border: 1px dashed rgba(255,255,255,.24); border-radius: 12px;
+    flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: rgb(var(--v-bdb5de, 189 181 222)); opacity: 0; pointer-events: none; transition: opacity .16s ease; letter-spacing: 0; }
+  .nav-g.shut .nav-tile { opacity: 1; }
+  .rail:hover .nav-tile, .rail:has(:focus-visible) .nav-tile { opacity: 0; transition: opacity .12s ease; }
+  .nav-tile .ic { width: 16px !important; height: 16px !important; }
+  .nav-tile > span:not(.nav-tc) { font-size: 10.5px; font-weight: 650; line-height: 1; color: rgb(var(--v-a69ecb, 166 158 203)); max-width: 48px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nav-tile .nav-tc { position: absolute; right: -5px; top: -5px; }
+  .nav-dot, .nav-tile .nav-tc { display: grid; place-items: center; min-width: 18px; height: 18px; box-sizing: border-box; padding: 0 5px; border-radius: 99px; background: #F7B544; color: rgb(36,20,0); font-size: 10.5px; font-weight: 700; line-height: 1; letter-spacing: 0; }
+  .nav-tile .nav-tc { box-shadow: 0 0 0 2px rgb(var(--v-1d1545, 29 21 69)); }
+  .rail .nav-ht .nav-ht-end { gap: 8px; }
+
+  /* ---------- pages ---------- */
+  .rail .nav { color: rgb(var(--v-d9d3f2, 217 211 242)) !important; }
+  .rail .nav:hover { background: rgba(255,255,255,.06) !important; color: #fff !important; box-shadow: none; }
+  html:not(.god) .rail .nav[aria-current="page"], html:not(.god) .rail .nav[aria-current="page"]:hover { background: rgb(var(--v-6b55d6, 107 85 214)) !important; color: #fff !important; font-weight: 650 !important;
+    box-shadow: 0 6px 18px -4px rgb(var(--v-6b55d6, 107 85 214) / .55) !important; }
+  html:not(.god) .rail .nav[aria-current="page"] .ic { color: #fff !important; }
+  /* counts: on the icon's corner while the rail is slim, at the end of the row once it opens */
+  .rail .nav .badge { transition: left .32s cubic-bezier(.2,.7,.15,1) .06s, top .32s cubic-bezier(.2,.7,.15,1) .06s, transform .32s cubic-bezier(.2,.7,.15,1) .06s, box-shadow .2s; }
+  .rail:hover .nav .badge, .rail:has(:focus-visible) .nav .badge { left: calc(var(--rail-open) - 34px) !important; top: 11px !important; transform: translateX(-100%); box-shadow: none !important;
+    transition-delay: .12s; }
+  html:not(.god) .rail .nav[aria-current="page"] .badge { background: #fff !important; color: rgb(var(--v-3b2a9a, 59 42 154)) !important; box-shadow: none !important; }
+  .rail .nav[data-ic="building"] .ic { --ica: icBounce; }
+  .rail .nav[data-ic="inbox"] .ic { --ica: icWiggle; }
+}
+@media (min-width: 901px) and (prefers-reduced-motion: reduce) { .rail .nav .badge, .nav-tile, .rail .nav-ht::before { transition: none !important; } }
