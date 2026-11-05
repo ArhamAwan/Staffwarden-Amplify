@@ -136,7 +136,9 @@ function createPayroll(ctx) {
     // their first, part month, carried into this one: its base and what attendance took off it
     // (not if that month was already run and paid with them on it)
     const paidBefore = (pp) => !!db.prepare("SELECT 1 FROM payslips s JOIN pay_runs r ON r.id = s.run_id WHERE r.period = ? AND s.user_id = ? AND r.status IN ('approved','paid')").get(pp, u.id);
-    if (startsLate(u, rec, prevPeriod(period)) && !paidBefore(prevPeriod(period))) {
+    // and only when that month was run here: a month from before Staffwarden ran payroll was paid outside it
+    const ranHere = (pp) => !!db.prepare('SELECT 1 FROM pay_runs WHERE period = ?').get(pp);
+    if (startsLate(u, rec, prevPeriod(period)) && ranHere(prevPeriod(period)) && !paidBefore(prevPeriod(period))) {
       const pp = prevPeriod(period), first = slipFor(u, pp, null), mon = periodName(pp).split(' ')[0];
       if (first) for (const l of first.lines) if (l.kind === 'base' || l.kind === 'attendance' || /^alw:/.test(l.key)) {
         add({ ...l, key: `prev:${l.key}`, label: l.kind === 'base' ? `${mon}: first days` : `${mon}: ${l.label.toLowerCase()}`, source: l.kind === 'base' ? `${l.source}. Paid with this month` : l.source, carry: true });

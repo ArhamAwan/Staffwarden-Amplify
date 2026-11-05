@@ -98,3 +98,29 @@ test('first days already paid in their own month are not carried again', async (
   const jan = await ok('POST', '/api/payroll/runs', { token: tokens.owner, body: { period: '2027-01' } });
   assert.ok(!jan.slips.find((s) => s.user_id === zed.id).lines.some((l) => /^prev:/.test(l.key)), 'December is not paid twice');
 });
+
+test('first days from a month that was never run here (paid outside) are not carried', async () => {
+  const { ok, tokens } = env;
+  // Zara joined Oct 19; there is no September run, so someone joining in September has nothing carried
+  const sep = await env.person('sep', 'Sep Joiner');
+  await ok('PUT', `/api/hr/people/${sep.id}/record`, { token: tokens.owner, body: { contract: 'full_time', joined_on: '2026-09-10', iban: 'PK36MEZN0000001122334821' } });
+  await ok('PUT', `/api/hr/people/${sep.id}/pay`, { token: tokens.owner, body: { base: 60000, currency: 'PKR', tax_mode: 'pk' } });
+  const oct = (await ok('GET', '/api/payroll', { token: tokens.owner })).runs.find((r) => r.period === '2026-10');
+  // October was approved before Sep Joiner existed; reopen it and work it out again
+  await ok('POST', `/api/payroll/runs/${oct.id}/reopen`, { token: tokens.owner, body: { reason: 'add Sep Joiner' } });
+  const again = (await ok('GET', `/api/payroll/runs/${oct.id}`, { token: tokens.owner })).slips.find((x) => x.user_id === sep.id);
+  assert.ok(again, 'on October after reopening');
+  assert.ok(!again.lines.some((l) => /^prev:/.test(l.key)), 'September was never run here, so nothing is carried');
+});
+
+test('reopening an approved month unmarks anyone paid and lets it be changed', async () => {
+  const { ok, api, tokens } = env;
+  const oct = (await ok('GET', '/api/payroll', { token: tokens.owner })).runs.find((r) => r.period === '2026-10');
+  await ok('POST', `/api/payroll/runs/${oct.id}/approve`, { token: tokens.owner });
+  const d = await ok('GET', `/api/payroll/runs/${oct.id}`, { token: tokens.owner });
+  await ok('POST', `/api/payroll/slips/${d.slips[0].id}/paid`, { token: tokens.owner, body: { on: '2026-11-03' } });
+  assert.equal((await api('POST', `/api/payroll/runs/${oct.id}/reopen`, { token: tokens.sara, body: { reason: 'x' } })).status, 403);
+  const r = await ok('POST', `/api/payroll/runs/${oct.id}/reopen`, { token: tokens.owner, body: { reason: 'Fix a line' } });
+  assert.equal(r.run.status, 'review');
+  assert.equal(r.run.paid_count, 0);
+});

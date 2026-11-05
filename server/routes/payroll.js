@@ -270,7 +270,12 @@ module.exports = (ctx) => {
     const r = runOf(params.id);
     need(r.status === 'approved', 409, r.status === 'paid' ? 'A paid month stays as it was. Use a correction on the next month.' : 'It is not approved');
     const reason = str(body.reason, 'reason', 300);
+    // anyone already marked paid is unmarked: their payslip can change, and is marked again once it is approved
+    const wasPaid = db.prepare('SELECT COUNT(*) n FROM payslips WHERE run_id = ? AND paid_on IS NOT NULL').get(r.id).n;
+    db.prepare('UPDATE payslips SET paid_on = NULL, paid_ref = NULL, paid_by = NULL WHERE run_id = ?').run(r.id);
     db.prepare("UPDATE pay_runs SET status = 'review', approved_by = NULL, approved_at = NULL WHERE id = ?").run(r.id);
+    P().compute(r);
+    void wasPaid;
     db.prepare("UPDATE expenses SET status = 'approved' WHERE run_id = ? AND status = 'paid'").run(r.id);
     db.prepare("UPDATE advances SET status = 'approved' WHERE status = 'repaid'").run();
     audit(user, 'payroll.reopened', null, `${r.period}: ${reason}`);
