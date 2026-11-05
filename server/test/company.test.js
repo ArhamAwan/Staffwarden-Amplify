@@ -117,8 +117,3 @@ test('a small, faint signature is enlarged with smooth edges and full-strength i
   assert.equal(out.alpha[20 * out.w + Math.floor(out.w / 2)], 0, 'nothing around it');
   assert.ok(0.299 * out.rgb[k * 3] + 0.587 * out.rgb[k * 3 + 1] + 0.114 * out.rgb[k * 3 + 2] <= 86, 'the ink is deep enough to read');
 });
-  assert.ok(out.w >= 800, 'enlarged');
-  assert.equal(out.alpha[(10 * (out.h / h) + Math.floor(out.h / h / 2)) * out.w + Math.floor(out.w / 2)], 255, 'the stroke is solid');
-  const k = (10 * (out.h / h)) * out.w + Math.floor(out.w / 2);
-  assert.ok(0.299 * out.rgb[k * 3] + 0.587 * out.rgb[k * 3 + 1] + 0.114 * out.rgb[k * 3 + 2] <= 86, 'the ink is deep enough to read');
-});
