@@ -201,8 +201,16 @@ async function toPng(file, slot) {
     const pad = 4, tw = Math.min(w, x1 - x0 + 1 + pad * 2), th = Math.min(h, y1 - y0 + 1 + pad * 2);
     const out = document.createElement('canvas'); out.width = tw; out.height = th;
     out.getContext('2d').drawImage(cv, Math.max(0, x0 - pad), Math.max(0, y0 - pad), tw, th, 0, 0, tw, th);
-    const blob = await new Promise((resolve, reject) => out.toBlob((b) => (b ? resolve(b) : reject(new Error('That picture can’t be read'))), 'image/png'));
+    const asBlob = (c) => new Promise((resolve, reject) => c.toBlob((b) => (b ? resolve(b) : reject(new Error('That picture can’t be read'))), 'image/png'));
+    const blob = await asBlob(out);
     blob.whiteParts = whiteParts;
+    // for white paper: the same logo with its white and near-white parts in dark ink
+    if (whiteParts) {
+      const g2 = out.getContext('2d'), od = g2.getImageData(0, 0, tw, th), q = od.data;
+      for (let i = 0; i < q.length; i += 4) { const l = 0.299 * q[i] + 0.587 * q[i + 1] + 0.114 * q[i + 2], sat = Math.max(q[i], q[i + 1], q[i + 2]) - Math.min(q[i], q[i + 1], q[i + 2]); if (q[i + 3] > 0 && l > 200 && sat < 40) { q[i] = 22; q[i + 1] = 18; q[i + 2] = 58; } }
+      const dk = document.createElement('canvas'); dk.width = tw; dk.height = th; dk.getContext('2d').putImageData(od, 0, 0);
+      blob.dark = await asBlob(dk);
+    }
     return blob;
   } finally { URL.revokeObjectURL(url); }
 }
@@ -213,18 +221,21 @@ async function uploadPick(input) {
   const card = input.closest('.co-lg'); if (card) card.classList.add('busy');
   try {
     const png = await toPng(file, slot);
+    const send = async (to, body) => {
+      const res = await fetch(`/api/company/images/${to}`, { method: 'POST', headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'image/png' }, body });
+      const outp = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(outp.error || 'The upload didn’t go through. Try again.');
+    };
     let to = slot;
     if (slot === 'logo' && png.whiteParts) {
       if (card) card.classList.remove('busy');
-      const light = await confirmBox({ title: 'Part of this logo is white', message: 'It has a see-through background with white parts, so on white payslips those parts disappear and the rest looks out of place. Use it as the light version (for dark headers), and upload a version with dark text as the full logo.', confirm: 'Use it as the light version', cancel: 'Keep it as the full logo' });
-      if (light) to = 'logo_light';
+      const both = await confirmBox({ title: 'Part of this logo is white', message: 'Its white parts would disappear on white payslips. Staffwarden can keep this one as the light version, for dark headers, and make the full logo from it with the white parts in dark ink.', confirm: 'Make both versions', cancel: 'Keep it as it is' });
       if (card) card.classList.add('busy');
-    }
-    const res = await fetch(`/api/company/images/${to}`, { method: 'POST', headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'image/png' }, body: png });
-    const outp = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(outp.error || 'The upload didn’t go through. Try again.');
-    authUrls.delete(to);
-    toast(to !== slot ? 'Saved as the light version. Upload a version with dark text as the full logo.' : `${SLOTS[slot][0]} saved`);
+      if (both) { await send('logo_light', png); await send('logo', png.dark); to = 'both'; }
+      else await send('logo', png);
+    } else await send(slot, png);
+    authUrls.delete(slot);
+    toast(to === 'both' ? 'Full logo and light version saved' : `${SLOTS[slot][0]} saved`);
     S.refresh();
   } catch (e) { toast(errMsg(e), true); } finally { if (card) card.classList.remove('busy'); }
 }
