@@ -82,7 +82,7 @@ module.exports = (ctx) => {
   const inkCache2 = new Map();
   const inkOnly = (file) => {
     if (!file) return null;
-    if (!inkCache2.has(file)) { const img = picture(file); inkCache2.set(file, img ? PNG.removePaper(img) : null); }
+    if (!inkCache2.has(file)) { const img = picture(file); inkCache2.set(file, img ? PNG.cleanInk(PNG.removePaper(img)) : null); }
     return inkCache2.get(file);
   };
   const logoInked = (c) => { const f = c.images.logo && c.images.logo.file; return !!(f && paperLogo(f) && paperLogo(f) !== picture(f)); };

@@ -109,3 +109,39 @@ function removePaper(img) {
   return { ...img, alpha };
 }
 module.exports.removePaper = removePaper;
+// makes a signature or stamp read well when printed: a small picture is enlarged with smooth edges (so it
+// isn't blocky), faint strokes are made full strength, and the ink is one solid colour (its own hue, deep
+// enough to read). Expects the paper already taken out (removePaper).
+function cleanInk(img, { target = 900 } = {}) {
+  const { w, h, rgb } = img, a0 = img.alpha;
+  if (!a0) return img;
+  // the ink's own colour, made deep
+  let sr = 0, sg = 0, sb = 0, sw = 0; const seen = [];
+  for (let k = 0; k < w * h; k++) { const a = a0[k]; if (a > 30) { sr += rgb[k * 3] * a; sg += rgb[k * 3 + 1] * a; sb += rgb[k * 3 + 2] * a; sw += a; seen.push(a); } }
+  if (!sw) return img;
+  let r = sr / sw, g = sg / sw, b = sb / sw;
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  if (lum > 85) { const f = 85 / lum; r *= f; g *= f; b *= f; }
+  // faint strokes full strength
+  seen.sort((x, y) => x - y);
+  const top = Math.max(60, seen[Math.floor(seen.length * 0.9)] || 255), boost = 255 / top;
+  // enlarge, smoothly
+  const f = Math.max(1, Math.min(8, Math.ceil(target / Math.max(w, h))));
+  const W = w * f, H = h * f, up = new Float32Array(W * H);
+  const A = (x, y) => Math.min(255, a0[Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))] * boost);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const fx = (x + 0.5) / f - 0.5, fy = (y + 0.5) / f - 0.5, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+    up[y * W + x] = (A(x0, y0) * (1 - tx) + A(x0 + 1, y0) * tx) * (1 - ty) + (A(x0, y0 + 1) * (1 - tx) + A(x0 + 1, y0 + 1) * tx) * ty;
+  }
+  // soften the steps once, then sharpen the edge into a clean line
+  const rad = Math.max(1, Math.round(f / 2)), soft = new Float32Array(W * H), tmp = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) { let s = 0; for (let x = -rad; x <= rad; x++) s += up[y * W + Math.min(W - 1, Math.max(0, x))]; for (let x = 0; x < W; x++) { tmp[y * W + x] = s / (2 * rad + 1); s += up[y * W + Math.min(W - 1, x + rad + 1)] - up[y * W + Math.max(0, x - rad)]; } }
+  for (let x = 0; x < W; x++) { let s = 0; for (let y = -rad; y <= rad; y++) s += tmp[Math.min(H - 1, Math.max(0, y)) * W + x]; for (let y = 0; y < H; y++) { soft[y * W + x] = s / (2 * rad + 1); s += tmp[Math.min(H - 1, y + rad + 1) * W + x] - tmp[Math.max(0, y - rad) * W + x]; } }
+  const out = Buffer.alloc(W * H), col = Buffer.alloc(W * H * 3);
+  for (let k = 0; k < W * H; k++) {
+    const t = Math.max(0, Math.min(1, (soft[k] / 255 - 0.22) / 0.3)); out[k] = Math.round(t * t * (3 - 2 * t) * 255);
+    col[k * 3] = r; col[k * 3 + 1] = g; col[k * 3 + 2] = b;
+  }
+  return { w: W, h: H, rgb: col, alpha: out };
+}
+module.exports.cleanInk = cleanInk;

@@ -79,9 +79,9 @@ class Pdf {
     const bin = (b) => b.toString('latin1');
     const xo = this.images.map((im, i) => {
       let mask = '';
-      if (im.alpha) { const a = zlib.deflateSync(im.alpha); mask = ` /SMask ${add(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /Length ${a.length} >>\nstream\n${bin(a)}\nendstream`)} 0 R`; }
+      if (im.alpha) { const a = zlib.deflateSync(im.alpha); mask = ` /SMask ${add(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /DeviceGray /BitsPerComponent 8 /Interpolate true /Filter /FlateDecode /Length ${a.length} >>\nstream\n${bin(a)}\nendstream`)} 0 R`; }
       const d = zlib.deflateSync(im.rgb);
-      return `/Im${i + 1} ${add(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode${mask} /Length ${d.length} >>\nstream\n${bin(d)}\nendstream`)} 0 R`;
+      return `/Im${i + 1} ${add(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Interpolate true /Filter /FlateDecode${mask} /Length ${d.length} >>\nstream\n${bin(d)}\nendstream`)} 0 R`;
     });
     const xobj = xo.length ? ` /XObject << ${xo.join(' ')} >>` : '';
     const kids = [];
