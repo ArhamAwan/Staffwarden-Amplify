@@ -48,17 +48,40 @@ export default {
 };
 
 // ---------- the month ----------
+// the month to pay: the latest one that has ended and has no payroll yet (pay goes out in the month after)
 function nextPeriod(ov) {
-  const today = companyToday();
-  const last = ov.runs[0];
-  if (last) return addMonths(last.period, 1);
-  return today.slice(8) >= '20' ? today.slice(0, 7) : addMonths(today.slice(0, 7), -1);
+  const latest = ov.runs.reduce((m, r) => (r.period > m ? r.period : m), '');
+  const opts = periodChoices(ov).filter((o) => !o.run && o.ended && o.period > latest);
+  return opts.length ? opts[0].period : null;
 }
+// the current month (once it is nearly over) and the three before it
+function periodChoices(ov) {
+  const today = companyToday(), cur = today.slice(0, 7), out = [];
+  for (let i = 0; i < 4; i++) {
+    const period = addMonths(cur, -i);
+    if (i === 0 && Number(today.slice(8)) < 20) continue;
+    out.push({ period, ended: i > 0, run: ov.runs.find((r) => r.period === period) || null });
+  }
+  return out;
+}
+const payWindowText = (ov, period) => {
+  const nx = addMonths(period, 1), R = ov.rules || {}, from = Number(R.pay_day) || 1, by = Math.max(Number(R.pay_by) || 10, from);
+  const m = new Date(`${nx}-01T12:00:00Z`).toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
+  return `${m} ${from} to ${by}`;
+};
+// the month's files under one button: what each is for, and its format
+function dlMenu(r) {
+  const item = (kind, fmt, ic, t, sub) => html`<button type="button" class="pr-mi" role="menuitem" data-act="pr-dl" data-id="${r.id}" data-kind="${kind}" ${raw(fmt ? `data-fmt="${fmt}"` : '')} data-period="${r.period}"><span class="pr-mic">${icon(ic)}</span><span><b>${t}</b><small>${sub}</small></span></button>`;
+  return html`<details class="pr-dlm" data-own="prdl${r.id}"><summary class="btn">${icon('download')} Download${raw('<svg class="pr-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>')}</summary>
+    <div class="pr-menu" role="menu">${item('bank', '', 'download', 'Bank sheet', 'Excel · who gets paid, to which account')}${item('bank', 'csv', 'bank', 'Bank upload file', 'CSV · for banks that take a file of transfers')}${item('register', '', 'file', 'Payroll register', 'Excel · every line of pay, for your accountant')}</div></details>`;
+}
+document.addEventListener('click', (e) => { for (const d of document.querySelectorAll('.pr-dlm[open]')) if (!d.contains(e.target) || e.target.closest('.pr-mi')) d.open = false; });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') for (const d of document.querySelectorAll('.pr-dlm[open]')) { d.open = false; d.querySelector('summary').focus(); } });
 function runView(ov, d) {
   const r = d.run, s = r.status, pk = d.totals.PKR, usd = d.totals.USD;
   const tools = s === 'draft' ? html`<button class="btn" data-act="pr-refresh" data-id="${r.id}">${icon('refresh')} Work it out again</button><button class="btn primary" data-act="pr-submit" data-id="${r.id}">Send for approval</button>`
     : s === 'review' ? html`<button class="btn" data-act="pr-refresh" data-id="${r.id}">${icon('refresh')} Work it out again</button>${d.can_approve ? html`<button class="btn primary" data-act="pr-approve" data-id="${r.id}">${icon('check')} Approve ${periodLabel(r.period).split(' ')[0]}</button>` : ''}`
-    : html`<button class="btn" data-act="pr-dl" data-id="${r.id}" data-kind="bank" data-period="${r.period}">${icon('download')} Bank sheet</button><button class="btn" data-act="pr-dl" data-id="${r.id}" data-kind="register" data-period="${r.period}">${icon('file')} Register for accountant</button><button class="linkbtn small pr-csv" data-act="pr-dl" data-id="${r.id}" data-kind="bank" data-fmt="csv" data-period="${r.period}" title="The plain file some banks ask for when you upload transfers">CSV for bank upload</button>${s === 'approved' ? html`<button class="btn primary" data-act="pr-paid" data-id="${r.id}" data-left="${d.slips.length - r.paid_count}">${r.paid_count ? `Mark the other ${d.slips.length - r.paid_count} paid` : 'Mark everyone paid'}</button>` : html`<button class="btn primary" data-act="pr-start" data-period="${nextPeriod(ov)}">${icon('plus')} Start ${periodLabel(nextPeriod(ov)).split(' ')[0]}</button>`}`;
+    : html`${dlMenu(r)}${s === 'approved' ? html`<button class="btn primary" data-act="pr-paid" data-id="${r.id}" data-left="${d.slips.length - r.paid_count}">${r.paid_count ? `Mark the other ${d.slips.length - r.paid_count} paid` : 'Mark everyone paid'}</button>` : html`<button class="btn primary" data-act="pr-start">${icon('plus')} Start a month</button>`}`;
   const who = s === 'draft' ? `Started by ${r.created_by_name || 'HR'} ${relTime(r.created_at)}. People do not see it until you send it for approval.`
     : s === 'review' ? (d.can_approve ? `Sent by ${r.submitted_by_name || 'HR'} ${relTime(r.submitted_at)}. Everyone can see and ask about their payslip.` : `Sent for approval ${relTime(r.submitted_at)}. Waiting for the owner. Everyone can see and ask about their payslip.`)
     : s === 'approved' ? `Approved by ${r.approved_by_name} ${relTime(r.approved_at)}. ${r.paid_count} of ${d.slips.length} paid. Pay each person by ${dayShort(r.pay_by)} and mark them paid as you go.`
@@ -80,7 +103,7 @@ function runView(ov, d) {
       <td><div class="chips">${x.open_questions ? tag('break', 'Question') : ''}${!x.facts.bank ? (x.by_hand ? tag('idle', 'Paid by hand') : tag('absent', 'No bank details')) : ''}${x.currency === 'USD' ? tag('idle', 'Dollars, no tax') : ''}${!x.open_questions && x.facts.bank && x.currency !== 'USD' ? tag('working', 'Ready') : ''}</div></td></tr>`);
   const totalRow = pk ? html`<tr class="tot"><td><b>Total in rupees</b></td><td></td><td></td><td class="r num"><b>${money(pk.tax)}</b></td><td class="r num"><b>${money(pk.net)}</b></td>${paidCol ? html`<td></td>` : ''}<td></td></tr>` : '';
   return html`
-    <div class="page-h pr-head"><div><h1>Payroll</h1><p class="sub">${periodLabel(r.period)} · paid ${dayShort(r.pay_day)} to ${dayShort(r.pay_by)} · worked out from Staffwarden hours, attendance and time off</p></div>
+    <div class="page-h pr-head"><div><h1>Payroll</h1><p class="sub">Pay for work in <b>${periodLabel(r.period)}</b>, paid out ${dayShort(r.pay_day)} to ${dayShort(r.pay_by)}. Worked out from Staffwarden hours, attendance and time off.</p></div>
       <div class="tools">${tools}</div>
       <div class="pr-stepline">${stepper(s)}<span>${who}</span></div>
       ${hero}
@@ -91,7 +114,7 @@ function runView(ov, d) {
 }
 
 function firstView(ov) {
-  const period = nextPeriod(ov);
+  const period = nextPeriod(ov) || addMonths(companyToday().slice(0, 7), -1);
   const st = (done, now) => (done ? 'done' : now ? 'now' : '');
   const pay = ov.with_pay, missing = ov.missing_pay.length, nobank = ov.no_bank.length;
   const items = [
@@ -105,7 +128,7 @@ function firstView(ov) {
     <div class="cols">
       <section class="panel"><header><h2>Your first payroll</h2><span class="muted small">Staffwarden already has everyone’s hours, attendance and leave</span></header><div class="body">
         <ul class="checklist">${items.map(([s, t, sub, b]) => html`<li class="${s}"><span class="ck">${s === 'done' ? icon('check') : ''}</span><div><b>${t}</b><span>${sub}</span></div>${b}</li>`)}</ul>
-        <div class="pr-start"><span>Start ${periodLabel(period)} when everyone has pay. Nothing is paid until it is approved.</span><button class="btn primary" data-act="pr-start" data-period="${period}" ${pay ? '' : raw('disabled')}>${icon('right')} Start ${periodLabel(period)}</button></div></div></section>
+        <div class="pr-start"><span>Start ${periodLabel(period)}, paid ${payWindowText(ov, period)}, when everyone has pay. Nothing is paid until it is approved.</span><button class="btn primary" data-act="pr-start" ${pay ? '' : raw('disabled')}>${icon('right')} Start a month</button></div></div></section>
       <section class="panel"><header><h2>How it works</h2></header><div class="body"><ul class="howto">
         <li>${icon('clock')}<div><b>From hours you already track</b><span>Absences, unpaid leave, lates and overtime come from attendance, as your rules say.</span></div></li>
         <li>${icon('check')}<div><b>You check every line</b><span>Each line says where it came from. People can ask about theirs before it is approved.</span></div></li>
@@ -114,7 +137,7 @@ function firstView(ov) {
 
 function historyView(ov) {
   const rows = ov.runs.map((r) => { const t = r.totals.PKR || r.totals.USD || { net: 0 }; const [c, w] = STATUS[r.status]; return html`<li class="clickable" data-k="r${r.id}" data-act="go" data-href="#/payroll?run=${r.id}" tabindex="0"><span class="what">${r.name}</span><span class="len num">${money(t.net, r.totals.PKR ? 'PKR' : 'USD')}</span><span class="when">${plural(r.people, 'person', 'people')} · ${tag(c, w)}${r.paid_at ? ` · paid ${dayShort(r.paid_at.slice(0, 10))}` : ''}</span></li>`; });
-  return html`<div class="page-h"><div><h1>Payroll</h1><p class="sub">Every month, kept as it was paid</p></div><div class="tools"><button class="btn primary" data-act="pr-start" data-period="${nextPeriod(ov)}">${icon('plus')} Start ${periodLabel(nextPeriod(ov))}</button></div>${ptabs('history')}</div>
+  return html`<div class="page-h"><div><h1>Payroll</h1><p class="sub">Every month, kept as it was paid</p></div><div class="tools"><button class="btn primary" data-act="pr-start">${icon('plus')} Start a month</button></div>${ptabs('history')}</div>
     <section class="panel flush"><header><h2>Every month</h2><span class="muted small">Locked once approved. A mistake is fixed with a correction on a later month.</span></header><div class="body">${rows.length ? html`<ul class="blist">${rows}</ul>` : empty('No months yet', 'Start your first payroll on the Month tab.')}</div></section>`;
 }
 
@@ -198,7 +221,23 @@ const TAX_ON_TXT = 'On the brackets below, for people paid in rupees whose own p
 const TAX_OFF_TXT = 'Off: nobody has tax taken, and payslips say so. Months already approved keep what they had.';
 // ---------- actions ----------
 const act = (fn) => async (el) => { try { await fn(el); } catch (e) { toast(errMsg(e), true); } };
-actions['pr-start'] = act(async (el) => { const d = await post('/api/payroll/runs', { period: el.dataset.period }); toast(`${periodLabel(el.dataset.period)} started`); S.navigate(`#/payroll?run=${d.run.id}`); });
+// which month's pay: named by the month worked, with when it goes out, so October's pay in November is October
+actions['pr-start'] = async () => {
+  let ov; try { ov = await get('/api/payroll'); } catch (e) { toast(errMsg(e), true); return; }
+  const pick = nextPeriod(ov), month = (p) => periodLabel(p).split(' ')[0];
+  openModal({
+    title: 'Which month are you paying for?', submit: 'Start',
+    sub: pick ? 'Pick the month people worked. Their pay goes out early in the month after.' : 'Your latest month is already started. Pick an earlier month only to catch up on one that was missed.',
+    body: html`<div class="pr-pick" role="radiogroup" aria-label="Month">${periodChoices(ov).map((o) => html`<label class="pr-po${o.run ? ' taken' : ''}">
+      <input type="radio" name="period" value="${o.period}" ${raw(o.period === pick && !o.run ? 'checked' : '')} ${raw(o.run ? 'disabled' : '')}>
+      <span class="pr-pt"><b>${periodLabel(o.period)}</b><small>${o.run ? `Already started · ${STATUS[o.run.status] ? STATUS[o.run.status][1].toLowerCase() : o.run.status}` : `Work in ${month(o.period)}, paid ${payWindowText(ov, o.period)}${o.ended ? '' : ' · not over yet'}`}</small></span>
+      ${o.run ? html`<a class="linkbtn small" href="#/payroll?run=${o.run.id}" data-close>Open</a>` : ''}</label>`)}</div>`,
+    onSubmit: async (fd) => {
+      const period = fd.get('period'); if (!period) throw new Error('Pick a month');
+      const d = await post('/api/payroll/runs', { period }); toast(`${periodLabel(period)} started`); S.navigate(`#/payroll?run=${d.run.id}`);
+    },
+  });
+};
 actions['pr-refresh'] = act(async (el) => { await post(`/api/payroll/runs/${el.dataset.id}/refresh`); toast('Worked out again'); S.refresh(); });
 actions['pr-submit'] = async (el) => {
   if (!(await confirmBox({ title: 'Send for approval?', message: 'Everyone on this month can then see their payslip and ask about it. You can still change it until it is approved.', confirm: 'Send' }))) return;

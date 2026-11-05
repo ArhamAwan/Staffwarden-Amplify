@@ -50,6 +50,8 @@ module.exports = (ctx) => {
     needHR(user);
     const period = str(body.period, 'period', 7);
     need(/^\d{4}-(0[1-9]|1[0-2])$/.test(period), 400, 'period must look like 2026-10');
+    // a month is paid for the work in it, so a month that hasn't begun can't be started
+    need(period <= ctx.calc.companyToday().slice(0, 7), 400, `${P().periodName(period)} hasn’t started yet. Pick the month people worked.`);
     need(!db.prepare('SELECT id FROM pay_runs WHERE period = ?').get(period), 409, `${P().periodName(period)} has already been started`);
     const open = db.prepare("SELECT period FROM pay_runs WHERE status IN ('draft','review')").get();
     need(!open, 409, `Finish ${open ? P().periodName(open.period) : ''} first`);

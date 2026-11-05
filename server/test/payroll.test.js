@@ -16,6 +16,13 @@ before(async () => {
   bilal = await env.person('bilal', 'Bilal Ahmed');
 });
 after(() => env.close());
+// payroll is run for a month once it has begun: move the clock into the month after, as in real life
+async function startRun(period) {
+  const [y, m] = period.split('-').map(Number);
+  const t = Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 2, 5, 0, 0);
+  if (env.clock.t < t) env.set(t);
+  return env.ok('POST', '/api/payroll/runs', { token: env.tokens.fatima, body: { period } });
+}
 
 const slipOf = (detail, id) => detail.slips.find((s) => s.user_id === id);
 const line = (slip, key) => slip.lines.find((l) => l.key === key);
@@ -142,7 +149,7 @@ test('an advance is paid back from the month after it is approved; expenses are 
   assert.equal((await api('POST', `/api/expenses/${exp.id}/decide`, { token: tokens.hamza, body: { approve: true } })).status, 403);
   await ok('POST', `/api/expenses/${exp.id}/decide`, { token: tokens.fatima, body: { approve: true } });
   // November: the advance is not repaid yet (approved in November, repaid from December), the expense is paid
-  const nov = await ok('POST', '/api/payroll/runs', { token: tokens.fatima, body: { period: '2026-11' } });
+  const nov = await startRun('2026-11');
   const s = slipOf(nov, sara.id);
   assert.ok(!s.lines.some((l) => l.kind === 'advance'));
   const e = s.lines.find((l) => l.kind === 'expense');
@@ -150,7 +157,7 @@ test('an advance is paid back from the month after it is approved; expenses are 
   await ok('POST', `/api/payroll/runs/${nov.run.id}/approve`, { token: tokens.owner });
   assert.equal((await ok('GET', '/api/expenses?scope=mine', { token: tokens.sara }))[0].status, 'paid');
   await ok('POST', `/api/payroll/runs/${nov.run.id}/paid`, { token: tokens.fatima, body: {} });
-  const dec = await ok('POST', '/api/payroll/runs', { token: tokens.fatima, body: { period: '2026-12' } });
+  const dec = await startRun('2026-12');
   const r = slipOf(dec, sara.id).lines.find((l) => l.kind === 'advance');
   assert.equal(r.amount, -10000);
   assert.match(r.source, /^1 of 5/);
@@ -162,7 +169,7 @@ test('someone leaving: their last month is cut at the last day, with unused leav
   await ok('PUT', `/api/hr/people/${bilal.id}/record`, { token: tokens.fatima, body: { leaving_on: '2026-12-11', leaving_reason: 'Resigned' } });
   const p = await ok('GET', `/api/hr/people/${bilal.id}`, { token: tokens.fatima });
   assert.ok(p.leave_steps && p.leave_steps.length >= 5);
-  const d = await ok('POST', '/api/payroll/runs', { token: tokens.fatima, body: { period: '2026-12' } });
+  const d = await startRun('2026-12');
   const s = slipOf(d, bilal.id);
   // December 2026 has 23 working days; up to Fri 11 Dec there are 9
   assert.equal(line(s, 'base').amount, Math.round((90000 / 23) * 9));
@@ -181,7 +188,11 @@ test('EOBI and the HR overview', async () => {
   assert.ok(!line(slipOf(d, hamza.id), 'eobi'), 'not for a contractor in dollars');
   const o = await ok('GET', '/api/hr/overview', { token: tokens.fatima });
   assert.ok(o.items.some((i) => i.kind === 'payroll'));
-  assert.ok(o.items.some((i) => i.kind === 'leaving'));
+  // Bilal left on Dec 11: the reminder shows before that day and not after
+  assert.ok(!o.items.some((i) => i.kind === 'leaving'));
+  const now = env.clock.t; env.set(Date.UTC(2026, 11, 1, 5));
+  assert.ok((await ok('GET', '/api/hr/overview', { token: tokens.fatima })).items.some((i) => i.kind === 'leaving'));
+  env.set(now);
   assert.ok(o.items.some((i) => i.kind === 'no_bank' && /Bilal/.test(i.title)));
   assert.equal(o.stats.people, 5);
 });
@@ -260,4 +271,11 @@ test('developer and test accounts are not employees: off payroll and HR reminder
   await ok('PUT', `/api/hr/people/${tester.id}/record`, { token: tokens.fatima, body: { employed: true } });
   list = await ok('GET', '/api/hr/people', { token: tokens.fatima });
   assert.equal(list.find((p) => p.id === tester.id).employed, true);
+});
+
+test('a month that has not begun cannot be started', async () => {
+  const { api, tokens } = env;
+  const r = await api('POST', '/api/payroll/runs', { token: tokens.fatima, body: { period: '2031-01' } });
+  assert.equal(r.status, 400);
+  assert.match(r.data.error, /hasn’t started yet/);
 });

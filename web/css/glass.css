@@ -1325,3 +1325,31 @@ table.t.grid tr:hover td.nm { background: #221A4E !important; }
 .rail-clock.brk .rc-t small { color: rgba(255,231,181,.7); }
 .rail-clock .rc-v { font-size: 14px; font-variant-numeric: tabular-nums; }
 @media (min-width: 901px) { .rail .rail-clock { padding-top: 8px !important; padding-bottom: 8px !important; } .rail .rail-clock .rc-t { width: 120px; } }
+/* payroll: the month's files under one Download button */
+.pr-dlm { position: relative; display: inline-block; }
+.pr-dlm > summary { list-style: none; cursor: pointer; gap: 8px; }
+.pr-dlm > summary::-webkit-details-marker { display: none; }
+.pr-dlm .pr-chev { opacity: .7; transition: transform .2s ease; }
+.pr-dlm[open] .pr-chev { transform: rotate(180deg); }
+.pr-menu { position: absolute; z-index: 40; top: calc(100% + 8px); right: 0; width: 350px; padding: 6px; border-radius: 16px; background: #1E1543; border: 1px solid rgba(255,255,255,.12); box-shadow: 0 18px 50px rgba(5,2,20,.55); display: flex; flex-direction: column; gap: 2px; animation: prMenu .16s ease-out; }
+@keyframes prMenu { from { opacity: 0; transform: translateY(-4px); } }
+.pr-mi { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px; border: 0; border-radius: 11px; background: transparent; color: #F2EFFF; text-align: left; cursor: pointer; font: inherit; }
+.pr-mi:hover, .pr-mi:focus-visible { background: rgba(255,255,255,.07); outline: none; }
+.pr-mic { width: 36px; height: 36px; border-radius: 10px; background: rgba(139,92,246,.2); color: #D9CCFF; display: flex; align-items: center; justify-content: center; flex: none; }
+.pr-mic .ic { width: 18px; height: 18px; }
+.pr-mi b { display: block; font-size: 14px; font-weight: 600; }
+.pr-mi small { display: block; font-size: 12.5px; color: #ABA4CE; margin-top: 1px; }
+@media (max-width: 760px) { .pr-menu { right: auto; left: 0; width: min(320px, calc(100vw - 32px)); } }
+@media (prefers-reduced-motion: reduce) { .pr-menu { animation: none; } .pr-dlm .pr-chev { transition: none; } }
+/* payroll: which month are you paying for */
+.pr-pick { display: flex; flex-direction: column; gap: 6px; }
+.pr-po { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 13px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.03); cursor: pointer; transition: border-color .15s, background-color .15s; }
+.pr-po:hover { border-color: rgba(155,123,255,.45); }
+.pr-po:has(input:checked) { border-color: #9B7BFF; background: rgba(139,92,246,.16); }
+.pr-po input { accent-color: #9B7BFF; width: 18px; height: 18px; margin: 0; flex: none; }
+.pr-pt { flex: 1; min-width: 0; }
+.pr-pt b { display: block; font-size: 14.5px; }
+.pr-pt small { display: block; font-size: 12.5px; color: #ABA4CE; margin-top: 2px; }
+.pr-po.taken { cursor: default; opacity: .6; }
+.pr-po.taken:hover { border-color: rgba(255,255,255,.1); }
+@media (max-width: 760px) { .pr-po { padding: 10px 12px; } }
