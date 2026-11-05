@@ -76,7 +76,12 @@ module.exports = (ctx) => {
     const people = members.map((u) => {
       const mine = rows.filter((r) => r.plan_user === u.id);
       const d = dayOf(u, day);
-      const tasks = mine.map((r) => ({ ...taskOut(r, projects), here: r.project_id === p.id, sent: sentDays.has(r.project_id) }));
+      const tasks = mine.map((r) => {
+        const o = { ...taskOut(r, projects), here: r.project_id === p.id, sent: sentDays.has(r.project_id) };
+        // another project this planner can't open: only that it takes time, never what it is
+        if (!o.here && !projectVisible(user, getProject(r.project_id))) Object.assign(o, { title: null, key: null, project_key: null, project_color: null, due_day: null, hidden: true });
+        return o;
+      });
       // others' drafts are not this manager's business: only another project's sent plan shows
       const visible = tasks.filter((t) => t.here || t.sent);
       // what is still to do: work done or waiting for review no longer fills the day
@@ -202,8 +207,8 @@ module.exports = (ctx) => {
     const p = loadRunnable(user, params.id);
     const day = readDay(body.day, { edit: true });
     const rows = db.prepare(`SELECT pl.user_id, t.id, t.number, t.title, t.estimate_min FROM task_plans pl JOIN tasks t ON t.id = pl.task_id
-      WHERE pl.project_id = ? AND pl.day = ? ORDER BY pl.user_id, pl.position, t.id`).all(p.id, day);
-    need(rows.length, 400, 'Plan at least one task before sending');
+      WHERE pl.project_id = ? AND pl.day = ? AND t.status IN ('todo','in_progress') AND t.assignee_id = pl.user_id ORDER BY pl.user_id, pl.position, t.id`).all(p.id, day);
+    need(rows.length, 400, 'Plan at least one open task before sending');
     const again = !!sentOf(p.id, day);
     db.prepare('INSERT INTO plan_sends (project_id, day, sent_at, sent_by) VALUES (?,?,?,?) ON CONFLICT(project_id, day) DO UPDATE SET sent_at = excluded.sent_at, sent_by = excluded.sent_by').run(p.id, day, nowIso(), user.id);
     const by = new Map();
@@ -230,13 +235,15 @@ module.exports = (ctx) => {
     need(prev, 404, 'There is no earlier day to copy');
     const rows = db.prepare(`SELECT pl.*, t.status, t.assignee_id FROM task_plans pl JOIN tasks t ON t.id = pl.task_id WHERE pl.project_id = ? AND pl.day = ? ORDER BY pl.user_id, pl.position`).all(p.id, prev);
     let n = 0, skipped = 0;
+    const added = new Map();
     const ins = db.prepare('INSERT OR IGNORE INTO task_plans (task_id, day, user_id, project_id, position, planned_by, planned_at) VALUES (?,?,?,?,?,?,?)');
     for (const r of rows) {
       if (!OPEN.includes(r.status) || r.assignee_id !== r.user_id || !isProjectMember(p.id, r.user_id) || onLeave(r.user_id, day)) { skipped++; continue; }
       const last = db.prepare('SELECT MAX(position) m FROM task_plans WHERE user_id = ? AND day = ?').get(r.user_id, day).m;
       const res = ins.run(r.task_id, day, r.user_id, p.id, (last ?? 0) + 1, user.id, nowIso());
-      if (res.changes) { n++; tellChange(r.user_id, p, day, user, 'added a task to {day}', null); }
+      if (res.changes) { n++; added.set(r.user_id, (added.get(r.user_id) || 0) + 1); }
     }
+    for (const [uid, k] of added) tellChange(uid, p, day, user, `added ${k} task${k === 1 ? '' : 's'} to {day}`, null);
     emit('tasks');
     return { ...board(user, p, day), copied: n, skipped, from: prev };
   });
@@ -263,8 +270,9 @@ module.exports = (ctx) => {
       const rows = db.prepare(`SELECT t.id, t.number, t.title, t.project_id, t.status FROM task_plans pl JOIN tasks t ON t.id = pl.task_id JOIN plan_sends s ON s.project_id = pl.project_id AND s.day = pl.day
         WHERE pl.user_id = ? AND pl.day = ? AND t.assignee_id = ? AND t.status IN ('todo','in_progress') ORDER BY pl.position`).all(u.id, day, u.id);
       if (!rows.length) continue;
-      // already told on shift (the day was sent while they were working)
-      const told = db.prepare("SELECT 1 FROM notifications WHERE user_id = ? AND kind = 'task_plan' AND desktop = 1 AND dedupe LIKE ? AND created_at >= ?").get(u.id, `plan:%:${day}:%`, new Date(now - 20 * 3600000).toISOString());
+      // already told since the shift started (the day was sent while they were working)
+      const tz = calc.dayTz(u, day), sinceStart = T.localMinOfDay(now, tz) - calc.relMin(u, calc.shiftStartMin(u, day));
+      const told = db.prepare("SELECT 1 FROM notifications WHERE user_id = ? AND kind = 'task_plan' AND dedupe LIKE ? AND created_at >= ?").get(u.id, `plan:%:${day}:%`, new Date(now - Math.max(0, sinceStart) * 60000).toISOString());
       if (told) continue;
       const projects = projectMap(), first = rows[0], fp = projects.get(first.project_id);
       n += N().notify(u.id, { kind: 'task_plan', title: `Your day: ${rows.length} task${rows.length === 1 ? '' : 's'}`, body: `First up: ${keyOf(fp, first) || ''} ${first.title}`.replace(/\s+/g, ' '), link: '#/tasks?view=day', dedupe: `myday:${day}` });

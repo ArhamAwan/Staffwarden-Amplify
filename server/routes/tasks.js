@@ -69,7 +69,7 @@ module.exports = (ctx) => {
       const dep = isActive(p.deputy_id) && p.deputy_id !== doer ? p.deputy_id : null;
       const away = mgr && onLeave(mgr, calc.companyToday());
       if (mgr && !(away && dep)) return { ids: [mgr], why: 'project manager' };
-      if (dep) return { ids: [dep], why: away ? 'stand-in, while the manager is on leave' : 'stand-in, since the manager did this task' };
+      if (dep) return { ids: [dep], why: away ? 'stand-in, while the manager is on leave' : p.lead_id && p.lead_id === doer ? 'stand-in, since the manager did this task' : 'stand-in, as the project has no manager' };
       // no manager or stand-in who can approve: the person's managers, people other than the owner first
       const all = ctx.managersOf(doer);
       const notOwner = all.filter((id) => (db.prepare('SELECT role FROM users WHERE id = ?').get(id) || {}).role !== 'owner');

@@ -108,6 +108,7 @@ window.addEventListener('hashchange', closeMenu);
 // ================================================================================================
 // The Team tab
 // ================================================================================================
+const fallbackText = (p) => { const f = (p.fallback || []).map((n) => (S.me && n === S.me.name ? 'you' : first(n))); return f.length ? (f.length > 2 ? `${f.slice(0, -1).join(', ')} or ${f[f.length - 1]}` : f.join(' or ')) : 'a manager'; };
 const roleName = (r) => (r === 'lead' ? 'Project manager' : r === 'deputy' ? 'Stand-in' : 'Member');
 export function teamTab(p, plan) {
   const mgr = p.lead, dep = p.deputy, owner = p.owner;
@@ -122,7 +123,8 @@ export function teamTab(p, plan) {
     if (d.status === 'holiday') return html`<span class="pmc">Holiday</span>`;
     const here = d.tasks.filter((t) => t.here);
     if (!d.tasks.length) return d.status === 'off' ? html`<span class="faint">Day off</span>` : d.role === 'manager' ? html`<span class="faint">Plans the day</span>` : html`<span class="pmc amber">Nothing planned</span>`;
-    return html`<span>${plural(d.tasks.length, 'task')}${d.planned_min ? ` · ${hrs(d.planned_min)} of ${hrs(d.capacity_min) || '0h'}` : ''}${here.length < d.tasks.length ? html` <span class="faint">(${d.tasks.length - here.length} elsewhere)</span>` : ''}</span>`;
+    if (!here.length) return html`<span class="pmc amber">Nothing planned here</span> <span class="faint">${d.planned_min ? `${hrs(d.planned_min)} on other projects` : `${plural(d.tasks.length, 'task')} elsewhere`}</span>`;
+    return html`<span>${plural(here.length, 'task')}${d.planned_min ? ` · ${hrs(d.planned_min)} of ${hrs(d.capacity_min) || '0h'}` : ''}${here.length < d.tasks.length ? html` <span class="faint">(+${d.tasks.length - here.length} elsewhere)</span>` : ''}</span>`;
   };
   const cols = !!plan;
   return html`<div class="pm-team">
@@ -134,10 +136,10 @@ export function teamTab(p, plan) {
           ${p.can_pick_manager ? html`<button type="button" class="btn sm" data-act="pm-pick" data-v="lead">Change manager</button>` : ''}
         </section>`
         : html`<section class="pm-mgr none" aria-labelledby="pm-mh"><span class="avatar lg none" aria-hidden="true">?</span>
-          <div class="pm-mgr-t"><b id="pm-mh">No project manager yet</b><span>Until someone runs ${p.name}, its finished work waits for ${p.can_pick_manager && S.me.role === 'owner' ? 'you' : ownerName} to approve.</span></div>
+          <div class="pm-mgr-t"><b id="pm-mh">No project manager yet</b><span>Until someone runs ${p.name}, its finished work goes to ${fallbackText(p)} to approve.</span></div>
           ${p.can_pick_manager ? html`<button type="button" class="btn primary sm" data-act="pm-pick" data-v="lead">Choose a manager</button>` : ''}</section>`}
-      ${mgr ? (dep ? html`<section class="pm-dep" aria-labelledby="pm-dh">${av(dep.id, dep.name)}<div class="pm-grow"><b id="pm-dh">${dep.name} stands in</b><span>When ${mName} is on leave, or for work ${mName} does herself, ${first(dep.name)} plans and approves instead.</span></div>${p.can_manage ? html`<button type="button" class="btn sm quiet" data-act="pm-pick" data-v="deputy">Change</button>` : ''}</section>`
-        : html`<section class="pm-dep none" aria-labelledby="pm-dh"><span class="avatar none" aria-hidden="true">?</span><div class="pm-grow"><b id="pm-dh">No stand-in yet</b><span>Work ${mName} does herself, and everything while ${mName} is on leave, goes to ${ownerName} to approve. Choose a stand-in so it doesn’t.</span></div>${p.can_manage ? html`<button type="button" class="btn sm" data-act="pm-pick" data-v="deputy">Choose a stand-in</button>` : ''}</section>`) : ''}
+      ${mgr || dep ? (dep ? html`<section class="pm-dep" aria-labelledby="pm-dh">${av(dep.id, dep.name)}<div class="pm-grow"><b id="pm-dh">${dep.name} stands in</b><span>When ${mName} is on leave, and for ${mName}’s own work, ${first(dep.name)} plans and approves instead.</span></div>${p.can_manage ? html`<button type="button" class="btn sm quiet" data-act="pm-pick" data-v="deputy">Change</button>` : ''}</section>`
+        : html`<section class="pm-dep none" aria-labelledby="pm-dh"><span class="avatar none" aria-hidden="true">?</span><div class="pm-grow"><b id="pm-dh">No stand-in yet</b><span>${mName}’s own work, and everything while ${mName} is on leave, goes to ${ownerName} to approve. Choose a stand-in so it doesn’t.</span></div>${p.can_manage ? html`<button type="button" class="btn sm" data-act="pm-pick" data-v="deputy">Choose a stand-in</button>` : ''}</section>`) : ''}
       <section class="panel flush pm-people" aria-labelledby="pm-th">
         <header><h2 id="pm-th">${mgr ? `Working under ${mName}` : 'The team'} <span class="muted">${p.workload.filter((w) => w.role !== 'lead').length}</span></h2>${p.can_manage ? html`<button class="btn sm" data-act="project-add-members">${raw('+')} Add people</button>` : ''}</header>
         <div class="pm-row pm-head${cols ? '' : ' np'}" aria-hidden="true"><span>Person</span>${cols ? html`<span>Today</span>` : ''}<span class="r">Open</span><span></span></div>
@@ -164,7 +166,7 @@ export function teamTab(p, plan) {
         </div></div></section>
       <section class="panel pm-owner" aria-labelledby="pm-oh"><div class="body">
         <div class="pm-oh">${owner ? av(owner.id, owner.name, 'sm') : ''}<h2 id="pm-oh">${owner ? `${owner.name}, as the owner` : 'The owner'}</h2></div>
-        <p class="muted">Sees every project and can step in, but isn’t asked to approve anything while ${p.name} has a manager${dep ? ' and a stand-in' : ''}. Picks each project’s manager.</p></div></section>
+        <p class="muted">${mgr ? `Sees every project and can step in, but isn’t asked to approve anything while ${p.name} has a manager${dep ? ' and a stand-in' : ''}. Picks each project’s manager.` : `Picks each project’s manager. Until ${p.name} has one, its finished work goes to ${fallbackText(p)} to approve.`}</p></div></section>
     </aside>
   </div>`;
 }
@@ -213,10 +215,10 @@ function card(t, { planned = false, n = null, draggable = true, uid = null } = {
   const meta = [t.estimate_min ? `about ${hrs(t.estimate_min)}` : null, t.due_day ? `due ${dayShort(t.due_day).replace(/^\w+, /, '')}` : null].filter(Boolean).join(' · ');
   const can = draggable && !other && !['done', 'in_review'].includes(t.status);
   return html`<article class="pl-card${planned ? ' on' : ''}${other ? ' other' : ''}${t.status === 'done' ? ' did' : ''}" data-k="pc${t.id}" data-task="${t.id}" ${raw(can ? 'draggable="true"' : '')} ${raw(uid ? `data-uid="${uid}"` : '')}>
-    <div class="pl-k">${n != null ? html`<span class="num">${n}</span><i aria-hidden="true">·</i>` : ''}<span>${t.key || ''}</span>${other ? html`<span class="pl-proj" style="--pc:${t.project_color}">${t.project_key}</span>` : ''}${PRIO[t.priority] ? html`<span class="pmc red">${PRIO[t.priority]}</span>` : ''}${st}</div>
-    <b class="pl-t">${t.title}</b>
+    <div class="pl-k">${n != null ? html`<span class="num">${n}</span><i aria-hidden="true">·</i>` : ''}<span>${t.key || ''}</span>${other && !t.hidden ? html`<span class="pl-proj" style="--pc:${t.project_color}">${t.project_key}</span>` : ''}${PRIO[t.priority] ? html`<span class="pmc red">${PRIO[t.priority]}</span>` : ''}${st}</div>
+    <b class="pl-t">${t.hidden ? html`<span class="faint">Work on another project</span>` : t.title}</b>
     <div class="pl-m">${!planned && t.assignee ? html`${av(t.assignee_id, t.assignee, 'xs')}<span>${first(t.assignee)}</span>${meta ? html`<i aria-hidden="true">·</i>` : ''}` : ''}<span>${meta || (t.estimate_min == null && !other ? 'No estimate' : '')}</span>
-      ${can ? html`<button type="button" class="pl-more" data-act="pl-menu" data-id="${t.id}" aria-label="${planned ? `Move ${t.key || t.title}` : `Plan ${t.key || t.title} for someone`}">${planned ? icon('right') : icon('plus')}</button>` : other ? html`<span class="pl-else">Planned by ${t.project_key}</span>` : ''}</div>
+      ${can ? html`<button type="button" class="pl-more" data-act="pl-menu" data-id="${t.id}" aria-label="${planned ? `Move ${t.key || t.title}` : `Plan ${t.key || t.title} for someone`}">${planned ? icon('right') : icon('plus')}</button>` : other ? html`<span class="pl-else">${t.hidden ? 'Planned elsewhere' : `Planned by ${t.project_key}`}</span>` : ''}</div>
   </article>`;
 }
 function column(d, b) {

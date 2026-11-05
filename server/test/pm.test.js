@@ -254,3 +254,22 @@ test('a task moved to another project, or deleted, leaves the day; a removed sta
   const own = await env.ok('POST', '/api/tasks', { token: T('hira'), body: { title: 'Mine again', project_id: proj.id } });
   assert.ok(!(await one('hira', own.id)).approver.names.includes('Ali Subhan'));
 });
+
+test('a planner never sees what another project they can’t open planned; send and copy tell each person once', async () => {
+  const secret = await env.ok('POST', '/api/projects', { token: T('owner'), body: { name: 'Secret', key: 'SC', lead_id: ids.ali, member_ids: [ids.sara] } });
+  const st1 = await env.ok('POST', '/api/tasks', { token: T('ali'), body: { title: 'Confidential pitch', project_id: secret.id, assignee_id: ids.sara, estimate_min: 90 } });
+  await env.ok('POST', `/api/projects/${secret.id}/plan`, { token: T('ali'), body: { day: today, task_id: st1.id, user_id: ids.sara } });
+  await env.ok('POST', `/api/projects/${secret.id}/plan/send`, { token: T('ali'), body: { day: today } });
+  const b = await env.ok('GET', `/api/projects/${proj.id}/plan`, { token: T('hira') });
+  const x = b.people.find((p) => p.user_id === ids.sara).tasks.find((t) => t.id === st1.id);
+  assert.ok(x, 'the time it takes still shows');
+  assert.equal(x.title, null); assert.equal(x.key, null); assert.equal(x.hidden, true);
+  assert.ok(!JSON.stringify(b).includes('Confidential'));
+  // send: only open work counts
+  const before = (await notes('sara')).length;
+  const tomorrow = new Date(Date.parse(today) + 86400000).toISOString().slice(0, 10);
+  await env.ok('POST', `/api/projects/${proj.id}/plan/send`, { token: T('hira'), body: { day: tomorrow } });
+  await env.ok('POST', `/api/projects/${proj.id}/plan/copy`, { token: T('hira'), body: { day: new Date(Date.parse(today) + 2 * 86400000).toISOString().slice(0, 10) } });
+  const got = (await notes('sara')).slice(0, (await notes('sara')).length - before);
+  assert.ok(got.filter((n) => n.kind === 'task_plan').length <= 1, 'one notice for the sent day, none for an unsent copy');
+});

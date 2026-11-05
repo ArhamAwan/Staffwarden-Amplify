@@ -187,7 +187,12 @@ function nextStep(t, r) {
     text = t.project_id ? 'Anyone in the project can pick it up.' : '';
     if (t.project_id) acts.push(btn('tk-pickup', 'Assign to me', 'tk-pri'));
   } else if (t.status === 'in_review') {
-    if (r.approver && !r.mine) {
+    if (r.approver && !r.mine && t.review_mine === false) {
+      // the owner can step in, but isn't the one asked
+      tone = 'wait'; title = `${doer} sent it to ${ap} to check`;
+      text = `${ap} approves it. You can step in if it can’t wait.`;
+      acts.push(btn('tk-ask', 'Ask for changes'), btn('tk-approve', html`${I('check', 16, 2.6)}Approve it yourself`));
+    } else if (r.approver && !r.mine) {
       title = 'Your turn: check the work';
       text = `${doer} sent it${t.submitted_at ? ` ${relTime(t.submitted_at)}` : ''}. Look at the files below. Click a picture to leave a comment on it.`;
       acts.push(btn('tk-ask', 'Ask for changes', 'tk-warn'), btn('tk-approve', html`${I('check', 16, 2.6)}Approve`, 'tk-ok'));

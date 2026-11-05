@@ -114,6 +114,8 @@ module.exports = (ctx) => {
       };
       if (detail) {
         o.owner = (db.prepare("SELECT id, name FROM users WHERE role = 'owner' AND active = 1 ORDER BY id LIMIT 1").get()) || null;
+        // with no manager, who approves its work instead: the company's managers, the owner only if there are none
+        if (!o.lead) { const m = db.prepare("SELECT name FROM users WHERE role = 'manager' AND active = 1 ORDER BY name").all().map((r) => r.name); o.fallback = m.length ? m : o.owner ? [o.owner.name] : []; }
         o.workload = mem.map((m) => {
           const ts = mine.filter((t) => t.assignee_id === m.id);
           return { user_id: m.id, name: m.name, title: m.title, role: m.role, ...counts(ts, day), tracked_secs: tracked.perUser ? tracked.perUser.get(`${p.id}:${m.id}`) || 0 : 0 };

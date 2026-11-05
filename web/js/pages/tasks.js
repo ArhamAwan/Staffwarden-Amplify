@@ -149,7 +149,7 @@ document.addEventListener('drop', async (e) => {
 // Moving between columns follows the review rules: a manager dropping into Done approves, dropping a task
 // out of review sends it back (with a reason).
 async function moveTo(t, to, position) {
-  const reviewer = (t.can_manage ?? isMgr()) && t.assignee_id !== S.me.id;
+  const reviewer = !!t.can_approve && t.assignee_id !== S.me.id;
   if (t.status === 'in_review' && to === 'done' && reviewer) { await post(`/api/tasks/${t.id}/approve`); toast('Approved'); return; }
   if (t.status === 'in_review' && (to === 'in_progress' || to === 'todo') && reviewer) { await sendBack(t); return; }
   await patch(`/api/tasks/${t.id}`, { status: to, ...(position != null ? { position } : {}) });
@@ -263,7 +263,7 @@ export async function openTaskPanel(id) {
     const btn = (act, label, cls = '') => `<button class="btn ${cls}" data-tp="${act}">${label}</button>`;
     const out = [];
     if (t.assignee_id == null && t.project_id && t.status !== 'done') out.push(btn('pickup', 'Assign to me', 'primary'));
-    if (t.status === 'in_review' && t.can_manage && !t.is_mine) out.push(btn('approve', `${icon('check')} Approve`, 'primary'), btn('sendback', 'Send back'));
+    if (t.status === 'in_review' && t.can_approve && !t.is_mine) out.push(btn('approve', `${icon('check')} Approve`, t.review_mine === false ? '' : 'primary'), btn('sendback', 'Send back'));
     if (mine && t.status === 'todo') out.push(btn('status:in_progress', 'Start working'));
     if (mine && (t.status === 'todo' || t.status === 'in_progress')) {
       const personal = t.created_by === S.me.id;
