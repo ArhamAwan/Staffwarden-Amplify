@@ -78,6 +78,13 @@ module.exports = (ctx) => {
     inkCache.set(file, out);
     return out;
   };
+  // a signature or stamp with its paper taken out (also cleans ones saved before this was done well)
+  const inkCache2 = new Map();
+  const inkOnly = (file) => {
+    if (!file) return null;
+    if (!inkCache2.has(file)) { const img = picture(file); inkCache2.set(file, img ? PNG.removePaper(img) : null); }
+    return inkCache2.get(file);
+  };
   const logoInked = (c) => { const f = c.images.logo && c.images.logo.file; return !!(f && paperLogo(f) && paperLogo(f) !== picture(f)); };
   // what a document is made with: the details now, or the copy a month kept when it was approved
   const snapshot = () => { const c = current(); return { ...c, brand: c.brand || autoColour(c) || '', images: Object.fromEntries(Object.entries(c.images).map(([k, v]) => [k, { file: v.file, w: v.w, h: v.h }])) }; };
@@ -86,7 +93,7 @@ module.exports = (ctx) => {
     let c = null;
     if (saved) { try { c = JSON.parse(saved); } catch { c = null; } }
     c = c || snapshot();
-    return { ...c, brand: c.brand || '', name: c.name || cfg.orgName || '', legal: c.legal_name || c.name || cfg.orgName || '', pic: (slot) => (slot === 'logo' ? paperLogo(c.images && c.images.logo && c.images.logo.file) : picture(c.images && c.images[slot] && c.images[slot].file)) };
+    return { ...c, brand: c.brand || '', name: c.name || cfg.orgName || '', legal: c.legal_name || c.name || cfg.orgName || '', pic: (slot) => (slot === 'logo' ? paperLogo(c.images && c.images.logo && c.images.logo.file) : slot === 'signature' || slot === 'stamp' ? inkOnly(c.images && c.images[slot] && c.images[slot].file) : picture(c.images && c.images[slot] && c.images[slot].file)) };
   };
   ctx.companyPublic = () => { const c = current(); const origLight = !c.images.logo_light && logoInked(c) ? { url: `/api/company/images/logo?orig=1&v=${c.images.logo.file.slice(-16, -4)}`, w: c.images.logo.w, h: c.images.logo.h } : null; return { brand_now: c.brand || autoColour(c) || null, name: c.name, details: !!(c.address || c.ntn), logo: imgOut(c, 'logo', null), logo_light: imgOut(c, 'logo_light', null) || origLight, icon: imgOut(c, 'icon', null), brand: c.brand || null }; };
 
@@ -147,6 +154,10 @@ module.exports = (ctx) => {
     need(im, 404, 'Not found');
     const p = path.join(dir, path.basename(im.file));
     need(fs.existsSync(p), 404, 'Not found');
+    if (params.slot === 'signature' || params.slot === 'stamp') {
+      const ink = inkOnly(im.file);
+      if (ink) { if (!inkPng.has(`p:${im.file}`)) inkPng.set(`p:${im.file}`, PNG.encode(ink)); return { raw: inkPng.get(`p:${im.file}`), type: 'image/png', headers: { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' } }; }
+    }
     if (params.slot === 'logo' && query.get('orig') !== '1') {
       const pl = paperLogo(im.file);
       if (pl && pl !== picture(im.file)) {

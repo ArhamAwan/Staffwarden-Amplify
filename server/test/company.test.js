@@ -96,3 +96,13 @@ test('documents carry the logo and details; an approved month keeps the ones it 
   assert.equal(rm.images.logo, null);
   assert.match(await pdf(), /\/Subtype \/Image/, 'October kept its logo');
 });
+
+test('the paper comes out of a photographed signature, even grey paper in uneven light', () => {
+  const w = 120, h = 60, rgb = Buffer.alloc(w * h * 3);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const k = y * w + x, p = Math.round(205 - 50 * (x / w) - 35 * (y / h)); rgb.set([p, p - 4, p - 12], k * 3); }
+  for (let x = 10; x < 110; x++) for (let y = 28; y < 33; y++) rgb.set([35, 38, 70], (y * w + x) * 3);   // a stroke of ink
+  const out = PNG.removePaper({ w, h, rgb, alpha: null });
+  assert.equal(out.alpha[5 * w + 5], 0, 'light paper');
+  assert.equal(out.alpha[55 * w + 115], 0, 'paper in shadow');
+  assert.equal(out.alpha[30 * w + 60], 255, 'the ink');
+});

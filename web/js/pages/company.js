@@ -11,8 +11,8 @@ const SLOTS = {
   logo: ['Full logo', 'For payslips and certificates, on white. PNG, JPG or SVG.'],
   logo_light: ['Light version', 'Optional. For dark headers, like the client portal.'],
   icon: ['Small icon', 'Optional. A square mark for small spaces.'],
-  signature: ['Signature', 'A photo on white paper works. The paper is taken out.'],
-  stamp: ['Stamp', 'Optional. Placed beside the signature.'],
+  signature: ['Signature', 'A phone photo of it on paper works. The paper and its shadows are taken out.'],
+  stamp: ['Stamp', 'Optional. A photo of it stamped on paper; the paper is taken out.'],
 };
 const ok = icon('check');
 const authUrls = new Map();
@@ -60,7 +60,7 @@ const slotCard = (c, slot, { tall = false } = {}) => {
   const im = c.images[slot], [t, sub] = SLOTS[slot], dark = slot === 'logo_light';
   const id = `co-up-${slot}`;
   return html`<div class="co-lg ${im ? 'set' : ''}" data-k="co-${slot}">
-    <label class="co-well ${im ? (dark ? 'dark' : 'paper') : 'empty'} ${tall ? 'tall' : ''}" for="${id}">${im ? (im.url && !PRIVATE.has(slot) ? html`<img src="${im.url}" alt="${t}">` : html`<img data-co-auth="${slot}" alt="${t}" src="${authUrls.get(slot) || BLANK}">`) : html`${icon('up')}<span>${slot === 'icon' ? 'Add a square icon' : slot === 'stamp' ? 'Add the company stamp' : `Add the ${t.toLowerCase()}`}</span>`}</label>
+    <label class="co-well ${im ? (dark ? 'dark' : PRIVATE.has(slot) ? 'paper clear' : 'paper') : 'empty'} ${tall ? 'tall' : ''}" for="${id}">${im ? (im.url && !PRIVATE.has(slot) ? html`<img src="${im.url}" alt="${t}">` : html`<img data-co-auth="${slot}" alt="${t}" src="${authUrls.get(slot) || BLANK}">`) : html`${icon('up')}<span>${slot === 'icon' ? 'Add a square icon' : slot === 'stamp' ? 'Add the company stamp' : `Add the ${t.toLowerCase()}`}</span>`}</label>
     <input type="file" id="${id}" class="sr" accept="image/png,image/jpeg,image/svg+xml,image/webp" data-co-file="${slot}">
     <b>${t}</b><small>${slot === 'logo' && c.logo_inked ? 'Its white parts are printed in dark ink, so they show on white paper.' : sub}</small>
     <div class="co-acts"><label for="${id}" class="linkbtn">${im ? 'Replace' : 'Upload'}</label>${im ? html`<button type="button" class="linkbtn danger" data-act="co-img-rm" data-slot="${slot}" data-label="${t}">Remove</button>` : ''}</div></div>`;
@@ -174,6 +174,21 @@ export async function companyAfter(view, c) {
 
 // a picked picture: drawn onto a canvas (any format, sized down), the paper taken out of a signature or
 // stamp, the empty edges trimmed, and sent as PNG
+// the paper out of a photographed signature or stamp: its brightness is measured in each part of the
+// picture (grey paper, uneven light, shadows), and only what is clearly darker or coloured is kept
+function removePaper(d, w, h) {
+  const n = w * h, L = new Float32Array(n), S = new Float32Array(n);
+  for (let k = 0; k < n; k++) { const i = k * 4; L[k] = d[i + 3] < 20 ? 255 : 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; S[k] = d[i + 3] < 20 ? 0 : Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]); }
+  const cs = Math.max(12, Math.round(Math.min(w, h) / 6)), gx = Math.ceil(w / cs), gy = Math.ceil(h / cs), bg = new Float32Array(gx * gy);
+  for (let cy = 0; cy < gy; cy++) for (let cx = 0; cx < gx; cx++) { const v = []; for (let y = cy * cs; y < Math.min(h, (cy + 1) * cs); y += 2) for (let x = cx * cs; x < Math.min(w, (cx + 1) * cs); x += 2) v.push(L[y * w + x]); v.sort((a, b) => a - b); bg[cy * gx + cx] = v.length ? v[Math.floor(v.length * 0.8)] : 255; }
+  const at = (x, y) => bg[Math.min(gy - 1, Math.max(0, y)) * gx + Math.min(gx - 1, Math.max(0, x))];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const fx = x / cs - 0.5, fy = y / cs - 0.5, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+    const paper = (at(x0, y0) * (1 - tx) + at(x0 + 1, y0) * tx) * (1 - ty) + (at(x0, y0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1) * tx) * ty;
+    const k = y * w + x, ink = Math.max(paper - L[k], S[k] * 0.9 - 25);
+    d[k * 4 + 3] = Math.round(Math.max(0, Math.min(1, (ink - 22) / 40)) * d[k * 4 + 3]);
+  }
+}
 async function toPng(file, slot) {
   const url = URL.createObjectURL(file);
   try {
@@ -184,10 +199,7 @@ async function toPng(file, slot) {
     const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
     const g = cv.getContext('2d'); g.drawImage(img, 0, 0, w, h);
     const id = g.getImageData(0, 0, w, h), d = id.data;
-    if (slot === 'signature' || slot === 'stamp') {
-      for (let i = 0; i < d.length; i += 4) { const l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; if (l > 215) d[i + 3] = 0; else if (l > 160) d[i + 3] = Math.round(d[i + 3] * (215 - l) / 55); }
-      g.putImageData(id, 0, 0);
-    }
+    if (slot === 'signature' || slot === 'stamp') { removePaper(d, w, h); g.putImageData(id, 0, 0); }
     // a see-through logo with white parts was made for dark backgrounds: on white paper those parts vanish
     let see = 0, solid = 0, white = 0;
     for (let i = 0; i < d.length; i += 4) { if (d[i + 3] < 250) see++; if (d[i + 3] > 200) { solid++; if (d[i] > 235 && d[i + 1] > 235 && d[i + 2] > 235) white++; } }

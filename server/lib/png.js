@@ -82,3 +82,30 @@ function inked(img) {
 module.exports.encode = encode;
 module.exports.whiteParts = whiteParts;
 module.exports.inked = inked;
+// takes the paper out of a photographed signature or stamp: the paper's brightness is measured in each
+// part of the picture (so grey paper, uneven light and shadows all go), and only what is clearly darker or
+// coloured than the paper around it is kept, softly at its edges. Already see-through parts stay so.
+function removePaper(img) {
+  const { w, h } = img, n = w * h, L = new Float32Array(n), S = new Float32Array(n);
+  for (let k = 0; k < n; k++) {
+    const a = img.alpha ? img.alpha[k] : 255, r = img.rgb[k * 3], g = img.rgb[k * 3 + 1], b = img.rgb[k * 3 + 2];
+    L[k] = a < 20 ? 255 : 0.299 * r + 0.587 * g + 0.114 * b; S[k] = a < 20 ? 0 : Math.max(r, g, b) - Math.min(r, g, b);
+  }
+  const cs = Math.max(12, Math.round(Math.min(w, h) / 6)), gx = Math.ceil(w / cs), gy = Math.ceil(h / cs), bg = new Float32Array(gx * gy);
+  for (let cy = 0; cy < gy; cy++) for (let cx = 0; cx < gx; cx++) {
+    const v = [];
+    for (let y = cy * cs; y < Math.min(h, (cy + 1) * cs); y += 2) for (let x = cx * cs; x < Math.min(w, (cx + 1) * cs); x += 2) v.push(L[y * w + x]);
+    v.sort((a, b) => a - b); bg[cy * gx + cx] = v.length ? v[Math.floor(v.length * 0.8)] : 255;
+  }
+  const at = (x, y) => bg[Math.min(gy - 1, Math.max(0, y)) * gx + Math.min(gx - 1, Math.max(0, x))];
+  const alpha = Buffer.alloc(n);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const fx = x / cs - 0.5, fy = y / cs - 0.5, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+    const paper = (at(x0, y0) * (1 - tx) + at(x0 + 1, y0) * tx) * (1 - ty) + (at(x0, y0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1) * tx) * ty;
+    const k = y * w + x, ink = Math.max(paper - L[k], S[k] * 0.9 - 25);
+    const a = Math.max(0, Math.min(1, (ink - 22) / 40));
+    alpha[k] = Math.round(a * (img.alpha ? img.alpha[k] : 255));
+  }
+  return { ...img, alpha };
+}
+module.exports.removePaper = removePaper;
