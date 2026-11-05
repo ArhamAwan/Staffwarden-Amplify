@@ -377,3 +377,19 @@
   .tk-busy::before{animation:tkSpin 1.4s linear infinite !important}
 }
 .tk-saveas{white-space:nowrap}.tk-inas{white-space:nowrap}@media (max-width:760px){.tk-saveas span{display:none}}
+/* the details: one strip of equal cells with hairlines between them, instead of a row of loose pills */
+.tkp .tk-metaw{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.tkp .tk-meta{align-self:stretch;display:flex;flex-wrap:wrap;gap:0;border:1px solid rgba(255,255,255,.1);border-radius:16px;background:rgba(255,255,255,.035);overflow:hidden}
+.tkp .tk-meta>.tk-chip{flex:1 1 190px;min-width:0;min-height:60px;margin:0;padding:10px 16px;border:0;border-radius:0;background:transparent;box-shadow:-1px 0 0 rgba(255,255,255,.09),0 -1px 0 rgba(255,255,255,.09)}
+.tkp .tk-meta>.tk-chip:not(.tk-flat):hover{background:rgba(255,255,255,.05)}
+.tkp .tk-meta>.tk-chip:focus-within{box-shadow:inset 0 0 0 2px rgba(155,123,255,.7)}
+.tkp .tk-meta>.tk-chip .tk-l{min-width:0}
+.tkp .tk-meta>.tk-chip b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
+.tkp .tk-meta>.tk-chip small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.tkp .tk-meta>.tk-chip .avatar,.tkp .tk-meta>.tk-chip .av{flex:none}
+.tkp .tk-meta>.tk-chip.tk-amber{background:rgba(247,181,68,.08)}
+.tkp .tk-metaw>.tk-morebtn{height:auto;min-height:32px;padding:0 4px;border:0;border-radius:8px;background:none;color:#C9BBFF;font-size:13px}
+.tkp .tk-metaw>.tk-morebtn:hover{color:#fff}
+.tkp .tk-metaw>.tk-morebtn svg{transition:transform .2s ease}
+@media (max-width:760px){.tkp .tk-meta>.tk-chip{flex-basis:150px}}
+.tkp .tk-meta>.tk-chip:not(.tk-np){flex:1.5 1 250px}

@@ -226,11 +226,11 @@ function chips(t, r) {
   const people = (S.people || []);
   // doing it
   out.push(r.manage
-    ? html`<label class="tk-chip">${t.assignee ? av(t.assignee_id, t.assignee, false) : ''}<span class="tk-l"><small>Doing it</small><b>${t.assignee || 'Nobody yet'}</b></span><select data-tf="assignee_id" aria-label="Who is doing it">${raw(assigneeOptions(t.project_id, cur.projects, t.assignee_id))}</select></label>`
-    : html`<span class="tk-chip tk-flat">${t.assignee ? av(t.assignee_id, t.assignee, false) : ''}<span class="tk-l"><small>Doing it</small><b>${t.assignee || 'Nobody yet'}</b></span></span>`);
+    ? html`<label class="tk-chip">${t.assignee ? av(t.assignee_id, t.assignee, false) : ''}<span class="tk-l"><small>Doing it</small><b title="${t.assignee || ''}">${t.assignee || 'Nobody yet'}</b></span><select data-tf="assignee_id" aria-label="Who is doing it">${raw(assigneeOptions(t.project_id, cur.projects, t.assignee_id))}</select></label>`
+    : html`<span class="tk-chip tk-flat">${t.assignee ? av(t.assignee_id, t.assignee, false) : ''}<span class="tk-l"><small>Doing it</small><b title="${t.assignee || ''}">${t.assignee || 'Nobody yet'}</b></span></span>`);
   void people;
   // who approves
-  if (t.needs_review) out.push(html`<span class="tk-chip tk-flat">${t.approver.ids[0] ? av(t.approver.ids[0], t.approver.names[0], false) : ''}<span class="tk-l"><small>Approves${t.approver.why === 'project lead' ? ' · project lead' : ''}</small><b>${approverName(t)}</b></span></span>`);
+  if (t.needs_review) out.push(html`<span class="tk-chip tk-flat">${t.approver.ids[0] ? av(t.approver.ids[0], t.approver.names[0], false) : ''}<span class="tk-l"><small>Approves${t.approver.why === 'project lead' ? ' · project lead' : ''}</small><b title="${approverName(t)}">${t.approver.names.length > 1 ? t.approver.names.map((n) => n.split(' ')[0]).join(' or ') : approverName(t)}</b></span></span>`);
   else out.push(html`<span class="tk-chip tk-np tk-flat"><span class="tk-l"><small>Approval</small><b>Not needed</b></span></span>`);
   // waiting for the approver
   // due
@@ -254,11 +254,11 @@ function chips(t, r) {
   if ((t.milestone_id || ui.shown.has('milestone')) && t.milestones.length) out.push(r.change
     ? html`<label class="tk-chip tk-np"><span class="tk-l"><small>Milestone</small><b>${(t.milestones.find((m) => m.id === t.milestone_id) || {}).title || 'None'}</b></span><select data-tf="milestone_id" aria-label="Milestone"><option value="">None</option>${t.milestones.map((m) => html`<option value="${m.id}" ${raw(m.id === t.milestone_id ? 'selected' : '')}>${m.title}</option>`)}</select></label>`
     : html`<span class="tk-chip tk-np tk-flat"><span class="tk-l"><small>Milestone</small><b>${(t.milestones.find((m) => m.id === t.milestone_id) || {}).title || 'None'}</b></span></span>`);
-  if (t.client) out.push(html`<span class="tk-chip tk-np tk-flat"><span class="tk-l"><small>Client</small><b>${t.client_sees ? `${t.client} sees this task` : 'Team only'}</b></span></span>`);
+  if (t.client) out.push(html`<span class="tk-chip tk-np tk-flat"><span class="tk-l"><small>${t.client}</small><b>${t.client_sees ? 'Can see this task' : 'Doesn’t see it'}</b></span></span>`);
   // the rest waits behind one button, so the top of the page stays short
   const extra = out.slice(keep);
   const open = ui.more || matchMedia('(max-width: 760px)').matches;
-  return html`<div class="tk-meta tk-md">${out.slice(0, keep)}${open ? extra : ''}${extra.length && !matchMedia('(max-width: 760px)').matches ? html`<button type="button" class="tk-morebtn" data-act="tk-moredet" aria-expanded="${String(!!ui.more)}">${ui.more ? 'Fewer details' : `More details`}${I('chev', 14, 2.4)}</button>` : ''}</div>`;
+  return html`<div class="tk-metaw"><div class="tk-meta tk-md">${out.slice(0, keep)}${open ? extra : ''}</div>${extra.length && !matchMedia('(max-width: 760px)').matches ? html`<button type="button" class="tk-morebtn" data-act="tk-moredet" aria-expanded="${String(!!ui.more)}">${ui.more ? 'Fewer details' : `${extra.length} more details`}${I('chev', 14, 2.4)}</button>` : ''}</div>`;
 }
 
 function moreMenu(t, r) {
