@@ -410,7 +410,7 @@ function paintClock() {
   const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
   const start = c.first_start ? new Date(c.first_start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).replace(':00', '') : '';
   el.className = 'rail-clock' + (c.state === 'break' ? ' brk' : '');
-  el.querySelector('.rc-t').innerHTML = c.state === 'break' ? '<b>On a break</b>' : `<b>On the clock</b>${start ? ' since ' + esc(start) : ''}`;
+  el.querySelector('.rc-t').innerHTML = c.state === 'break' ? `<b>On a break</b>${start ? `<small>since ${esc(start)}</small>` : ''}` : `<b>On the clock</b>${start ? `<small>since ${esc(start)}</small>` : ''}`;
   el.querySelector('.rc-v').textContent = `${h}h ${String(m).padStart(2, '0')}m`;
 }
 setInterval(paintClock, 30000);
