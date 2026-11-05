@@ -1,7 +1,7 @@
 // An employee's own pay: payslips (every line says where it came from, and each can be asked about),
 // this tax year, expense claims, an advance, and the yearly salary and tax certificate.
 import { html, raw, esc, icon, money, periodLabel, dayShort, dateY, dayMD, relTime, plural, addMonths } from '../util.js';
-import { get, post, del, qs, fileBase64, fileUrl } from '../api.js';
+import { get, post, del, qs, fileBase64, fileUrl, download } from '../api.js';
 import { S, actions, tag, empty, openModal, confirmBox, toast, errMsg } from '../ui.js';
 import { myToday } from '../parts.js';
 import { qAttr } from '../ui.js';
@@ -59,7 +59,7 @@ export default {
   render({ me, slip, expenses, cert, tab }) {
     const tabs = [['slips', 'Payslips'], ['expenses', 'Expenses'], ['advance', 'Advance'], ['certificate', 'Tax certificate']];
     const head = html`<div class="page-h"><div><h1>Your pay</h1><p class="sub">${me.base ? `${money(me.base.amount, me.base.currency)} a month${me.bank ? ` · paid to ${me.bank.name || 'your bank'} ••• ${me.bank.last4}` : ''}` : 'Every line says where it came from'}</p></div>
-      <div class="tools">${tab === 'expenses' ? html`<button class="btn primary" data-act="exp-new">${icon('plus')} New expense</button>` : tab === 'advance' ? (me.advances.some((a) => a.status === 'pending' || a.status === 'approved') ? '' : html`<button class="btn primary" data-act="adv-new">Ask for an advance</button>`) : tab === 'certificate' && cert && cert.months ? html`<button class="btn primary" data-act="print">${icon('printer')} Save as PDF</button>` : slip ? html`<button class="btn" data-act="print">${icon('printer')} Save as PDF</button>` : ''}</div>
+      <div class="tools">${tab === 'expenses' ? html`<button class="btn primary" data-act="exp-new">${icon('plus')} New expense</button>` : tab === 'advance' ? (me.advances.some((a) => a.status === 'pending' || a.status === 'approved') ? '' : html`<button class="btn primary" data-act="adv-new">Ask for an advance</button>`) : tab === 'certificate' && cert && cert.months ? html`<button class="btn primary" data-act="pay-pdf" data-url="/api/me/certificate.pdf?tax_year=${cert.tax_year}" data-name="tax-certificate-${cert.tax_year}.pdf">${icon('download')} Download PDF</button>` : slip ? html`<button class="btn" data-act="pay-pdf" data-url="/api/payroll/slips/${slip.id}/pdf" data-name="payslip-${slip.run ? slip.run.period : slip.id}.pdf">${icon('download')} Download PDF</button>` : ''}</div>
       <nav class="tabs" aria-label="Pay">${tabs.map(([v, n]) => html`<button type="button" class="tab" data-act="q" ${raw(qAttr('tab', v === 'slips' ? '' : v))} aria-current="${tab === v ? 'page' : 'false'}">${n}</button>`)}</nav></div>`;
     if (tab === 'expenses') return html`${head}${expensesView(expenses)}`;
     if (tab === 'advance') return html`${head}${advanceView(me)}`;
@@ -112,7 +112,7 @@ function certView(c) {
     <div class="cert-h"><div class="cert-org"><span class="mark-sm">${esc(c.company)}</span></div><div class="muted small r">Issued ${dayShort(c.issued)}</div></div>
     <h2 class="cert-t">Salary and tax certificate</h2><p class="muted">Tax year ${c.tax_year}: July 1, ${c.tax_year - 1} to June 30, ${c.tax_year}</p>
     <dl class="cert-who"><dt>Name</dt><dd>${c.person.name}</dd><dt>Job title</dt><dd>${c.person.title || '–'}</dd><dt>Employed since</dt><dd>${c.person.joined ? dateY(c.person.joined) : '–'}</dd><dt>Months paid</dt><dd>${c.months}</dd></dl>
-    ${row('Salary', c.salary)}${row('Allowances', c.allowances)}${row('Commission, bonuses and other pay', c.extra)}${row('Total pay', c.total, true)}${row('Income tax taken from pay', c.tax)}${c.eobi ? row('EOBI, employee share', c.eobi) : ''}${row('Net pay', c.net, true)}
+    ${row('Salary', c.salary)}${row('Allowances', c.allowances)}${row('Commission, bonuses and other pay', c.extra)}${row('Total pay', c.total, true)}${row('Income tax taken from pay', c.tax)}${c.eobi ? row('EOBI, employee share', c.eobi) : ''}${c.other ? row('Advances and other deductions', c.other) : ''}${c.expenses ? row('Expenses paid back, not taxed', c.expenses) : ''}${row('Net pay', c.net, true)}
     <p class="small muted mt">Made from ${esc(c.company)}’s payroll records in Staffwarden. Income tax was taken from salary each month.</p>
     <div class="cert-sign"><span>Authorised signature</span></div></div></section>
     <p class="small muted noprint">Other years: ${[c.tax_year - 1, c.tax_year + 1].map((y) => html`<a href="#/pay?tab=certificate&year=${y}">Tax year ${y}</a>`).reduce((a, b) => html`${a} · ${b}`)}</p>`;
@@ -120,6 +120,8 @@ function certView(c) {
 
 // ---- actions ----
 actions.print = () => window.print();
+// a real PDF from the server: works in Safari and on phones, where print() often does nothing
+actions['pay-pdf'] = async (el) => { el.disabled = true; try { await download(el.dataset.url, el.dataset.name); } catch (e) { toast(errMsg(e), true); } finally { el.disabled = false; } };
 actions['pay-ask'] = (el) => {
   openModal({
     title: `Ask about “${el.dataset.line}”`, submit: 'Send to HR', sub: 'HR answers before the month is approved, and you are told when they do.',

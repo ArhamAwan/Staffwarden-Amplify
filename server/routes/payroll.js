@@ -5,6 +5,7 @@
 // fixed with a correction on the next month, so the record always shows what was paid.
 const { need, str, optStr, int, isoDate } = require('../lib/http');
 const X = require('../lib/xlsx');
+const { Pdf, PAGE_W } = require('../lib/pdf');
 
 module.exports = (ctx) => {
   const { db, cfg, route, emit, audit, isHR, needHR, nowIso, T, saveSetting } = ctx;
@@ -464,10 +465,11 @@ module.exports = (ctx) => {
     const advances = db.prepare('SELECT * FROM advances WHERE user_id = ? ORDER BY id DESC LIMIT 10').all(user.id).map((a) => ({ ...a, installment: Math.ceil(a.amount / a.months), currency: setup ? setup.currency : 'PKR', decided_name: nameOf(a.decided_by) }));
     return { slips, year, base: setup ? { amount: setup.base, currency: setup.currency } : null, bank: rec && rec.iban ? { name: rec.bank_name, last4: String(rec.iban).replace(/\s/g, '').slice(-4) } : null, advances };
   });
-  route('GET', '/api/me/certificate', ({ user, query }) => {
+  route('GET', '/api/me/certificate', ({ user, query }) => certOf(user, query));
+  function certOf(user, query) {
     const ty = Number(query.get('tax_year')) || taxYearOf(ctx.calc.companyToday().slice(0, 7)) - 1;
     const slips = db.prepare("SELECT p.*, r.period FROM payslips p JOIN pay_runs r ON r.id = p.run_id WHERE p.user_id = ? AND r.status IN ('approved','paid') AND r.period >= ? AND r.period <= ? ORDER BY r.period").all(user.id, `${ty - 1}-07`, `${ty}-06`);
-    const out = { tax_year: ty, from: `${ty - 1}-07-01`, to: `${ty}-06-30`, salary: 0, allowances: 0, extra: 0, deductions: 0, tax: 0, eobi: 0, net: 0, months: slips.length, currency: slips[0] ? slips[0].currency : 'PKR' };
+    const out = { tax_year: ty, from: `${ty - 1}-07-01`, to: `${ty}-06-30`, salary: 0, allowances: 0, extra: 0, deductions: 0, tax: 0, eobi: 0, other: 0, expenses: 0, net: 0, months: slips.length, currency: slips[0] ? slips[0].currency : 'PKR' };
     for (const s of slips) {
       for (const l of JSON.parse(s.lines)) {
         if (!l.counted) continue;
@@ -475,11 +477,81 @@ module.exports = (ctx) => {
         else if (['commission', 'bonus', 'correction', 'leaving'].includes(l.kind) || l.key === 'overtime') out.extra += l.amount;
         else if (l.key === 'eobi') out.eobi += -l.amount;
         else if (l.kind === 'attendance') out.salary += l.amount;
+        // so the certificate adds up: expenses paid back, and advances and other deductions taken off
+        else if (l.kind === 'expense') out.expenses += l.amount;
+        else if (l.amount < 0) out.other += -l.amount;
       }
       out.tax += s.tax; out.net += s.net;
     }
     const rec = P().recordOf(user.id);
     return { ...out, total: out.salary + out.allowances + out.extra, person: { name: user.name, title: user.title || null, joined: P().localJoin(user, rec) }, company: cfg.orgName, issued: ctx.calc.companyToday() };
+  }
+
+  // ---- PDFs: a real file, so saving works in every browser (Safari and phones included), not print() ----
+  const L = 56, R = PAGE_W - 56, INK = '#16123A', MUTED = '#6B6890', HAIR = '#E4E2F0', ACCENT = '#6B4FE0';
+  const pdfHead = (doc, left, sub, right, rightSub) => {
+    doc.rect(0, 0, PAGE_W, 118, { fill: INK });
+    doc.rect(0, 118, PAGE_W, 4, { fill: ACCENT });
+    doc.text(L, 54, left, { size: 18, bold: true, color: '#FFFFFF', maxW: 300 });
+    doc.text(L, 80, sub, { size: 11, color: '#C9C4E8', maxW: 300 });
+    doc.text(R, 54, right, { size: 14, bold: true, color: '#FFFFFF', align: 'right' });
+    if (rightSub) doc.text(R, 80, rightSub, { size: 10, color: '#C9C4E8', align: 'right' });
+  };
+  const pdfOut = (doc, title, filename) => ({ raw: doc.toBuffer({ title, author: cfg.orgName || 'Staffwarden' }), type: 'application/pdf', headers: { 'Content-Disposition': `attachment; filename="${filename}"`, 'Cache-Control': 'private, no-store' } });
+  const safeName = (n) => String(n || 'payslip').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
+
+  route('GET', '/api/payroll/slips/:id/pdf', ({ user, params }) => {
+    const { s, r } = loadSlip(user, params.id);
+    const o = slipOut(s), cur = o.currency, m = (n) => P().fmtMoney(n, cur);
+    const rec = P().recordOf(s.user_id);
+    const doc = new Pdf();
+    pdfHead(doc, cfg.orgName || 'Payslip', 'Payslip', P().periodName(r.period), o.paid_on ? `Paid ${T.human(o.paid_on).replace(/^\w+, /, '')}` : `Paid ${T.human(payDay(r.period)).replace(/^\w+, /, '')} to ${T.human(payBy(r.period)).replace(/^\w+, /, '')}`);
+    let y = 160;
+    doc.text(L, y, o.name || '', { size: 15, bold: true, color: INK });
+    if (o.title) doc.text(L, y + 18, o.title, { size: 10.5, color: MUTED });
+    if (rec && rec.iban) doc.text(R, y, `${rec.bank_name || 'Bank'} ... ${String(rec.iban).replace(/\s/g, '').slice(-4)}`, { size: 10.5, color: MUTED, align: 'right' });
+    y += 54;
+    // the four numbers
+    const cols = [['Gross pay', o.gross], ['Income tax', o.tax], ['Deductions', o.deductions], ['Net pay', o.net]], cw = (R - L) / 4;
+    doc.rect(L, y - 16, R - L, 58, { fill: '#F4F2FB' });
+    cols.forEach(([k, v], i) => { doc.text(L + 14 + i * cw, y, k, { size: 9.5, color: MUTED }); doc.text(L + 14 + i * cw, y + 22, m(v), { size: 13, bold: true, color: i === 3 ? ACCENT : INK }); });
+    y += 74;
+    doc.text(L, y, 'Line', { size: 9.5, bold: true, color: MUTED }); doc.text(R, y, 'Amount', { size: 9.5, bold: true, color: MUTED, align: 'right' }); y += 9;
+    doc.line(L, y, R, y, { color: '#CFCBE3' }); y += 20;
+    const row = (label, amount, note, { off = false, color = INK } = {}) => {
+      if (y > 760) { doc.page(); y = 60; }
+      doc.text(L, y, label, { size: 11, bold: true, color: off ? MUTED : INK, maxW: R - L - 120 });
+      doc.text(R, y, off ? `(${amount < 0 ? '- ' : ''}${m(amount)}) not counted` : `${amount < 0 ? '- ' : ''}${m(amount)}`, { size: 11, bold: true, color: off ? MUTED : color, align: 'right' });
+      if (note) { y += 15; doc.text(L, y, note, { size: 9.5, color: MUTED, maxW: R - L - 20 }); }
+      y += 12; doc.line(L, y, R, y, { color: HAIR }); y += 20;
+    };
+    for (const l of o.lines) row(l.label, l.amount, l.removed ? `Removed by ${l.removed.by}: ${l.removed.reason}` : l.source, { off: !l.counted, color: l.amount < 0 ? '#B4442E' : INK });
+    row('Income tax', -o.tax, o.facts.tax_note, { color: '#B4442E' });
+    y += 4; doc.rect(L, y - 2, R - L, 2, { fill: INK }); y += 26;
+    doc.text(L, y, 'Net pay', { size: 14, bold: true, color: INK }); doc.text(R, y, m(o.net), { size: 18, bold: true, color: ACCENT, align: 'right' }); y += 34;
+    if (o.employer && o.employer.length) { y = doc.para(L, y, `Paid by ${cfg.orgName} for you, not from your pay: ${o.employer.map((e) => `${e.label} ${m(e.amount)}`).join(', ')}.`, { size: 9.5, maxW: R - L, color: MUTED }) + 6; }
+    doc.para(L, Math.max(y, 770), `Made from the payroll of ${cfg.orgName} in Staffwarden on ${T.human(ctx.calc.companyToday())}. Every line says where it came from.`, { size: 8.5, maxW: R - L, color: MUTED });
+    if (isHR(user) && s.user_id !== user.id) audit(user, 'payroll.slip_viewed', s.user_id, `${r.period} (PDF)`);
+    return pdfOut(doc, `${o.name} payslip ${P().periodName(r.period)}`, `payslip-${safeName(o.name)}-${r.period}.pdf`);
+  });
+
+  route('GET', '/api/me/certificate.pdf', ({ user, query }) => {
+    const c = certOf(user, query), m = (n) => P().fmtMoney(n, c.currency);
+    need(c.months, 404, 'No approved payslips in that tax year yet');
+    const doc = new Pdf();
+    pdfHead(doc, c.company || 'Certificate', 'Salary and tax certificate', `Tax year ${c.tax_year}`, `July 1, ${c.tax_year - 1} to June 30, ${c.tax_year}`);
+    let y = 166;
+    const longDay = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    const kv = [['Name', c.person.name], ['Job title', c.person.title || '-'], ['Employed since', c.person.joined ? longDay(c.person.joined) : '-'], ['Months paid', String(c.months)]];
+    for (const [k, v] of kv) { doc.text(L, y, k, { size: 10, color: MUTED }); doc.text(L + 130, y, v, { size: 11, bold: true, color: INK, maxW: R - L - 130 }); y += 22; }
+    y += 18;
+    const row = (k, v, strong) => { if (strong) doc.rect(L, y - 15, R - L, 26, { fill: '#F4F2FB' }); doc.text(L + 10, y, k, { size: 11, bold: !!strong, color: INK }); doc.text(R - 10, y, m(v), { size: strong ? 12.5 : 11, bold: true, color: strong ? ACCENT : INK, align: 'right' }); y += 12; if (!strong) doc.line(L, y, R, y, { color: HAIR }); y += 20; };
+    row('Salary', c.salary); row('Allowances', c.allowances); row('Commission, bonuses and other pay', c.extra); row('Total pay', c.total, true);
+    row('Income tax taken from pay', c.tax); if (c.eobi) row('EOBI, employee share', c.eobi); if (c.other) row('Advances and other deductions', c.other); if (c.expenses) row('Expenses paid back, not taxed', c.expenses); row('Net pay', c.net, true);
+    y += 10;
+    y = doc.para(L, y, `Made from the payroll records of ${c.company} in Staffwarden. Income tax was taken from salary each month. Issued ${longDay(c.issued)}.`, { size: 9.5, maxW: R - L, color: MUTED });
+    y += 60; doc.line(L, y, L + 200, y, { color: '#9C98B8' }); doc.text(L, y + 16, 'Authorised signature', { size: 9.5, color: MUTED });
+    return pdfOut(doc, `Salary and tax certificate ${c.tax_year}`, `tax-certificate-${safeName(user.name)}-${c.tax_year}.pdf`);
   });
 
   // ---- rules ----

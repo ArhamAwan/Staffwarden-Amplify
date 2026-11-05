@@ -124,3 +124,21 @@ test('reopening an approved month unmarks anyone paid and lets it be changed', a
   assert.equal(r.run.status, 'review');
   assert.equal(r.run.paid_count, 0);
 });
+
+test('a payslip and the tax certificate download as real PDFs, only for the person or HR', async () => {
+  const { ok, api, tokens } = env;
+  const oct = (await ok('GET', '/api/payroll', { token: tokens.owner })).runs.find((r) => r.period === '2026-10');
+  await ok('POST', `/api/payroll/runs/${oct.id}/approve`, { token: tokens.owner });
+  const slip = (await ok('GET', `/api/payroll/runs/${oct.id}`, { token: tokens.owner })).slips.find((s) => s.user_id === sara.id);
+  const r = await api('GET', `/api/payroll/slips/${slip.id}/pdf`, { token: tokens.sara, raw: true });
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get('content-type'), 'application/pdf');
+  assert.match(r.headers.get('content-disposition'), /attachment; filename="payslip-sara-khan-2026-10\.pdf"/);
+  assert.equal(r.data.slice(0, 5).toString('latin1'), '%PDF-');
+  assert.equal((await api('GET', `/api/payroll/slips/${slip.id}/pdf`, { token: tokens.zara, raw: true })).status, 404, 'not someone else');
+  assert.equal((await api('GET', `/api/payroll/slips/${slip.id}/pdf`, { token: tokens.owner, raw: true })).status, 200, 'HR or the owner');
+  const c = await api('GET', '/api/me/certificate.pdf?tax_year=2027', { token: tokens.sara, raw: true });
+  assert.equal(c.status, 200);
+  assert.equal(c.data.slice(0, 5).toString('latin1'), '%PDF-');
+  assert.equal((await api('GET', '/api/me/certificate.pdf?tax_year=2020', { token: tokens.sara, raw: true })).status, 404);
+});
