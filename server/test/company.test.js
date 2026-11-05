@@ -111,6 +111,12 @@ test('a small, faint signature is enlarged with smooth edges and full-strength i
   const w = 40, h = 20, rgb = Buffer.alloc(w * h * 3, 0), alpha = Buffer.alloc(w * h, 0);
   for (let x = 5; x < 35; x++) { const k = 10 * w + x; rgb.set([90, 180, 220], k * 3); alpha[k] = 90; }
   const out = PNG.cleanInk({ w, h, rgb, alpha });
+  assert.equal(out.w, w * 8, 'enlarged (up to 8 times)');
+  const k = 83 * out.w + Math.floor(out.w / 2);
+  assert.equal(out.alpha[k], 255, 'the faint stroke is solid');
+  assert.equal(out.alpha[20 * out.w + Math.floor(out.w / 2)], 0, 'nothing around it');
+  assert.ok(0.299 * out.rgb[k * 3] + 0.587 * out.rgb[k * 3 + 1] + 0.114 * out.rgb[k * 3 + 2] <= 86, 'the ink is deep enough to read');
+});
   assert.ok(out.w >= 800, 'enlarged');
   assert.equal(out.alpha[(10 * (out.h / h) + Math.floor(out.h / h / 2)) * out.w + Math.floor(out.w / 2)], 255, 'the stroke is solid');
   const k = (10 * (out.h / h)) * out.w + Math.floor(out.w / 2);
