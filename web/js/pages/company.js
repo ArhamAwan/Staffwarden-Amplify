@@ -188,15 +188,22 @@ async function toPng(file, slot) {
       for (let i = 0; i < d.length; i += 4) { const l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; if (l > 215) d[i + 3] = 0; else if (l > 160) d[i + 3] = Math.round(d[i + 3] * (215 - l) / 55); }
       g.putImageData(id, 0, 0);
     }
-    // trim see-through (and, for a logo, plain white) edges
-    const empty = (i) => d[i + 3] < 12 || ((slot === 'logo' || slot === 'icon') && d[i] > 248 && d[i + 1] > 248 && d[i + 2] > 248);
+    // a see-through logo with white parts was made for dark backgrounds: on white paper those parts vanish
+    let see = 0, solid = 0, white = 0;
+    for (let i = 0; i < d.length; i += 4) { if (d[i + 3] < 250) see++; if (d[i + 3] > 200) { solid++; if (d[i] > 235 && d[i + 1] > 235 && d[i + 2] > 235) white++; } }
+    const clear = see > (w * h) * 0.05;
+    const whiteParts = clear && solid > 0 && white / solid > 0.06;
+    // trim see-through edges, and plain white ones on a logo with a white background
+    const empty = (i) => d[i + 3] < 12 || ((slot === 'logo' || slot === 'icon') && !clear && d[i] > 248 && d[i + 1] > 248 && d[i + 2] > 248);
     let x0 = w, y0 = h, x1 = -1, y1 = -1;
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (!empty((y * w + x) * 4)) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
     if (x1 < 0) throw new Error('That picture looks empty');
     const pad = 4, tw = Math.min(w, x1 - x0 + 1 + pad * 2), th = Math.min(h, y1 - y0 + 1 + pad * 2);
     const out = document.createElement('canvas'); out.width = tw; out.height = th;
     out.getContext('2d').drawImage(cv, Math.max(0, x0 - pad), Math.max(0, y0 - pad), tw, th, 0, 0, tw, th);
-    return await new Promise((resolve, reject) => out.toBlob((b) => (b ? resolve(b) : reject(new Error('That picture can’t be read'))), 'image/png'));
+    const blob = await new Promise((resolve, reject) => out.toBlob((b) => (b ? resolve(b) : reject(new Error('That picture can’t be read'))), 'image/png'));
+    blob.whiteParts = whiteParts;
+    return blob;
   } finally { URL.revokeObjectURL(url); }
 }
 async function uploadPick(input) {
@@ -206,11 +213,18 @@ async function uploadPick(input) {
   const card = input.closest('.co-lg'); if (card) card.classList.add('busy');
   try {
     const png = await toPng(file, slot);
-    const res = await fetch(`/api/company/images/${slot}`, { method: 'POST', headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'image/png' }, body: png });
+    let to = slot;
+    if (slot === 'logo' && png.whiteParts) {
+      if (card) card.classList.remove('busy');
+      const light = await confirmBox({ title: 'Part of this logo is white', message: 'It has a see-through background with white parts, so on white payslips those parts disappear and the rest looks out of place. Use it as the light version (for dark headers), and upload a version with dark text as the full logo.', confirm: 'Use it as the light version', cancel: 'Keep it as the full logo' });
+      if (light) to = 'logo_light';
+      if (card) card.classList.add('busy');
+    }
+    const res = await fetch(`/api/company/images/${to}`, { method: 'POST', headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'image/png' }, body: png });
     const outp = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(outp.error || 'The upload didn’t go through. Try again.');
-    authUrls.delete(slot);
-    toast(`${SLOTS[slot][0]} saved`);
+    authUrls.delete(to);
+    toast(to !== slot ? 'Saved as the light version. Upload a version with dark text as the full logo.' : `${SLOTS[slot][0]} saved`);
     S.refresh();
   } catch (e) { toast(errMsg(e), true); } finally { if (card) card.classList.remove('busy'); }
 }
