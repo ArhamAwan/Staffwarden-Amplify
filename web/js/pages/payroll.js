@@ -193,6 +193,7 @@ function rulesView(ov) {
       <section class="panel"><header><h2>Attendance and pay</h2><span class="muted small">“Show only” puts the number on the payslip for you to decide by hand</span></header><div class="body">
         ${rule("A day's pay is", 'Used for absences, unpaid leave, and someone who joins or leaves mid-month', opt('day_basis', R.day_basis, [['working', 'Salary ÷ working days'], ['30', 'Salary ÷ 30'], ['calendar', 'Salary ÷ days in the month']]))}
         ${rule('Unpaid leave', 'Leave approved as unpaid on the Time off page', opt('unpaid_leave', R.unpaid_leave, [['deduct', "Take off a day's pay"], ['show', 'Show only']]))}
+        ${rule('Someone who joins mid-month', 'Their first, part month', opt('first_month', R.first_month || 'same', [['same', 'Paid that month'], ['next', 'Paid with their next month']]))}
         ${rule('Absent days', 'A working day with no time tracked and no leave', opt('absent', R.absent, [['deduct', "Take off a day's pay"], ['show', 'Show only'], ['off', 'Ignore']]))}
         ${rule('Late arrivals', "After the grace period on the person's own shift", opt('late_mode', R.late.mode, [['off', 'Off'], ['show', 'Show only'], ['deduct', 'Take off pay']]), html`<div class="prule-x">Every <input name="late_every" type="number" min="1" max="31" value="${R.late.every}" class="num tiny" aria-label="Late starts"> late starts in a month takes off ${opt('late_days', R.late.days, [['0.25', 'a quarter day'], ['0.5', 'half a day'], ['1', 'a day']])}</div>`)}
         ${rule('Overtime', "Hours past the person's target, from tracked time", opt('ot_mode', R.overtime.mode, [['off', 'Off'], ['show', 'Show only'], ['deduct', 'Pay extra']]), html`<div class="prule-x">Paid at <input name="ot_rate" type="number" min="1" max="3" step="0.25" value="${R.overtime.rate}" class="num tiny" aria-label="Rate">× the hourly rate</div>`)}
@@ -325,7 +326,7 @@ actions['pr-rules'] = async (form) => {
   const his = fd.getAll('b_hi'), fxs = fd.getAll('b_fx'), pcts = fd.getAll('b_pct');
   const brackets = fxs.map((fx, i) => [i < his.length ? Number(his[i]) : null, Number(fx), Number(pcts[i])]);
   const body = {
-    day_basis: fd.get('day_basis'), unpaid_leave: fd.get('unpaid_leave'), absent: fd.get('absent'),
+    day_basis: fd.get('day_basis'), unpaid_leave: fd.get('unpaid_leave'), absent: fd.get('absent'), first_month: fd.get('first_month'),
     late: { mode: fd.get('late_mode'), every: n('late_every'), days: n('late_days') }, overtime: { mode: fd.get('ot_mode'), rate: n('ot_rate') },
     leave_payout: !!fd.get('leave_payout'), pay_day: n('pay_day'), pay_by: n('pay_by'), tax: { on: !!fd.get('tax_on'), label: fd.get('tax_label'), brackets },
     eobi: { on: !!fd.get('eobi_on'), min_wage: n('eobi_min'), er: n('eobi_er'), ee: n('eobi_ee') },

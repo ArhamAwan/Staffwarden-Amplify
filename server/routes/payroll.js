@@ -468,7 +468,7 @@ module.exports = (ctx) => {
     needHR(user);
     const cur = P().rules(), next = JSON.parse(JSON.stringify(cur));
     const one = (k, opts) => { if (k in body) { need(opts.includes(body[k]), 400, `${k} must be one of ${opts.join(', ')}`); next[k] = body[k]; } };
-    one('day_basis', ['working', '30', 'calendar']); one('unpaid_leave', ['deduct', 'show']); one('absent', ['deduct', 'show', 'off']);
+    one('day_basis', ['working', '30', 'calendar']); one('unpaid_leave', ['deduct', 'show']); one('absent', ['deduct', 'show', 'off']); one('first_month', ['same', 'next']);
     if (body.late) { need(['off', 'show', 'deduct'].includes(body.late.mode), 400, 'late.mode must be off, show or deduct'); next.late = { mode: body.late.mode, every: int(body.late.every ?? cur.late.every, 'late.every', 1, 31), days: Number(body.late.days ?? cur.late.days) }; need([0.25, 0.5, 1].includes(next.late.days), 400, 'late.days must be 0.25, 0.5 or 1'); }
     if (body.overtime) { need(['off', 'show', 'deduct'].includes(body.overtime.mode), 400, 'overtime.mode must be off, show or deduct'); const rate = Number(body.overtime.rate ?? cur.overtime.rate); need(rate >= 1 && rate <= 3, 400, 'overtime.rate must be between 1 and 3'); next.overtime = { mode: body.overtime.mode, rate }; }
     if ('pay_day' in body) next.pay_day = int(body.pay_day, 'pay_day', 1, 28);

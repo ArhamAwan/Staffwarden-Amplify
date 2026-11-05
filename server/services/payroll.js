@@ -55,6 +55,14 @@ function createPayroll(ctx) {
     return n;
   }
 
+  // the rule "pay a part first month with the next one": did this person join after the 1st of this month?
+  function startsLate(u, rec, period) {
+    if ((rules().first_month || 'same') !== 'next') return false;
+    const joined = localJoin(u, rec), days = monthDays(period);
+    return !!joined && joined > days[0] && joined <= days[days.length - 1];
+  }
+  const prevPeriod = (p) => { const [y, m] = p.split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`; };
+
   // ---------- one person, one month ----------
   function slipFor(u, period, run) {
     const R = rules(), c = calc();
@@ -125,6 +133,13 @@ function createPayroll(ctx) {
       const left = Math.max(0, accrued - taken);
       if (left) add({ key: 'leave_payout', label: 'Unused leave paid out', amount: Math.round(dayRate * left), source: `${plural(left, 'day')} earned this year and not taken`, kind: 'leaving' });
     }
+    // their first, part month, carried into this one: its base and what attendance took off it
+    if (startsLate(u, rec, prevPeriod(period))) {
+      const pp = prevPeriod(period), first = slipFor(u, pp, null), mon = periodName(pp).split(' ')[0];
+      if (first) for (const l of first.lines) if (l.kind === 'base' || l.kind === 'attendance' || /^alw:/.test(l.key)) {
+        add({ ...l, key: `prev:${l.key}`, label: l.kind === 'base' ? `${mon}: first days` : `${mon}: ${l.label.toLowerCase()}`, source: l.kind === 'base' ? `${l.source}. Paid with this month` : l.source, carry: true });
+      }
+    }
     // added by HR for this month
     for (const it of run ? db.prepare('SELECT * FROM pay_items WHERE run_id = ? AND user_id = ? ORDER BY id').all(run.id, u.id) : []) {
       const sign = ITEM_KINDS[it.kind];
@@ -161,15 +176,18 @@ function createPayroll(ctx) {
     // income tax
     const counted = lines.filter((l) => l.counted);
     const taxable = counted.filter((l) => l.taxable).reduce((n, l) => n + l.amount, 0);
+    // a first part month carried in is taxed as its own month, not as a bigger salary
+    const carried = counted.filter((l) => l.taxable && l.carry).reduce((n, l) => n + l.amount, 0);
     let tax = 0;
     // the company switch first (off: nobody has tax taken), then each person's own setting
     const taxOn = R.tax.on !== false && setup.tax_mode === 'pk' && cur === 'PKR';
-    if (taxOn && taxable > 0) tax = Math.round(yearlyTax(taxable * 12, R.tax.brackets) / 12);
+    const monthTax = (n) => (n > 0 ? Math.round(yearlyTax(n * 12, R.tax.brackets) / 12) : 0);
+    if (taxOn) tax = monthTax(taxable - carried) + monthTax(carried);
     const gross = counted.filter((l) => l.amount > 0).reduce((n, l) => n + l.amount, 0);
     const deductions = -counted.filter((l) => l.amount < 0).reduce((n, l) => n + l.amount, 0);
     const facts = {
       workdays: workdays.length, employed_days: employedWork.length, present, absent: absent.length, late: late.length, unpaid: unpaid.length,
-      worked_secs: worked, expected_secs: expected, taxable, tax_note: taxOn ? `${fmtMoney(taxable, cur)} × 12 = ${fmtMoney(taxable * 12, cur)} a year, on the brackets` : 'No tax taken: ' + (R.tax.on === false ? 'income tax is off for the company' : cur !== 'PKR' ? 'paid in dollars' : 'set to none'),
+      worked_secs: worked, expected_secs: expected, taxable, tax_note: taxOn ? (carried ? `This month and the first days, each on the brackets: ${fmtMoney(taxable - carried, cur)} and ${fmtMoney(carried, cur)}` : `${fmtMoney(taxable, cur)} × 12 = ${fmtMoney(taxable * 12, cur)} a year, on the brackets`) : 'No tax taken: ' + (R.tax.on === false ? 'income tax is off for the company' : cur !== 'PKR' ? 'paid in dollars' : 'set to none'),
       joined, leaving, bank: !!(rec && rec.iban), contract: rec ? rec.contract : null,
     };
     return { currency: cur, lines, gross, deductions, tax, net: gross - deductions - tax, employer, facts };
@@ -183,6 +201,8 @@ function createPayroll(ctx) {
     for (const u of people) {
       const rec = recordOf(u.id), joined = localJoin(u, rec);
       if (joined && joined > monthDays(run.period).slice(-1)[0]) continue;
+      // joined part-way through: those days are paid with their first full month, unless they also leave in it
+      if (startsLate(u, rec, run.period) && !(rec && rec.leaving_on && rec.leaving_on <= monthDays(run.period).slice(-1)[0])) continue;
       if (rec && rec.leaving_on && rec.leaving_on < `${run.period}-01`) continue;
       const s = slipFor(u, run.period, run);
       if (!s) continue;
@@ -196,7 +216,7 @@ function createPayroll(ctx) {
     for (const r of db.prepare('SELECT id, user_id FROM payslips WHERE run_id = ?').all(run.id)) if (!keep.has(r.user_id)) db.prepare('DELETE FROM payslips WHERE id = ?').run(r.id);
   }
 
-  return { rules, slipFor, compute, setupOf, recordOf, yearlyTax, monthDays, periodName, fmtMoney, merge, LOCKED, STATUSES, ITEM_KINDS, nextPeriod, localJoin };
+  return { rules, slipFor, compute, startsLate, setupOf, recordOf, yearlyTax, monthDays, periodName, fmtMoney, merge, LOCKED, STATUSES, ITEM_KINDS, nextPeriod, localJoin };
 }
 
 module.exports = { createPayroll, yearlyTax, merge };
