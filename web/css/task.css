@@ -201,6 +201,7 @@
 .tk-vnote b{color:#fff}
 .tk-pages{display:flex;align-items:center;justify-content:center;gap:12px;font-size:13.5px;font-weight:600;color:rgb(var(--v-d9d3f2, 217 211 242))}
 .tk-stagewrap{position:relative;display:flex;justify-content:center;min-width:0}
+.tk-picbox{position:relative;display:inline-block;max-width:100%;min-width:0}
 .tk-stage{position:relative;display:inline-block;max-width:100%;line-height:0;border-radius:12px}
 .tk-stage .tk-shot{display:block;max-width:100%;max-height:72vh;width:auto;height:auto;border-radius:12px;background:rgba(255,255,255,.04);min-width:120px;min-height:80px;object-fit:contain}
 .tk-stage.tk-live-st{cursor:crosshair}
@@ -279,6 +280,7 @@
   .tkp[data-m="talk"] .tk-path{display:none}
   .tk-pop.tk-float{position:static;width:100%;margin-top:10px}
   .tk-stagewrap{flex-direction:column;align-items:stretch}
+  .tk-picbox{display:contents}
   .tk-stage{align-self:center}
   .tk-cmpgrid{grid-template-columns:minmax(0,1fr)}
   .tk-seg{margin-left:0}

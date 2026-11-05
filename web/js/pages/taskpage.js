@@ -416,7 +416,7 @@ function pinMarks(t, f, page, { live = true } = {}) {
 }
 function pinCard(t, p, r, { float = true } = {}) {
   const can = p.user_id === S.me.id || t.is_mine || r.approver || r.manage;
-  const side = p.x > 0.58 ? `right:calc(${(1 - p.x) * 100}% + 20px)` : `left:calc(${p.x * 100}% + 20px)`;
+  const side = p.x > 0.58 ? `right:calc(${(1 - p.x) * 100}% + 20px)` : `left:calc(${p.x * 100}% + 40px)`;
   return html`<div class="tk-pop${float ? ' tk-float' : ''}" style="${float ? `${side};top:clamp(0px, calc(${p.y * 100}% - 24px), calc(100% - 120px))` : ''}" role="dialog" aria-label="Pin ${p.num}" data-k="pop${p.id}">
     <div class="tk-poph"><span class="tk-pn${p.resolved ? ' tk-g' : ''}">${p.num}</span><b>Pin ${p.num} · ${p.resolved ? 'fixed' : 'open'}</b><span class="tk-tag">${I('lock', 12, 2.2)}Team only</span><button type="button" class="tk-x-btn" data-act="tk-pinsel" data-id="0" aria-label="Close">${I('x', 14)}</button></div>
     <div class="tk-cm">${av(p.user_id, p.user)}<div class="tk-w"><div class="tk-by"><b>${p.user || 'Someone'}</b>${hm(p.created_at)}${verOf(t, p) > 1 || chainsOf(t).find((c) => c.id === p.chain_id)?.versions.length > 1 ? ` · on V${verOf(t, p)}` : ''}</div><p class="tk-feedtext">${M(p.body)}</p></div></div>
@@ -427,7 +427,7 @@ function pinCard(t, p, r, { float = true } = {}) {
   </div>`;
 }
 function draftCard(d) {
-  const side = d.x > 0.58 ? `right:calc(${(1 - d.x) * 100}% + 20px)` : `left:calc(${d.x * 100}% + 20px)`;
+  const side = d.x > 0.58 ? `right:calc(${(1 - d.x) * 100}% + 20px)` : `left:calc(${d.x * 100}% + 40px)`;
   return html`<form class="tk-pop tk-float tk-draft" data-tk-form="pin" style="${side};top:clamp(0px, calc(${d.y * 100}% - 24px), calc(100% - 150px))" aria-label="Pin a comment here">
     <label class="f" for="tk-pd">Pin a comment here</label>
     <textarea id="tk-pd" name="body" rows="3" maxlength="2000" data-mention required placeholder="What should change at this spot? Type @ to mention someone"></textarea>
@@ -443,8 +443,9 @@ function stage(t, f, r, { live = true, page = 1 } = {}) {
     : html`<img class="tk-shot" alt="${f.name}" data-tkimg="${src}" ${raw(imgCache.get(src) ? `src="${imgCache.get(src)}"` : '')}>`;
   const sel = live && ui.pin ? t.pins.find((p) => p.id === ui.pin && p.file_id === f.id && p.page === page) : null;
   const d = live && ui.draft && ui.draft.fid === f.id && ui.draft.page === page ? ui.draft : null;
-  return html`<div class="tk-stagewrap"><div class="tk-stage${live ? ' tk-live-st' : ''}" ${raw(live ? `data-act="tk-pinat" data-fid="${f.id}" data-page="${page}"` : '')}>${img}${pinMarks(t, f, page, { live })}${d ? html`<span class="tk-mark tk-new" style="left:${d.x * 100}%;top:${d.y * 100}%" aria-hidden="true">+</span>` : ''}</div>
-    ${sel ? pinCard(t, sel, r) : ''}${d ? draftCard(d) : ''}</div>`;
+  // the card sits in a box the size of the picture, so it is placed beside its pin (not beside the column)
+  return html`<div class="tk-stagewrap"><div class="tk-picbox"><div class="tk-stage${live ? ' tk-live-st' : ''}" ${raw(live ? `data-act="tk-pinat" data-fid="${f.id}" data-page="${page}"` : '')}>${img}${pinMarks(t, f, page, { live })}${d ? html`<span class="tk-mark tk-new" style="left:${d.x * 100}%;top:${d.y * 100}%" aria-hidden="true">+</span>` : ''}</div>
+    ${sel ? pinCard(t, sel, r) : ''}${d ? draftCard(d) : ''}</div></div>`;
 }
 function pageNav(f) {
   const n = pdfPages.get(f.id);
