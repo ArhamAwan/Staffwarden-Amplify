@@ -77,6 +77,16 @@ const pidNow = () => { const { q } = parse(); const ps = (P.home && P.home.proje
 const settings = () => (P.home && P.home.settings) || {};
 const tabOn = (k) => { const s = settings(); return k === 'messages' ? s.messages || s.direct : k === 'approvals' ? s.approvals : k === 'requests' ? s.requests : k === 'hours' ? s.hours !== 'off' : true; };
 const preview = () => !!(P.home && P.home.me.preview);
+// "seeing the portal as": a strip above the page, outside what each tab redraws, so it stays put while a tab
+// loads, when you switch tabs, and whatever the page is doing
+function paintPreview() {
+  let el = document.getElementById('pview');
+  if (!getViewAs()) { if (el) el.remove(); return; }
+  if (!P.home || !P.home.me) return;
+  if (!el) { el = document.createElement('div'); el.id = 'pview'; el.className = 'pview'; el.setAttribute('role', 'status'); el.addEventListener('click', onClick); document.body.prepend(el); }
+  const h = html`${ix('eye', 17)}<span>You’re seeing the portal as <b>${P.home.me.name}</b> sees it right now. Nothing you click here is sent.</span>${(P.home.people || []).length > 1 ? html`<span class="pview-who">${P.home.people.map((p) => html`<button type="button" data-pa="viewas" data-id="${p.id}" aria-pressed="${String(p.id === P.home.me.id)}">${first(p.name)}</button>`)}</span>` : ''}<button type="button" class="pview-x" data-pa="endview">Back to the project</button>`.toString();
+  if (el.innerHTML !== h) el.innerHTML = h;
+}
 
 // ---------- the frame: the dark bridge with the tabs, then the page ----------
 function bar(page) {
@@ -92,7 +102,6 @@ function bar(page) {
 }
 function frame(page, { title, sub, right = '', hero = '', tone = '' }, body) {
   return html`<div class="pt ${tone}">
-    ${preview() ? html`<div class="pview" role="status">${ix('eye', 17)}<span>You’re seeing the portal as <b>${P.home.me.name}</b> sees it right now. Nothing you click here is sent.</span>${(P.home.people || []).length > 1 ? html`<span class="pview-who">${P.home.people.map((p) => html`<button type="button" data-pa="viewas" data-id="${p.id}" aria-pressed="${String(p.id === P.home.me.id)}">${first(p.name)}</button>`)}</span>` : ''}<button type="button" class="pview-x" data-pa="endview">Back to the project</button></div>` : ''}
     <header class="pbr"><div class="pglow" aria-hidden="true"></div><div class="pglow2" aria-hidden="true"></div>
       <div class="pin">${bar(page)}
         <div class="phd"><div class="phd-t"><h1 tabindex="-1">${title}</h1>${sub ? html`<p>${sub}</p>` : ''}</div>${right ? html`<div class="phd-r">${right}</div>` : ''}</div>
@@ -676,7 +685,8 @@ async function run({ navigated = false } = {}) {
   const { page, q } = parse();
   try {
     if (!P.home) { P.home = await get('/api/portal'); if (P.pplKeep) { P.home.people = P.pplKeep; P.pplKeep = null; } }
-    else if (navigated) get('/api/portal').then((h) => { P.home = { ...h, people: P.home.people }; }).catch(() => {});
+    else if (navigated) get('/api/portal').then((h) => { P.home = { ...h, people: P.home.people }; paintPreview(); }).catch(() => {});
+    paintPreview();
     const pid = pidNow();
     let out, newPage = false;
     if (!pid) out = noProject();
@@ -756,6 +766,7 @@ function refreshCounts() {
     try {
       const h = await get('/api/portal');
       P.home = { ...h, people: P.home.people };
+      paintPreview();
       const nav = root.querySelector('.ptop');
       if (nav) morph(nav, bar(parse().page).toString().replace(/^<div class="ptop">|<\/div>$/g, ''));
       paintBell();
@@ -928,7 +939,7 @@ function pinAt(box, e) {
 
 function onClick(e) {
   const b = e.target.closest('[data-pa]');
-  if (!b || !root.contains(b) && !document.getElementById('overlay').contains(b)) return;
+  if (!b || !root.contains(b) && !document.getElementById('overlay').contains(b) && !b.closest('#pview')) return;
   const a = b.dataset.pa;
   if (a === 'q') return setQ(b.dataset.k, b.dataset.v);
   if (a === 'bell') return openBell();
@@ -1073,11 +1084,12 @@ export function startPortal(app, { previewAs = null } = {}) {
   run({ navigated: true }).then(() => {
     loadBell();
     // previewing: the people at this client, to switch between
-    if (preview()) get('/api/portal/people').then((list) => { P.home.people = list; schedule(); }).catch(() => {});
+    if (preview()) get('/api/portal/people').then((list) => { P.home.people = list; paintPreview(); schedule(); }).catch(() => {});
   });
   void isIOS;
 }
 export function stopPortal() {
+  { const pv = document.getElementById('pview'); if (pv) pv.remove(); }
   if (P.stop) P.stop(); P.stop = null; clearInterval(P.poll); clearInterval(P.banPoll); { const sb = document.getElementById('sysban'); if (sb) sb.remove(); } if (P.unInstall) P.unInstall();
   closeBell();
   if (!root) return;

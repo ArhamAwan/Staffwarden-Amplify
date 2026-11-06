@@ -906,3 +906,4 @@ body.portal { background: rgba(115,90,191,0.16); }
   .pview { position: static; padding: 8px 12px !important; gap: 6px 10px !important; font-size: 12.5px; }
   .pview > .ic { display: none; }
 }
+.pbr { overflow-x: clip; overflow-y: visible; }
