@@ -107,7 +107,7 @@ function groupOf(iso) {
   return dt.toLocaleString('en-US', { month: 'long', year: dt.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
 }
 const when = (iso) => { const dt = new Date(iso), d = (nowMs() - dt) / 86400000; if (dt.toDateString() === new Date(nowMs()).toDateString()) return dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); if (d < 7) return dt.toLocaleDateString('en-US', { weekday: 'short' }); return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
-const faces = (people) => html`<span class="nk-faces">${people.slice(0, 3).map((p) => av(p.id, p.name, 'xs'))}</span>`;
+const faces = (people) => html`<span class="nk-faces" title="${people.map((p) => p.name).join(', ')}">${people.slice(0, 3).map((p) => av(p.id, p.name, 'xs'))}${people.length > 3 ? html`<span class="nk-more" aria-hidden="true">+${people.length - 3}</span>` : ''}</span>`;
 
 function link(q, id) { const p = new URLSearchParams(); if (q.get('folder')) p.set('folder', q.get('folder')); if (q.get('q')) p.set('q', q.get('q')); if (id) p.set('id', id); const s = p.toString(); return `#/notes${s ? `?${s}` : ''}`; }
 

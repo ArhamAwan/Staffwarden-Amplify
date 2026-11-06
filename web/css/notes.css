@@ -52,8 +52,11 @@
 .nk-i.on + .nk-i { box-shadow: none; }
 .nk-i.on .nk-m, .nk-i.on .nk-m > b { color: rgba(255,255,255,.82); }
 .nk-faces { display: inline-flex; flex: none; }
-.avatar.xs { width: 20px; height: 20px; font-size: 8px; box-shadow: 0 0 0 2px rgb(var(--v-16102e, 22 16 46)); }
-.nk-faces .avatar + .avatar { margin-left: -3px; }
+/* people on a note: small faces side by side with a little air between, so two of the same colour never merge */
+.avatar.xs { width: 22px; height: 22px; font-size: 9.5px; letter-spacing: 0; box-shadow: none; }
+.nk-faces { gap: 3px; align-items: center; }
+.nk-faces .avatar + .avatar { margin-left: 0; }
+.nk-faces .nk-more { height: 22px; min-width: 22px; padding: 0 6px; box-sizing: border-box; border-radius: 99px; display: grid; place-items: center; font-size: 10.5px; font-weight: 700; color: var(--ink-2); background: rgba(255,255,255,.12); }
 
 /* the note */
 .nk-e { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow-y: auto; position: relative; }

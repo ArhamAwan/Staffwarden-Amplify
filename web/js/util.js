@@ -118,7 +118,7 @@ export const callName = (name) => { const w = String(name || '').trim().split(/\
 export const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`;
 
 export const initials = (name) => (name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
-const AV = ['#6B55D6', '#12846A', '#B4540A', '#7A5AF8', '#C2410C', '#0E7490', '#9D174D', '#524A73'];
+const AV = ['#6B55D6', '#12846A', '#B4540A', '#1D4ED8', '#C2410C', '#0E7490', '#9D174D', '#524A73'];
 export const avColor = (id) => AV[Math.abs(Number(id) || 0) % AV.length];
 
 export const REASON = { break: 'Break', dinner: 'Dinner', lunch: 'Lunch', prayer: 'Prayer', personal: 'Personal', other: 'Other', idle: 'Idle (no activity)' };
