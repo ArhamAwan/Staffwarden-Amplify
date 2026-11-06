@@ -117,7 +117,8 @@ const reqBtn = () => (settings().requests || settings().messages ? html`<button 
 function skeleton(page) {
   const sk = (w, h = 12, r = 7) => `<span class="skel" style="width:${w};height:${h}px;border-radius:${r}px"></span>`;
   const cardS = (rows) => `<section class="pcd skc">${sk('40%', 18)}${Array.from({ length: rows }, (_, i) => sk(`${90 - i * 9}%`)).join('')}</section>`;
-  return `<div class="pt"><header class="pbr"><div class="pin">${bar(page)}<div class="phd"><div class="phd-t">${sk('320px', 38, 10).replace('skel', 'skel dark')}${sk('420px', 14).replace('skel', 'skel dark')}</div></div></div></header>
+  const t = (TABS.find((x) => x[0] === page) || [])[1];
+  return `<div class="pt"><header class="pbr"><div class="pin">${bar(page)}<div class="phd"><div class="phd-t">${t ? `<h1>${esc(t)}</h1>` : sk('320px', 38, 10).replace('skel', 'skel dark')}${sk('420px', 14).replace('skel', 'skel dark')}</div></div></div></header>
     <main class="pbody"><div class="pin"><div class="pgr"><div class="pcol">${cardS(4)}${cardS(3)}</div><div class="pcol side">${cardS(3)}${cardS(2)}</div></div></div></main></div>`;
 }
 
@@ -678,6 +679,22 @@ function noProject() {
   return html`<div class="pt"><header class="pbr"><div class="pin">${bar('overview')}<div class="phd"><div class="phd-t"><h1 tabindex="-1">Welcome, ${first(P.home.me.name)}</h1><p>There is nothing to show yet.</p></div></div></div></header>
     <main class="pbody"><div class="pin">${card('', emptyBox('No projects shared with you yet', `When ${orgShort()} adds your project, it shows up here.`))}</div></main></div>`;
 }
+// the other tabs are fetched quietly once a page is up, so switching tabs shows them at once (and they still
+// refresh as they open) instead of grey placeholders
+const warmed = new Set();
+function prefetchTabs(pid) {
+  if (warmed.has(pid)) return; warmed.add(pid);
+  const names = Object.keys(PAGES).filter((n) => tabOn(n));
+  const later = window.requestIdleCallback || ((f) => setTimeout(f, 400));
+  later(async () => {
+    for (const name of names) {
+      if (pidNow() !== pid) return;
+      const q = new URLSearchParams(`p=${pid}`), key = `${pid}:${name}?${q}`;
+      if (P.cache.get(key)) continue;
+      try { const data = await PAGES[name][0](pid, q); P.cache.set(key, data); } catch { /* it loads when opened */ }
+    }
+  });
+}
 async function run({ navigated = false } = {}) {
   if (P.loading && !navigated) { P.again = true; return; }
   P.loading = true;
@@ -726,6 +743,7 @@ async function run({ navigated = false } = {}) {
     if (navigated === true && newPage) { const h = root.querySelector('h1'); if (h && !root.querySelector('.ppanel, .papd.focus')) h.focus({ preventScroll: true }); }
     paintBell();
     maybeInstall();
+    if (pidNow()) prefetchTabs(pidNow());
   } catch (e) {
     if (e.status === 401 || my !== P.seq) return;
     if (!root.querySelector('.pt') || navigated || root.querySelector('.skc')) root.innerHTML = `<div class="center"><div class="login"><div class="card"><h1>Couldn't load this page</h1><p class="muted mt">${esc(errMsg(e))}</p><button class="btn primary mt" data-pa="retry">Try again</button></div></div></div>`;
