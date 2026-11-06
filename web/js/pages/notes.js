@@ -190,7 +190,15 @@ function editor(n, q) {
 }
 
 // ---------- putting a note in the editor, and keeping it current ----------
+// the notes fill the window exactly: the panes scroll inside, the page itself never does
+function fitHeight() {
+  const box = document.querySelector('.nbk'); if (!box) return;
+  const top = Math.round(box.getBoundingClientRect().top + window.scrollY);
+  if (box.style.getPropertyValue('--nk-top') !== `${top}px`) box.style.setProperty('--nk-top', `${top}px`);
+}
+window.addEventListener('resize', fitHeight);
 function mount(view, data) {
+  fitHeight(); requestAnimationFrame(fitHeight);
   const n = data && data.note;
   const el = view.querySelector('.nk-body'), ti = view.querySelector('.nk-title');
   clearInterval(ed.hereTimer);

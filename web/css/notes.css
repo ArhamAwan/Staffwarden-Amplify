@@ -197,3 +197,8 @@
   .nk-bar { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgb(var(--v-140d2c, 20 13 44)); }
   .nbk .nk-sp { flex: 0 0 18px; }
 }
+/* the page never scrolls on a computer: the notes take exactly the room below the top bar */
+@media (min-width: 761px) {
+  .nbk { height: calc(100dvh - var(--nk-top, 82px) - 8px); min-height: 420px; }
+  main:has(.nbk), #view:has(> .nbk) { padding-bottom: 0 !important; }
+}
