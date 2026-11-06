@@ -2,12 +2,12 @@
 /* Projects run by their manager: Team, Plan today, Waiting for you, Your day, and @mentions. Night glass. */
 
 /* small labels */
-.pmc { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px; border-radius: 99px; font-size: 11.5px; font-weight: 650; white-space: nowrap; background: rgba(255,255,255,.08); color: rgb(var(--v-d9d3f5, 217 211 245)); flex: none; }
-.pmc.pm { background: rgb(var(--v-8b5cf6, 139 92 246) / .3); color: rgb(var(--v-e4dcff, 228 220 255)); }
-.pmc.dep { background: rgba(194,65,12,.22); color: #FFC7A8; }
-.pmc.amber { background: rgba(247,181,68,.16); color: #FFD58A; }
-.pmc.green { background: rgba(61,214,140,.14); color: #8DEBBE; }
-.pmc.red { background: rgba(255,120,100,.14); color: #FFB3A8; }
+.pmchip { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px; border-radius: 99px; font-size: 11.5px; font-weight: 650; white-space: nowrap; background: rgba(255,255,255,.08); color: rgb(var(--v-d9d3f5, 217 211 245)); flex: none; }
+.pmchip.pm { background: rgb(var(--v-8b5cf6, 139 92 246) / .3); color: rgb(var(--v-e4dcff, 228 220 255)); }
+.pmchip.dep { background: rgba(194,65,12,.22); color: #FFC7A8; }
+.pmchip.amber { background: rgba(247,181,68,.16); color: #FFD58A; }
+.pmchip.green { background: rgba(61,214,140,.14); color: #8DEBBE; }
+.pmchip.red { background: rgba(255,120,100,.14); color: #FFB3A8; }
 .amber-ink { color: #FFD58A; }
 .avatar.xs { width: 20px; height: 20px; font-size: 8.5px; box-shadow: none; }
 .avatar.none { background: rgba(255,255,255,.08); color: var(--muted); border: 1.5px dashed rgba(255,255,255,.22); box-shadow: none; }
@@ -105,11 +105,11 @@
 .pl-card.on { background: rgb(var(--v-3c2882, 60 40 130) / .45); }
 .pl-card.other { background: rgba(255,255,255,.025); border-style: dashed; }
 .pl-card.did { opacity: .7; }
-.pl-card.did .pl-t { text-decoration: line-through; text-decoration-color: rgba(255,255,255,.35); }
+.pl-card.did .pmpl-t { text-decoration: line-through; text-decoration-color: rgba(255,255,255,.35); }
 .pl-card.dragging { opacity: .35; }
 .pl-k { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--muted); min-height: 22px; flex-wrap: wrap; }
 .pl-k i { font-style: normal; color: var(--faint); }
-.pl-t { font-size: 14px; font-weight: 600; line-height: 1.35; color: var(--ink); overflow-wrap: anywhere; }
+.pmpl-t { font-size: 14px; font-weight: 600; line-height: 1.35; color: var(--ink); overflow-wrap: anywhere; }
 .pl-m { display: flex; align-items: center; gap: 4px 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); min-height: 24px; }
 .pl-m i { font-style: normal; color: var(--faint); }
 .pl-m > span:not(.avatar) { min-width: 0; }
@@ -259,8 +259,8 @@
 .pb-n .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pb-c { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
 .pb-c b { color: var(--ink); } .pb-c .bad-ink b { color: var(--bad); }
-.pb-bar { display: block; height: 6px; border-radius: 99px; background: var(--line-2); overflow: hidden; }
-.pb-bar i { display: block; height: 100%; border-radius: 99px; background: var(--pc, var(--blue)); }
+.pjb-bar { display: block; height: 6px; border-radius: 99px; background: var(--line-2); overflow: hidden; }
+.pjb-bar i { display: block; height: 100%; border-radius: 99px; background: var(--pc, var(--blue)); }
 .pb-f { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; }
 .pb-go { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; color: var(--blue-dark); }
 .pb-go .ic { width: 14px; height: 14px; }

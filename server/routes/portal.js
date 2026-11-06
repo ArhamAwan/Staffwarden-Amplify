@@ -237,7 +237,7 @@ module.exports = (ctx) => {
     const t = r.task_id ? db.prepare('SELECT id, number, status, title, project_id FROM tasks WHERE id = ?').get(r.task_id) : null;
     const key = t ? (ctx.getProject(t.project_id) || {}).key : null;
     return { id: r.id, project_id: r.project_id, task_id: r.task_id, title: r.title, detail: r.detail, kind: r.kind || 'new', urgency: r.urgency, status: r.status, reply: r.reply, created_at: r.created_at, decided_at: r.decided_at,
-      by: r.client_user_id ? (db.prepare('SELECT name FROM client_users WHERE id = ?').get(r.client_user_id) || {}).name : null,
+      by: r.client_user_id ? (db.prepare('SELECT name FROM client_users WHERE id = ?').get(r.client_user_id) || {}).name : null, by_id: r.client_user_id || null,
       decided_by_name: r.decided_by ? staffName(r.decided_by) : null,
       seen_at: r.seen_at, seen_by_name: r.seen_by ? staffName(r.seen_by) : null,
       file: r.file ? { name: r.file_name, type: r.file_type, size: r.file_size, url: `/api/portal/request-files/${r.id}` } : null,

@@ -101,7 +101,7 @@ function projectBoxes(projects, tasks) {
     return html`<a class="pbox" href="#/tasks?project=${p.id}" data-k="pb${p.id}" style="--pc:${p.color}">
       <span class="pb-top"><span class="pkey" style="background:${p.color}" aria-hidden="true">${p.key}</span><span class="pb-n"><b>${p.name}</b><span class="muted small">${p.lead ? (p.lead.id === S.me.id ? 'Run by you' : `Run by ${p.lead.name}`) : 'No manager yet'}${p.client ? ` · ${p.client}` : ''}</span></span></span>
       <span class="pb-c"><span><b class="num">${c.open}</b> open</span>${c.overdue ? html`<span class="bad-ink"><b class="num">${c.overdue}</b> overdue</span>` : ''}${c.in_review ? html`<span><b class="num">${c.in_review}</b> in review</span>` : ''}${c.unassigned ? html`<span><b class="num">${c.unassigned}</b> not assigned</span>` : ''}</span>
-      <span class="pb-bar" aria-hidden="true"><i style="width:${c.progress_pct || 0}%"></i></span>
+      <span class="pjb-bar" aria-hidden="true"><i style="width:${c.progress_pct || 0}%"></i></span>
       <span class="pb-f"><span class="muted small">${c.total ? `${c.progress_pct}% done` : 'No tasks yet'}</span>${waiting ? html`<span class="tag pending"><i></i>${waiting} waiting for you</span>` : html`<span class="pb-go">Open board ${icon('right')}</span>`}</span>
     </a>`;
   };

@@ -119,11 +119,11 @@ export function teamTab(p, plan) {
   const todayCell = (uid) => {
     const d = today && today.get(uid);
     if (!d) return html`<span class="faint">–</span>`;
-    if (d.status === 'leave') return html`<span class="pmc amber">On leave</span>`;
-    if (d.status === 'holiday') return html`<span class="pmc">Holiday</span>`;
+    if (d.status === 'leave') return html`<span class="pmchip amber">On leave</span>`;
+    if (d.status === 'holiday') return html`<span class="pmchip">Holiday</span>`;
     const here = d.tasks.filter((t) => t.here);
-    if (!d.tasks.length) return d.status === 'off' ? html`<span class="faint">Day off</span>` : d.role === 'manager' ? html`<span class="faint">Plans the day</span>` : html`<span class="pmc amber">Nothing planned</span>`;
-    if (!here.length) return html`<span class="pmc amber">Nothing planned here</span> <span class="faint">${d.planned_min ? `${hrs(d.planned_min)} on other projects` : `${plural(d.tasks.length, 'task')} elsewhere`}</span>`;
+    if (!d.tasks.length) return d.status === 'off' ? html`<span class="faint">Day off</span>` : d.role === 'manager' ? html`<span class="faint">Plans the day</span>` : html`<span class="pmchip amber">Nothing planned</span>`;
+    if (!here.length) return html`<span class="pmchip amber">Nothing planned here</span> <span class="faint">${d.planned_min ? `${hrs(d.planned_min)} on other projects` : `${plural(d.tasks.length, 'task')} elsewhere`}</span>`;
     return html`<span>${plural(here.length, 'task')}${d.planned_min ? ` · ${hrs(d.planned_min)} of ${hrs(d.capacity_min) || '0h'}` : ''}${here.length < d.tasks.length ? html` <span class="faint">(+${d.tasks.length - here.length} elsewhere)</span>` : ''}</span>`;
   };
   const cols = !!plan;
@@ -131,7 +131,7 @@ export function teamTab(p, plan) {
     <div class="pm-col">
       ${mgr ? html`<section class="pm-mgr" aria-labelledby="pm-mh">
           ${av(mgr.id, mgr.name, 'lg')}
-          <div class="pm-mgr-t"><span class="pmc pm">Project manager</span><b id="pm-mh">${mgr.name}</b>
+          <div class="pm-mgr-t"><span class="pmchip pm">Project manager</span><b id="pm-mh">${mgr.name}</b>
             <span>Runs ${p.name}: changes anything in it, decides who works on it, plans their days and approves their work.${mgr.away ? html` <b class="amber-ink">On leave today${dep ? `, so ${first(dep.name)} approves.` : '.'}</b>` : ''}</span></div>
           ${p.can_pick_manager ? html`<button type="button" class="btn sm" data-act="pm-pick" data-v="lead">Change manager</button>` : ''}
         </section>`
@@ -147,7 +147,7 @@ export function teamTab(p, plan) {
             <span class="pm-who">${av(w.user_id, w.name)}<span class="pm-grow"><b>${w.name}${w.user_id === S.me.id ? html` <span class="faint">(you)</span>` : ''}</b><span class="muted small">${w.title || ''}${w.role === 'deputy' ? `${w.title ? ' · ' : ''}stands in for ${mName}` : ''}</span></span></span>
             ${cols ? html`<span class="pm-today small">${todayCell(w.user_id)}</span>` : ''}
             <span class="pm-open num r">${w.open}${w.overdue ? html` <span class="bad-ink small">· ${w.overdue} late</span>` : ''}</span>
-            <span class="pm-end"><span class="pmc${w.role === 'lead' ? ' pm' : w.role === 'deputy' ? ' dep' : ''}">${roleName(w.role)}</span>${p.can_manage && w.role !== 'lead' ? html`<button type="button" class="pm-x" data-act="project-remove-member" data-id="${w.user_id}" data-name="${w.name}" aria-label="Remove ${w.name} from ${p.name}" title="Remove from the project">${icon('x')}</button>` : html`<span class="pm-x-s" aria-hidden="true"></span>`}</span>
+            <span class="pm-end"><span class="pmchip${w.role === 'lead' ? ' pm' : w.role === 'deputy' ? ' dep' : ''}">${roleName(w.role)}</span>${p.can_manage && w.role !== 'lead' ? html`<button type="button" class="pm-x" data-act="project-remove-member" data-id="${w.user_id}" data-name="${w.name}" aria-label="Remove ${w.name} from ${p.name}" title="Remove from the project">${icon('x')}</button>` : html`<span class="pm-x-s" aria-hidden="true"></span>`}</span>
           </div>`) : html`<div class="body pad">${empty('Nobody on the team yet', p.can_manage ? 'Add the people who work on this project.' : '')}</div>`}
         <p class="pm-foot small muted">${p.access === 'everyone' ? 'Everyone in the company can see this project; the team are the people working on it.' : 'Only the team sees this project and its tasks, and only they can track time on it.'} Giving someone a task adds them to the team.</p>
       </section>
@@ -202,21 +202,21 @@ export const loadPlan = (p, day) => get(`/api/projects/${p.id}/plan${qs({ day })
 let board = null;
 const capText = (d) => (!d.planned_min ? (d.tasks && d.tasks.length ? 'No estimates yet' : 'Nothing yet') : d.capacity_min ? `${hrs(d.planned_min)} of ${hrs(d.capacity_min)}` : hrs(d.planned_min));
 function statusChip(d) {
-  if (d.status === 'leave') return html`<span class="pmc amber">On leave</span>`;
-  if (d.status === 'holiday') return html`<span class="pmc">${d.holiday || 'Holiday'}</span>`;
-  if (d.status === 'off') return html`<span class="pmc">Day off</span>`;
+  if (d.status === 'leave') return html`<span class="pmchip amber">On leave</span>`;
+  if (d.status === 'holiday') return html`<span class="pmchip">${d.holiday || 'Holiday'}</span>`;
+  if (d.status === 'off') return html`<span class="pmchip">Day off</span>`;
   if (d.starts_in_min != null) return html`<span class="faint small">Starts in ${hrs(Math.round(d.starts_in_min / 15) * 15 || 15)}</span>`;
   if (d.shift_over) return html`<span class="faint small">Shift over</span>`;
   return '';
 }
 function card(t, { planned = false, n = null, draggable = true, uid = null } = {}) {
-  const st = t.status === 'done' ? html`<span class="pmc green">Done</span>` : t.status === 'in_review' ? html`<span class="pmc">In review</span>` : t.status === 'in_progress' ? html`<span class="pl-dot" title="In progress"></span>` : '';
+  const st = t.status === 'done' ? html`<span class="pmchip green">Done</span>` : t.status === 'in_review' ? html`<span class="pmchip">In review</span>` : t.status === 'in_progress' ? html`<span class="pl-dot" title="In progress"></span>` : '';
   const other = planned && !t.here;
   const meta = [t.estimate_min ? `about ${hrs(t.estimate_min)}` : null, t.due_day ? `due ${dayShort(t.due_day).replace(/^\w+, /, '')}` : null].filter(Boolean).join(' · ');
   const can = draggable && !other && !['done', 'in_review'].includes(t.status);
   return html`<article class="pl-card${planned ? ' on' : ''}${other ? ' other' : ''}${t.status === 'done' ? ' did' : ''}" data-k="pc${t.id}" data-task="${t.id}" ${raw(can ? 'draggable="true"' : '')} ${raw(uid ? `data-uid="${uid}"` : '')}>
-    <div class="pl-k">${n != null ? html`<span class="num">${n}</span><i aria-hidden="true">·</i>` : ''}<span>${t.key || ''}</span>${other && !t.hidden ? html`<span class="pl-proj" style="--pc:${t.project_color}">${t.project_key}</span>` : ''}${PRIO[t.priority] ? html`<span class="pmc red">${PRIO[t.priority]}</span>` : ''}${st}</div>
-    <b class="pl-t">${t.hidden ? html`<span class="faint">Work on another project</span>` : t.title}</b>
+    <div class="pl-k">${n != null ? html`<span class="num">${n}</span><i aria-hidden="true">·</i>` : ''}<span>${t.key || ''}</span>${other && !t.hidden ? html`<span class="pl-proj" style="--pc:${t.project_color}">${t.project_key}</span>` : ''}${PRIO[t.priority] ? html`<span class="pmchip red">${PRIO[t.priority]}</span>` : ''}${st}</div>
+    <b class="pmpl-t">${t.hidden ? html`<span class="faint">Work on another project</span>` : t.title}</b>
     <div class="pl-m">${!planned && t.assignee ? html`${av(t.assignee_id, t.assignee, 'xs')}<span>${first(t.assignee)}</span>${meta ? html`<i aria-hidden="true">·</i>` : ''}` : ''}<span>${meta || (t.estimate_min == null && !other ? 'No estimate' : '')}</span>
       ${can ? html`<button type="button" class="pl-more" data-act="pl-menu" data-id="${t.id}" aria-label="${planned ? `Move ${t.key || t.title}` : `Plan ${t.key || t.title} for someone`}">${planned ? icon('right') : icon('plus')}</button>` : other ? html`<span class="pl-else">${t.hidden ? 'Planned elsewhere' : `Planned by ${t.project_key}`}</span>` : ''}</div>
   </article>`;
@@ -230,9 +230,9 @@ function column(d, b) {
   return html`<section class="pl-col${leave ? ' leave' : ''}${empty_ && !leave && d.status === 'work' && b.editable && b.day === b.today ? ' want' : ''}" data-k="u${d.user_id}" data-drop="${leave || !b.editable ? '' : d.user_id}" aria-label="${d.name}">
     <header class="pl-ch">${av(d.user_id, d.name, 'sm')}<b class="ell" title="${d.name}">${d.name}</b></header>
     ${d.role !== 'member' ? html`<span class="pl-role faint small">${d.role === 'manager' ? 'Project manager' : 'Stand-in'}</span>` : ''}
-    ${leave ? html`<span class="pmc amber" style="align-self:flex-start">On leave ${b.day === b.today ? 'today' : 'this day'}</span><p class="muted small pl-note">Approved time off. Tasks can’t be planned for ${first(d.name)}.</p>`
+    ${leave ? html`<span class="pmchip amber" style="align-self:flex-start">On leave ${b.day === b.today ? 'today' : 'this day'}</span><p class="muted small pl-note">Approved time off. Tasks can’t be planned for ${first(d.name)}.</p>`
       : html`<div class="pl-cap"><div class="pl-cap-l small"><span class="${over ? 'amber-ink' : 'muted'}">${capText(d)}</span><span class="faint">${d.status === 'work' ? shiftShort(d.shift_start, d.shift_end) : ''}</span></div>
-          <span class="pl-bar${over ? ' over' : ''}" role="img" aria-label="${capText(d)} planned${over ? `, ${hrs(d.planned_min - d.capacity_min)} over` : ''}"><i style="width:${pct}%"></i></span>${over || statusChip(d) || d.no_estimate ? html`<div class="pl-st">${over ? html`<span class="pmc amber">${hrs(d.planned_min - d.capacity_min)} over</span>` : ''}${statusChip(d)}${d.no_estimate ? html`<span class="faint small">${plural(d.no_estimate, 'task')} without an estimate</span>` : ''}</div>` : ''}</div>
+          <span class="pl-bar${over ? ' over' : ''}" role="img" aria-label="${capText(d)} planned${over ? `, ${hrs(d.planned_min - d.capacity_min)} over` : ''}"><i style="width:${pct}%"></i></span>${over || statusChip(d) || d.no_estimate ? html`<div class="pl-st">${over ? html`<span class="pmchip amber">${hrs(d.planned_min - d.capacity_min)} over</span>` : ''}${statusChip(d)}${d.no_estimate ? html`<span class="faint small">${plural(d.no_estimate, 'task')} without an estimate</span>` : ''}</div>` : ''}</div>
         <div class="pl-list" data-list="${d.user_id}">${d.tasks.map((t) => card(t, { planned: true, n: nth.get(t.id), draggable: b.editable, uid: d.user_id }))}
           ${empty_ ? html`<div class="pl-drop">${b.editable ? html`<span class="pl-mouse">Drop a task here</span><span class="pl-touch">Use + on a task to plan it here</span>${d.status === 'work' && d.starts_in_min != null ? html`<br><span>${first(d.name)} starts in ${hrs(Math.round(d.starts_in_min / 15) * 15 || 15)}.</span>` : ''}` : 'Nothing was planned'}</div>` : ''}</div>`}
   </section>`;
@@ -257,15 +257,15 @@ export function planTab(p, b) {
     <p class="muted small pl-hint">${b.editable ? 'Drag a task onto a person, or use its + button. Each person sees only their own day, in this order, once you send it.' : 'This day has gone by. You can look, but not change it.'}</p>
     <div class="pl-board" role="list">
       <section class="pl-col back" data-drop="${b.editable ? 'back' : ''}" aria-label="Not planned yet" role="listitem">
-        <header class="pl-ch"><b>Not planned yet</b><span class="pmc">${b.backlog.length}</span></header>
+        <header class="pl-ch"><b>Not planned yet</b><span class="pmchip">${b.backlog.length}</span></header>
         <div class="pl-list">${b.backlog.length ? b.backlog.map((t) => card(t, { draggable: b.editable })) : html`<div class="pl-drop">Everything open is planned.</div>`}</div>
         ${p.can_plan ? html`<button type="button" class="btn sm quiet pl-new" data-act="task-new" data-project="${p.id}">${raw('+')} New task</button>` : ''}
       </section>
       ${b.people.map((d) => html`<div role="listitem" class="pl-li">${column(d, b)}</div>`)}
     </div>
     <section class="pl-sent${b.sent ? ' is' : ''}" aria-live="polite">${b.sent
-      ? html`<span class="pmc green">Sent at ${tod(b.sent.sent_at, (S.me.tz_offset_min ?? S.settings.tz_offset_min))}</span><span class="pl-grow muted">${b.sent.by ? `${first(b.sent.by)} sent it. ` : ''}Changes after this tell the person straight away.</span>`
-      : html`<span class="pmc">Not sent</span><span class="pl-grow muted">${planned ? `Nobody sees this yet. Send it and ${sentTo.slice(0, 3).join(', ')}${sentTo.length > 3 ? ` and ${sentTo.length - 3} more` : ''} ${sentTo.length === 1 ? 'gets their' : 'get their'} day.` : 'Plan a task, then send everyone their day.'}</span>`}</section>
+      ? html`<span class="pmchip green">Sent at ${tod(b.sent.sent_at, (S.me.tz_offset_min ?? S.settings.tz_offset_min))}</span><span class="pl-grow muted">${b.sent.by ? `${first(b.sent.by)} sent it. ` : ''}Changes after this tell the person straight away.</span>`
+      : html`<span class="pmchip">Not sent</span><span class="pl-grow muted">${planned ? `Nobody sees this yet. Send it and ${sentTo.slice(0, 3).join(', ')}${sentTo.length > 3 ? ` and ${sentTo.length - 3} more` : ''} ${sentTo.length === 1 ? 'gets their' : 'get their'} day.` : 'Plan a task, then send everyone their day.'}</span>`}</section>
   </div>`;
 }
 
@@ -406,7 +406,7 @@ export const reviewPage = {
       <div class="tools"><a class="btn" href="#/tasks">${icon('tasks')} All tasks</a></div></div>
       ${list.length ? html`<div class="rv">
         <section class="panel flush rv-list" aria-labelledby="rv-lh"><header><h2 id="rv-lh">To review <span class="muted">${list.length}</span></h2><span class="muted small">Oldest first</span></header>
-          <div class="rv-items">${list.map((x) => html`<a class="rv-i${t && t.id === x.id ? ' on' : ''}" href="#/review?id=${x.id}" data-k="r${x.id}" ${raw(t && t.id === x.id ? 'aria-current="true"' : '')}>${x.assignee ? av(x.assignee_id, x.assignee, 'sm') : ''}<span class="pm-grow"><b>${x.title}</b><span class="muted small">${[x.key, x.assignee, age(x) ? `sent ${age(x)}` : ''].filter(Boolean).join(' · ')}</span></span>${hours(x) >= 3 ? html`<span class="pmc amber" title="Waiting for over ${Math.floor(hours(x))} hours">${Math.floor(hours(x))}h</span>` : ''}</a>`)}</div></section>
+          <div class="rv-items">${list.map((x) => html`<a class="rv-i${t && t.id === x.id ? ' on' : ''}" href="#/review?id=${x.id}" data-k="r${x.id}" ${raw(t && t.id === x.id ? 'aria-current="true"' : '')}>${x.assignee ? av(x.assignee_id, x.assignee, 'sm') : ''}<span class="pm-grow"><b>${x.title}</b><span class="muted small">${[x.key, x.assignee, age(x) ? `sent ${age(x)}` : ''].filter(Boolean).join(' · ')}</span></span>${hours(x) >= 3 ? html`<span class="pmchip amber" title="Waiting for over ${Math.floor(hours(x))} hours">${Math.floor(hours(x))}h</span>` : ''}</a>`)}</div></section>
         <div class="rv-main">${t ? detail(t) : html`<section class="panel">${empty('Pick a task', '')}</section>`}
           <section class="panel rv-who" aria-labelledby="rv-wh"><header><h2 id="rv-wh">Who approves</h2></header><div class="body">
             <p><b>The project manager</b>, for everything done on their project.</p>
@@ -420,7 +420,7 @@ function detail(t) {
   const names = [...(t.mention_pool || []).map((p) => p.name), S.me.name];
   const note = [...t.events].reverse().find((e) => e.kind === 'submitted');
   return html`<section class="panel rv-d" aria-labelledby="rv-dh"><div class="body">
-    <div class="rv-tags"><span class="pmc amber">In review</span><span class="muted small">${[t.key, t.project].filter(Boolean).join(' · ')}</span>${t.review_rounds ? html`<span class="pmc">Round ${t.review_rounds + 1}</span>` : ''}</div>
+    <div class="rv-tags"><span class="pmchip amber">In review</span><span class="muted small">${[t.key, t.project].filter(Boolean).join(' · ')}</span>${t.review_rounds ? html`<span class="pmchip">Round ${t.review_rounds + 1}</span>` : ''}</div>
     <h2 id="rv-dh" class="rv-t">${t.title}</h2>
     <div class="rv-from">${t.assignee ? av(t.assignee_id, t.assignee) : ''}<div class="pm-grow"><b>${first(t.assignee) || 'Someone'} sent it for review</b><span class="muted small">${note && note.detail ? withMentions(`“${note.detail}”`, names) : note ? relTime(note.at) : ''}</span></div></div>
     <div class="rv-stats">
