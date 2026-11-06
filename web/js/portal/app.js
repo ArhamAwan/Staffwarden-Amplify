@@ -408,17 +408,24 @@ const RKIND = { change: ['wrench', 'A change'], new: ['spark', 'Something new'],
 const SOON = { whenever: 'Whenever there’s time', month: 'This month', week: 'This week' };
 function reqSteps(r) {
   const declined = r.status === 'declined' || r.status === 'cancelled';
+  const done = r.status === 'done' || (r.task && r.task.status === 'done');
   const taken = r.status === 'planned' || r.status === 'done';
-  const est = r.estimate;
-  const steps = [
-    ['Sent', relTime(r.created_at), true],
-    ['Seen', r.seen_at ? `${first(r.seen_by_name) || 'The team'}, ${relTime(r.seen_at)}` : 'Not yet', !!r.seen_at],
-    ...(est || r.status === 'new' ? [['Estimate', est ? `About ${est.hours}h${est.answer === 'yes' ? ', agreed' : est.answer === 'no' ? ', not now' : ''}` : 'If it needs one', !!est]] : []),
-    declined ? [r.status === 'cancelled' ? 'Cancelled' : 'Not doing', relTime(r.cancelled_at || r.decided_at || r.created_at), true] : ['Taken on', taken && r.decided_at ? relTime(r.decided_at) : 'Waiting for a reply', taken],
-    ...(declined ? [] : [['Done', r.status === 'done' || (r.task && r.task.status === 'done') ? 'Finished' : '', r.status === 'done' || (r.task && r.task.status === 'done')]]),
-  ];
-  const cur = steps.findIndex((x) => !x[2]);
-  return html`<ol class="prsteps${declined ? ' no' : ''}" aria-label="Where it stands" style="--n:${steps.length}">${steps.map(([t, d, on], i) => html`<li class="${on ? 'on' : ''}${i === cur ? ' cur' : ''}"><i>${on ? icon('check') : ''}</i><b>${t}</b><span>${d}</span></li>`)}</ol>`;
+  const steps = [['Sent', true], ['Seen', !!r.seen_at], declined ? [r.status === 'cancelled' ? 'Cancelled' : 'Not doing', true] : ['Taken on', taken], ...(declined ? [] : [['Done', done]])];
+  const cur = steps.findIndex((x) => !x[1]);
+  return html`<ol class="prs${declined ? ' no' : ''}" aria-label="Progress: ${steps.filter((x) => x[1]).map((x) => x[0]).join(', ')}">${steps.map(([t, on], i) => html`<li class="${on ? 'on' : ''}${i === cur ? ' cur' : ''}"><i></i><span>${t}</span></li>`)}</ol>`;
+}
+// where it stands, and what happens next, in two plain sentences
+function reqNow(r) {
+  const who = (n) => first(n) || 'The team';
+  const e = r.estimate;
+  if (r.status === 'cancelled') return [e && e.answer === 'no' ? 'You said not now.' : 'You cancelled it.', 'Nothing more happens with it.'];
+  if (r.status === 'declined') return [`${who(r.decided_by_name)} won’t do this one.`, r.reply ? 'Their reason is below.' : 'Ask in the conversation below if you want to know more.'];
+  if (r.status === 'done' || (r.task && r.task.status === 'done')) return [`Finished${r.task && r.task.done_at ? ` ${relTime(r.task.done_at)}` : ''}.`, 'Reply below if something isn’t right.'];
+  if (r.status === 'planned') return [`${who(r.decided_by_name)} took it on${r.decided_at ? ` ${relTime(r.decided_at)}` : ''}.`, r.task ? `It’s task ${r.task.ref}${r.task.status === 'in_progress' ? ', being worked on now' : ', not started yet'}. You can follow it in Tasks.` : 'It becomes a task you can follow.'];
+  if (e && !e.answer) return [`${who(e.by)} sent you an estimate.`, 'Look it over below and say go ahead or not now. Nothing starts until you answer.'];
+  if (e && e.answer === 'yes') return ['You said go ahead.', 'The team will make it a task you can follow.'];
+  if (r.seen_at) return [`${who(r.seen_by_name)} saw it ${relTime(r.seen_at)}.`, 'Next, the team takes it on, sends you an estimate first, or tells you why not.'];
+  return [`Sent ${relTime(r.created_at)}. Nobody has opened it yet.`, 'Someone from the team will look at it soon.'];
 }
 function reqStage(r) {
   if (r.status === 'cancelled') return pill('idle', r.estimate && r.estimate.answer === 'no' ? 'Not now' : 'Cancelled');
@@ -451,26 +458,32 @@ function estimateBox(r, ret) {
 function reqThread(r, msgs) {
   const list = msgs || [];
   const open = ['new', 'planned'].includes(r.status);
-  if (!list.length && !open) return '';
-  return html`<div class="prt" data-k="rt${r.id}">${list.length ? html`<ol class="prt-l">${list.map((m) => html`<li class="${m.mine ? 'me' : ''}" data-k="rm${m.id}">${m.mine ? '' : av(m.author, 26, m.author.kind === 'client')}<div><b>${m.mine ? 'You' : m.author.name}</b><p>${m.body}</p><span>${relTime(m.created_at)}</span></div></li>`)}</ol>` : ''}
-    ${open && !preview() ? html`<form class="prt-f" data-pform="rmsg" data-id="${r.id}"><input name="body" maxlength="2000" placeholder="Reply to the team about this" aria-label="Reply to the team about this" required><button class="pbtn sm" type="submit">${ix('send', 14)}Send</button></form>` : ''}</div>`;
+  if (!list.length && !(open && !preview())) return '';
+  return html`<div class="prt2" data-k="rt${r.id}">${list.length ? html`<h4>Conversation</h4><ol>${list.map((m) => html`<li class="${m.mine ? 'me' : ''}" data-k="rm${m.id}">${av(m.mine ? P.home.me : m.author, 28, m.mine || m.author.kind === 'client')}<div><span class="prt2-w"><b>${m.mine ? 'You' : m.author.name}</b>${relTime(m.created_at)}</span><p>${m.body}</p></div></li>`)}</ol>` : ''}
+    ${open && !preview() ? html`<form class="prt2-f" data-pform="rmsg" data-id="${r.id}"><input name="body" maxlength="2000" placeholder="Write to the team about this" aria-label="Write to the team about this" required><button class="pbtn sm" type="submit">${ix('send', 14)}Send</button></form>` : ''}</div>`;
 }
 function requestsPage({ list, ret, msgs }) {
   const open = list.filter((r) => r.status === 'new' || r.status === 'planned'), closed = list.filter((r) => !open.includes(r));
-  const item = (r) => { const [ic, kl] = RKIND[r.kind] || RKIND.new; const canEdit = r.status === 'new' && !(r.estimate && r.estimate.answer) && !preview(); return html`<li class="preq" id="r${r.id}" data-k="r${r.id}">
-    <div class="preq-h"><span class="preq-k ${r.kind}">${ix(ic, 15)}${kl}</span><span class="pmuted">${r.by ? `${first(r.by)} asked` : 'Asked'} ${relTime(r.created_at)} · ${SOON[r.urgency] || ''}${r.edited_at ? ' · edited' : ''}</span>${reqStage(r)}</div>
-    <h3>${r.title}</h3>${r.detail ? html`<p class="preq-d">${r.detail}</p>` : ''}${r.file ? html`<button type="button" class="pfile" data-pa="open" data-url="${r.file.url}" data-name="${r.file.name}"><span class="pf-i">${icon('file')}</span><span><b>${r.file.name}</b><span>${kb(r.file.size)}</span></span></button>` : ''}
-    ${reqSteps(r)}
+  const item = (r) => {
+    const [ic, kl] = RKIND[r.kind] || RKIND.new; const canEdit = r.status === 'new' && !(r.estimate && r.estimate.answer) && !preview();
+    const [now, next] = reqNow(r);
+    return html`<li class="preq2 ${r.status}" id="r${r.id}" data-k="r${r.id}"><article>
+    <div class="preq2-h"><h3>${r.title}</h3>${reqStage(r)}</div>
+    <p class="preq2-m"><span class="preq-k ${r.kind}">${ix(ic, 14)}${kl}</span><span>${r.by ? `${first(r.by)} asked` : 'Asked'} ${relTime(r.created_at)}</span>${SOON[r.urgency] ? html`<span>${SOON[r.urgency]}</span>` : ''}${r.edited_at ? html`<span>Edited</span>` : ''}</p>
+    <div class="preq2-now"><div><b>${now}</b><span>${next}</span></div>${reqSteps(r)}</div>
+    ${r.detail || r.file ? html`<div class="preq2-ask">${r.detail ? html`<p>${r.detail}</p>` : ''}${r.file ? html`<button type="button" class="pfile" data-pa="open" data-url="${r.file.url}" data-name="${r.file.name}"><span class="pf-i">${icon('file')}</span><span><b>${r.file.name}</b><span>${kb(r.file.size)}</span></span></button>` : ''}</div>` : ''}
     ${r.estimate && !r.estimate.answer && r.status === 'new' ? estimateBox(r, ret) : ''}
     ${r.reply ? html`<div class="preq-reply ${r.status === 'declined' ? 'no' : ''}"><b>${first(r.decided_by_name) || 'The team'} replied</b><p>${r.reply}</p></div>` : ''}
     ${r.task ? html`<a class="preq-task" href="#/tasks?p=${pidNow()}&task=${r.task.id}">${icon('tasks')}<span><b>${r.task.ref}</b> ${r.task.title}</span><span class="pmuted">${ST_LABEL[r.task.status] ? ST_LABEL[r.task.status][1] : ''}</span>${icon('right')}</a>` : ''}
     ${reqThread(r, msgs.get(r.id))}
-    ${canEdit ? html`<div class="preq-a"><button type="button" class="plink" data-pa="req-edit" data-id="${r.id}">${ix('edit', 14)}Edit</button><button type="button" class="plink danger" data-pa="req-cancel" data-id="${r.id}" data-title="${r.title}">Cancel it</button></div>` : ''}</li>`; };
-  const how = card('phow', html`${cardH('How requests work')}<ol class="phowl"><li><b>You ask</b><span>A change, something new, or a problem. Add a file if it helps.</span></li><li><b>The team sees it</b><span>You see who looked at it and when.</span></li><li><b>An estimate, if it needs one</b><span>You see the hours against your retainer and say go ahead or not now.</span></li><li><b>It becomes a task</b><span>You can follow it and comment, or the team explains why not.</span></li></ol>
+    ${canEdit ? html`<div class="preq-a"><button type="button" class="plink" data-pa="req-edit" data-id="${r.id}">${ix('edit', 14)}Edit</button><button type="button" class="plink danger" data-pa="req-cancel" data-id="${r.id}" data-title="${r.title}">Cancel it</button></div>` : ''}</article></li>`;
+  };
+  const how = card('phow', html`${cardH('How requests work')}<ol class="phowl"><li><b>You ask</b><span>A change, something new, or a problem. Add a file if it helps.</span></li><li><b>The team sees it</b><span>You see who looked at it and when.</span></li><li><b>They take it on, or not</b><span>Bigger work gets an estimate first, and nothing starts until you say go ahead.</span></li><li><b>It becomes a task</b><span>You follow it in Tasks until it’s done.</span></li></ol>
     <p class="pmuted">Just a question? <a class="plink" href="#/messages?p=${pidNow()}">Ask in Messages</a> instead.</p>`);
   const retC = ret && ret.retainer_hours ? card('pretc', html`${cardH('Your retainer this month')}<div class="pret"><span class="pret-bar" aria-hidden="true"><i class="u" style="width:${Math.min(100, (ret.used_hours / ret.retainer_hours) * 100)}%"></i><i class="a" style="width:${Math.min(100 - Math.min(100, (ret.used_hours / ret.retainer_hours) * 100), (ret.agreed_hours / ret.retainer_hours) * 100)}%"></i></span><span class="pret-k"><span><i class="u"></i>Used ${hrs(ret.used_hours * 3600)}</span>${ret.agreed_hours ? html`<span><i class="a"></i>Agreed requests ${hrs(ret.agreed_hours * 3600)}</span>` : ''}<span class="pmuted">of ${ret.retainer_hours}h</span></span></div>`) : '';
+  const group = (title, items, sub) => html`<section class="preq2-g"><h2>${title} <span>${items.length}</span></h2>${sub ? html`<p class="pmuted">${sub}</p>` : ''}<ul class="preq2-l">${items.map(item)}</ul></section>`;
   return frame('requests', { title: 'Requests', sub: 'Changes and new work you’ve asked for, and where each one stands.', right: reqBtn() },
-    html`<div class="pgr"><div class="pcol">${list.length ? html`${open.length ? html`<section class="pcd"><div class="pch"><h2>Open</h2><span class="pch-x">${open.length}</span></div><ul class="preql">${open.map(item)}</ul></section>` : ''}${closed.length ? html`<section class="pcd"><div class="pch"><h2>Closed</h2><span class="pch-x">${closed.length}</span></div><ul class="preql">${closed.map(item)}</ul></section>` : ''}`
+    html`<div class="pgr"><div class="pcol">${list.length ? html`${open.length ? group('Open', open) : card('', emptyBox('Nothing open', 'Everything you asked for is finished or closed.'))}${closed.length ? html`<details class="preq2-g preq2-done"><summary><h2>Finished and closed <span>${closed.length}</span></h2></summary><ul class="preq2-l">${closed.map(item)}</ul></details>` : ''}`
       : card('', emptyBox('No requests yet', 'When you need a change or something new, ask the team here. You can follow every step.', html`<button type="button" class="pbtn ink" data-pa="request">${ix('ask', 16)}Ask the team</button>`))}</div><div class="pcol side">${retC}${how}</div></div>`);
 }
 
