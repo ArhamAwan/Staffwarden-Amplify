@@ -174,10 +174,11 @@ module.exports = (ctx) => {
     const cc = new Map(db.prepare(`SELECT task_id, COUNT(*) n FROM task_comments WHERE task_id IN (SELECT id FROM tasks WHERE project_id = ?) ${a.client ? 'AND team_only = 0' : ''} GROUP BY task_id`).all(a.p.id).map((r) => [r.task_id, r.n]));
     const fc = new Map(db.prepare('SELECT task_id, COUNT(*) n FROM task_files WHERE task_id IN (SELECT id FROM tasks WHERE project_id = ?) GROUP BY task_id').all(a.p.id).map((r) => [r.task_id, r.n]));
     const steps = new Map(db.prepare('SELECT task_id, COUNT(*) n, SUM(done_at IS NOT NULL) d FROM task_steps WHERE task_id IN (SELECT id FROM tasks WHERE project_id = ?) GROUP BY task_id').all(a.p.id).map((r) => [r.task_id, { total: r.n, done: r.d }]));
+    const fromReq = new Set(db.prepare('SELECT task_id FROM client_requests WHERE project_id = ? AND task_id IS NOT NULL').all(a.p.id).map((r) => r.task_id));
     return rows.map((t) => ({ id: t.id, ref: `${a.p.key}-${t.number}`, title: t.title, status: STATUS[t.status], due_day: t.due_day, completed_at: t.completed_at,
       assignee: (a.s.people || !a.client) && t.assignee_id ? { id: t.assignee_id, name: t.assignee_name, title: t.assignee_title } : null,
       comments: cc.get(t.id) || 0, files: a.s.files || !a.client ? fc.get(t.id) || 0 : 0, client_visible: a.client ? undefined : t.client_visible, shared: taskVisible(t, a.s),
-      milestone_id: t.milestone_id || null, steps: steps.get(t.id) || null }));
+      milestone_id: t.milestone_id || null, steps: steps.get(t.id) || null, from_request: fromReq.has(t.id) }));
   }, C);
   function taskFor(user, id) {
     const t = db.prepare('SELECT * FROM tasks WHERE id = ?').get(Number(id));
@@ -201,7 +202,8 @@ module.exports = (ctx) => {
       files: a.s.files || !a.client ? db.prepare('SELECT id, name, mime, size, created_at FROM task_files WHERE task_id = ? ORDER BY id').all(t.id) : [],
       comments: commentsOf(t, a.client), can_comment: true, milestone_id: t.milestone_id || null, start_day: t.created_at ? t.created_at.slice(0, 10) : null,
       steps: db.prepare('SELECT id, title, done_at FROM task_steps WHERE task_id = ? ORDER BY position, id').all(t.id).map((x) => ({ id: x.id, title: x.title, done: !!x.done_at, done_at: x.done_at })),
-      milestone: t.milestone_id ? (db.prepare('SELECT id, title FROM milestones WHERE id = ? AND project_id = ?').get(t.milestone_id, a.p.id) || null) : null };
+      milestone: t.milestone_id ? (db.prepare('SELECT id, title FROM milestones WHERE id = ? AND project_id = ?').get(t.milestone_id, a.p.id) || null) : null,
+      from_request: db.prepare('SELECT id, created_at FROM client_requests WHERE task_id = ? AND project_id = ? ORDER BY id LIMIT 1').get(t.id, a.p.id) || null };
   }, C);
   route('GET', '/api/portal/tasks/:id/files/:fid', ({ user, params }) => {
     const { t, a } = taskFor(user, params.id);

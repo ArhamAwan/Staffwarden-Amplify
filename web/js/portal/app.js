@@ -2,7 +2,7 @@
 // what the agency shares: progress, tasks, the people on them, approvals, requests, calls, hours and a
 // live chat with the team. Never screenshots, activity, attendance or anything about other clients.
 import { get, post, patch, put, del, startLive, fileUrl, fileBase64, download, setToken, liveFresh, setViewAs, getViewAs, getToken } from '../api.js';
-import { html, raw, esc, icon, initials, avColor, relTime, plural, dateY, dayMD, HELM, monthLabel, addMonths, addDays, nowMs } from '../util.js';
+import { html, raw, esc, icon, initials, avColor, relTime, plural, dateY, dayMD, dayLong, HELM, monthLabel, addMonths, addDays, nowMs } from '../util.js';
 import { toast, errMsg, openModal, confirmBox, trap } from '../ui.js';
 import { morph } from '../morph.js';
 import { mountChat, chatEvent, chatReloadAll } from '../chat.js';
@@ -282,40 +282,48 @@ function overview({ pj }) {
 
 // ================= Tasks =================
 async function loadTasks(pid, q) {
-  const tid = Number(q.get('task'));
-  const [pj, tasks, task] = await Promise.all([get(`/api/portal/projects/${pid}`), get(`/api/portal/projects/${pid}/tasks`), tid ? get(`/api/portal/tasks/${tid}`).catch(() => null) : null]);
-  return { pj, tasks, task };
+  let tid = Number(q.get('task'));
+  const [pj, tasks, t1] = await Promise.all([get(`/api/portal/projects/${pid}`), get(`/api/portal/projects/${pid}/tasks`), tid ? get(`/api/portal/tasks/${tid}`).catch(() => null) : null]);
+  // on a wide screen one task is always open: the first being worked on, else the next up, else the latest done
+  let task = t1;
+  if (!tid && !window.matchMedia('(max-width: 900px)').matches && tasks.length) {
+    const pick = tasks.find((t) => t.status === 'in_progress') || tasks.find((t) => t.status === 'todo') || tasks.slice().sort((a, b) => ((b.completed_at || '') > (a.completed_at || '') ? 1 : -1))[0];
+    task = await get(`/api/portal/tasks/${pick.id}`).catch(() => null);
+  }
+  return { pj, tasks, task, picked: !tid };
 }
-function taskCard(t, sel) {
-  const pid = pidNow();
-  const steps = t.steps && t.steps.total ? html`<span class="ptk-steps"><span class="pmc-bar" aria-hidden="true"><i style="width:${Math.round((t.steps.done / t.steps.total) * 100)}%"></i></span><span>${t.steps.done} of ${t.steps.total} steps</span></span>` : '';
-  return html`<a class="ptask${sel ? ' sel' : ''}${t.status === 'done' ? ' done' : ''}" href="#/tasks?p=${pid}&task=${t.id}" data-k="k${t.id}" ${sel ? raw('aria-current="true"') : ''}>
-    <b>${t.title}</b>${steps}
-    <span class="ptm">${t.assignee ? av(t.assignee, 22) : ''}<span>${t.status === 'done' && t.completed_at ? relTime(t.completed_at) : t.due_day ? dayMD(t.due_day) : 'No date yet'}</span>
-      <span class="ptm-r">${t.comments ? html`<span title="${plural(t.comments, 'comment')}">${icon('chat')}${t.comments}</span>` : ''}${t.files ? html`<span title="${plural(t.files, 'file')}">${icon('clip')}${t.files}</span>` : ''}</span></span></a>`;
+// Tasks: a list grouped the way a client thinks (what waits on me, what is moving, what is next, what is
+// done) beside the open task, read like a page: what is happening now, the facts, files and the talk about it.
+const todayDay = () => { const d = new Date(nowMs()); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+function taskRow(t, sel) {
+  const pid = pidNow(), late = t.status !== 'done' && t.due_day && t.due_day < todayDay();
+  const when = t.status === 'done' ? (t.completed_at ? `Finished ${relTime(t.completed_at)}` : 'Finished') : t.due_day ? `${late ? 'Was due' : 'Due'} ${dayMD(t.due_day)}` : t.status === 'todo' ? 'Not started yet' : 'No date yet';
+  return html`<li><a class="ptl-r${sel ? ' on' : ''}" href="#/tasks?p=${pid}&task=${t.id}" data-k="k${t.id}" ${sel ? raw('aria-current="true"') : ''}>
+    <span class="ptl-mk ${t.status}" aria-hidden="true"></span><span class="ptl-t"><b>${t.title}</b>
+    <span class="ptl-m">${t.assignee ? av(t.assignee, 20) : ''}<span class="${late ? 'late' : ''}">${when}</span>${t.steps && t.steps.total && t.status !== 'done' ? html`<span>${t.steps.done} of ${t.steps.total} steps</span>` : ''}${t.from_request ? html`<span>From your request</span>` : ''}${t.comments ? html`<span class="ptl-c" title="${plural(t.comments, 'comment')}">${icon('chat')}${t.comments}</span>` : ''}${t.files ? html`<span class="ptl-c" title="${plural(t.files, 'file')}">${icon('clip')}${t.files}</span>` : ''}</span></span></a></li>`;
 }
-function tasksPage({ pj, tasks, task }, q) {
-  const view = q.get('view') || 'all';
+function tasksPage({ pj, tasks, task, picked }, q) {
   const mid = Number(q.get('m')) || null;
   const inMile = (t) => !mid || t.milestone_id === mid;
-  const col = (k) => tasks.filter((t) => t.status === k && inMile(t));
-  const done = col('done').sort((a, b) => ((b.completed_at || '') > (a.completed_at || '') ? 1 : -1));
-  const showAll = q.get('done') === 'all';
+  const of = (k) => tasks.filter((t) => t.status === k && inMile(t));
+  const done = of('done').sort((a, b) => ((b.completed_at || '') > (a.completed_at || '') ? 1 : -1));
+  const showDone = q.get('done') === '1' || (task && task.status === 'done' && !picked);
   const sel = task && task.id;
-  const column = (k, label, list, tone, extra = '') => html`<section class="pcolk ${tone}" aria-label="${label}"><h2><i></i>${label}<span>${list.length}</span></h2>${list.length ? list : html`<p class="pk-empty">${k === 'wait' ? 'Nothing waiting on you' : 'Nothing here'}</p>`}${extra}</section>`;
-  const waitCards = pj.waiting.map((w) => html`<a class="ptask wait" href="#/approvals?p=${pj.project.id}&a=${w.id}"><b>${w.kind === 'file' ? `Send: ${w.title}` : `Approve: ${w.title}`}</b><span class="ptm"><span>${w.due_day ? `By ${dayMD(w.due_day)}` : `Asked ${relTime(w.created_at)}`}</span></span></a>`);
-  const board = view === 'wait'
-    ? html`<div class="pboard one">${column('wait', 'Waiting on you', waitCards, 'brass')}</div>`
-    : html`<div class="pboard">
-      ${column('todo', 'To do', col('todo').map((t) => taskCard(t, t.id === sel)), 'idle')}
-      ${column('in_progress', 'In progress', col('in_progress').map((t) => taskCard(t, t.id === sel)), 'blue')}
-      ${pj.settings.approvals && !mid ? column('wait', 'Waiting on you', waitCards, 'brass') : ''}
-      ${column('done', 'Done', (showAll ? done : done.slice(0, 4)).map((t) => taskCard(t, t.id === sel)), 'work', done.length > 4 && !showAll ? html`<button type="button" class="plink" data-pa="q" data-k="done" data-v="all">See ${done.length - 4} more</button>` : '')}</div>`;
+  const grp = (cls, title, items) => (items.length ? html`<section class="ptl-g ${cls}"><h2>${title} <span>${items.length}</span></h2><ul class="ptl-l">${items}</ul></section>` : '');
+  const waits = pj.settings.approvals && !mid ? pj.waiting.map((w) => html`<li><a class="ptl-r" href="#/approvals?p=${pj.project.id}&a=${w.id}"><span class="ptl-mk wait" aria-hidden="true"></span><span class="ptl-t"><b>${w.kind === 'file' ? `Send: ${w.title}` : `Approve: ${w.title}`}</b><span class="ptl-m"><span class="${w.due_day && w.due_day < todayDay() ? 'late' : ''}">${w.due_day ? `${w.due_day < todayDay() ? 'Was due' : 'Due'} ${dayMD(w.due_day)}` : `Asked ${relTime(w.created_at)}`}</span></span></span></a></li>`) : [];
+  const last = done[0] && done[0].completed_at ? ` · last one ${relTime(done[0].completed_at)}` : '';
+  const list = html`<div class="ptlist">
+    ${grp('wait', 'Waiting on you', waits)}
+    ${grp('', 'Being worked on', of('in_progress').map((t) => taskRow(t, t.id === sel)))}
+    ${grp('', 'Up next', of('todo').map((t) => taskRow(t, t.id === sel)))}
+    ${done.length ? (showDone ? html`<section class="ptl-g"><h2>Done <span>${done.length}</span><button type="button" class="plink" data-pa="q" data-k="done" data-v="">Hide</button></h2><ul class="ptl-l">${done.map((t) => taskRow(t, t.id === sel))}</ul></section>`
+      : html`<button type="button" class="ptl-fold" data-pa="q" data-k="done" data-v="1"><span class="ptl-mk done" aria-hidden="true"></span><b>Done</b><span class="pmuted">${plural(done.length, 'task')}${last}</span>${icon('right')}</button>`) : ''}
+    ${!tasks.some(inMile) && !waits.length ? card('', emptyBox('No tasks yet', 'When the team starts work for you, each task shows up here.')) : ''}</div>`;
   const miles = pj.milestones.filter((m) => tasks.some((t) => t.milestone_id === m.id));
   const chips = miles.length ? html`<div class="pmchips" role="group" aria-label="Milestone"><button type="button" aria-pressed="${String(!mid)}" data-pa="q" data-k="m" data-v="">Every milestone</button>${miles.map((m) => html`<button type="button" aria-pressed="${String(mid === m.id)}" data-pa="q" data-k="m" data-v="${m.id}">${m.done_at ? html`${icon('check')}` : ''}${m.title}</button>`)}</div>` : '';
-  const seg = html`<div class="pseg" role="group" aria-label="Show">${[['all', 'Every task'], ...(pj.settings.approvals ? [['wait', `Waiting on you${pj.waiting.length ? ` · ${pj.waiting.length}` : ''}`]] : [])].map(([k, l]) => html`<button type="button" aria-pressed="${String(view === k)}" data-pa="q" data-k="view" data-v="${k === 'all' ? '' : k}">${l}</button>`)}</div>`;
-  return frame('tasks', { title: 'Tasks', sub: `${plural(tasks.length, 'task')} shared with you. Open one to see where it stands and to comment; the team moves them along.`, right: html`${seg}${reqBtn()}` },
-    html`${chips}<div class="ptasks${task ? ' open' : ''}">${board}${task ? taskPanel(task, pj) : ''}</div>`);
+  const moving = of('in_progress').length;
+  return frame('tasks', { title: 'Tasks', sub: `${plural(tasks.length, 'task')} the team is doing for you${moving ? `, ${moving} being worked on now` : ''}. Open one to see where it stands, its files and the talk about it.`, right: reqBtn() },
+    html`${chips}<div class="ptl-wrap${task && !picked ? ' open' : ''}">${list}${task ? taskPanel(task, pj) : ''}</div>`);
 }
 const ST_LABEL = { todo: ['idle', 'To do'], in_progress: ['blue', 'In progress'], done: ['work', 'Done'] };
 function commentFile(c) {
@@ -323,19 +331,39 @@ function commentFile(c) {
   if (/^image\//.test(c.file.type)) return html`<button type="button" class="pc-img" data-pa="open" data-url="${c.file.url}" data-name="${c.file.name}"><img alt="${c.file.name}" data-pimg="${c.file.url}"></button>`;
   return html`<button type="button" class="pfile" data-pa="open" data-url="${c.file.url}" data-name="${c.file.name}"><span class="pf-i">${icon('file')}</span><span><b>${c.file.name}</b><span>${kb(c.file.size || 0)}</span></span></button>`;
 }
+function taskNow(t) {
+  const who = t.assignee ? first(t.assignee.name) : null;
+  const due = t.due_day ? `${t.due_day < todayDay() ? 'It was due' : 'Due'} ${dayLong(t.due_day)}.` : 'No date set yet.';
+  if (t.status === 'done') return [`Finished ${t.completed_at ? relTime(t.completed_at) : ''}.`.replace(' .', '.'), `${who ? `${who} wrapped this up.` : 'The team wrapped this up.'} Comment below if something isn’t right.`];
+  if (t.status === 'in_progress') return [`${who ? `${who} is` : 'The team is'} working on this.`, `${due} You’ll get a note when it’s done.`];
+  return [`${who ? `${who} will start on this.` : 'The team will start on this.'}`, due];
+}
 function taskPanel(t, pj) {
   const [tone, label] = ST_LABEL[t.status] || ST_LABEL.todo;
-  const rows = [t.assignee ? ['Who', html`<span class="pwho">${av(t.assignee, 26)}<b>${t.assignee.name}</b></span>`] : null, t.milestone ? ['Milestone', t.milestone.title] : null, ['Due', t.due_day ? dateY(t.due_day) : 'No date yet'], t.completed_at ? ['Done', relTime(t.completed_at)] : null, t.secs != null && pj.settings.hours !== 'off' ? ['Hours so far', hrs(t.secs)] : null].filter(Boolean);
-  const steps = t.steps && t.steps.length ? html`<div class="pp-steps"><h3>Steps <span class="pmuted">${t.steps.filter((x) => x.done).length} of ${t.steps.length}</span></h3><ol>${t.steps.map((x) => html`<li class="${x.done ? 'done' : ''}"><span class="pms-c">${x.done ? icon('check') : ''}</span><span>${x.title}</span>${x.done && x.done_at ? html`<span class="pmuted">${dayMD(x.done_at.slice(0, 10))}</span>` : ''}</li>`)}</ol></div>` : '';
-  return html`<aside class="ppanel" aria-label="Task ${t.title}" data-k="panel${t.id}">
-    <div class="pp-top">${pill(tone, label)}<span class="pp-ref">${t.ref}</span><a class="pbtn icon" href="#/tasks?p=${pidNow()}" aria-label="Close the task">${ix('x', 16)}</a></div>
-    <h2>${t.title}</h2>${t.description ? html`<p class="pp-desc">${t.description}</p>` : ''}
-    <dl class="pp-kv">${rows.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}</dl>
-    ${steps}
-    ${t.files.length ? html`<div class="pp-files">${t.files.map((f) => html`<button type="button" class="pfile" data-pa="open" data-url="/api/portal/tasks/${t.id}/files/${f.id}" data-name="${f.name}"><span class="pf-i">${icon('file')}</span><span><b>${f.name}</b><span>${relTime(f.created_at)} · ${kb(f.size)}</span></span></button>`)}</div>` : ''}
-    <div class="pp-thread" aria-label="Comments">${t.comments.length ? t.comments.map((c) => html`<div class="pcm ${c.author.kind === 'client' ? 'me' : 'them'}" data-k="cm${c.id}">${c.author.kind === 'client' ? '' : av(c.author, 28)}<div class="pc-b">${c.author.kind === 'client' && c.author.id === P.home.me.id ? '' : html`<b>${c.author.name}${c.author.kind === 'staff' ? html` <span class="ch-tag team">${orgShort()}</span>` : ''}</b>`}${c.body ? html`<p>${c.body}</p>` : ''}${commentFile(c)}<span class="pc-t">${relTime(c.created_at)}</span></div></div>`) : html`<p class="pp-none">No comments yet. Ask a question or add a detail; ${t.assignee ? first(t.assignee.name) : 'the team'} gets a note.</p>`}</div>
-    ${preview() ? '' : html`<form class="pp-comp" data-pform="comment" data-id="${t.id}"><div class="pp-att" data-att hidden></div><div class="pp-row"><label class="pbtn icon pp-clip" aria-label="Attach a screenshot or file" title="Attach a screenshot or file">${ix('clip', 17)}<input type="file" name="file" hidden accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/csv,text/plain,.docx,.xlsx,.zip"></label><textarea name="body" rows="1" placeholder="Comment on this task" aria-label="Comment on this task" maxlength="4000"></textarea><button class="ch-send" type="submit" aria-label="Send the comment">${ix('send', 18)}</button></div></form>
-    <p class="pp-note">Everyone on the project sees it</p>`}</aside>`;
+  const [now, next] = taskNow(t);
+  const order = ['todo', 'in_progress', 'done'], at = order.indexOf(t.status);
+  const bar = html`<ol class="prs" aria-label="Progress: ${['To do', 'Working on it', 'Done'].slice(0, at + 1).join(', ')}">${['To do', 'Working on it', 'Done'].map((x, i) => html`<li class="${i < at || t.status === 'done' ? 'on' : ''}${i === at && t.status !== 'done' ? ' cur' : ''}"><i></i><span>${x}</span></li>`)}</ol>`;
+  const facts = [
+    t.assignee ? ['Who’s doing it', html`<span class="ptr-who">${av(t.assignee, 22)}${t.assignee.name}</span>`] : null,
+    [t.status === 'done' ? 'Finished' : 'Due', t.status === 'done' ? (t.completed_at ? dateY(t.completed_at.slice(0, 10)) : '') : t.due_day ? dateY(t.due_day) : 'No date yet'],
+    t.milestone ? ['Part of', t.milestone.title] : null,
+    t.from_request ? ['Came from', html`<a class="plink" href="#/requests?p=${pidNow()}&r=${t.from_request.id}">Your request, ${dayMD(t.from_request.created_at.slice(0, 10))}</a>`] : null,
+    t.secs != null && pj.settings.hours !== 'off' ? ['Time so far', hrs(t.secs)] : null,
+  ].filter(Boolean);
+  const steps = t.steps && t.steps.length ? html`<section class="ptr-s"><h3>Steps <span>${t.steps.filter((x) => x.done).length} of ${t.steps.length}</span></h3><ol class="ptr-steps">${t.steps.map((x) => html`<li class="${x.done ? 'done' : ''}"><span class="pms-c">${x.done ? icon('check') : ''}</span><span>${x.title}</span>${x.done && x.done_at ? html`<span class="pmuted">${dayMD(x.done_at.slice(0, 10))}</span>` : ''}</li>`)}</ol></section>` : '';
+  const files = t.files.length ? html`<section class="ptr-s"><h3>Files <span>${t.files.length}</span></h3><div class="ptr-files">${t.files.map((f) => { const url = `/api/portal/tasks/${t.id}/files/${f.id}`; const img = /^image\/(png|jpeg|webp|gif)$/.test(f.mime || ''); return html`<button type="button" class="ptr-f" data-pa="open" data-url="${url}" data-name="${f.name}"><span class="ptr-th">${img ? html`<img alt="" data-pimg="${url}">` : ix('file', 26)}</span><b>${f.name}</b><span>${relTime(f.created_at)} · ${kb(f.size)}</span></button>`; })}</div></section>` : '';
+  const talk = html`<section class="ptr-s"><h3>Conversation${t.comments.length ? html` <span>${t.comments.length}</span>` : ''}</h3>
+    ${t.comments.length ? html`<ol class="ptr-cv" aria-label="Comments">${t.comments.map((c) => { const mine = c.author.kind === 'client' && c.author.id === P.home.me.id; return html`<li data-k="cm${c.id}">${av(mine ? P.home.me : c.author, 30, c.author.kind === 'client')}<div><span class="ptr-w"><b>${mine ? 'You' : c.author.name}</b>${c.author.kind === 'staff' ? html`<span class="ch-tag team">${orgShort()}</span>` : ''}<span>${relTime(c.created_at)}</span></span>${c.body ? html`<p>${c.body}</p>` : ''}${commentFile(c)}</div></li>`; })}</ol>` : html`<p class="pmuted">No comments yet. Ask a question or add a detail; ${t.assignee ? first(t.assignee.name) : 'the team'} gets a note.</p>`}
+    ${preview() ? '' : html`<form class="pp-comp ptr-comp" data-pform="comment" data-id="${t.id}"><div class="pp-att" data-att hidden></div><div class="pp-row"><textarea name="body" rows="1" placeholder="Write to ${t.assignee ? first(t.assignee.name) : 'the team'} about this task…" aria-label="Comment on this task" maxlength="4000"></textarea><label class="pbtn icon pp-clip" aria-label="Attach a screenshot or file" title="Attach a screenshot or file">${ix('clip', 17)}<input type="file" name="file" hidden accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/csv,text/plain,.docx,.xlsx,.zip"></label><button class="pbtn ink ptr-send" type="submit">Send</button></div></form>
+    <p class="pp-note">Everyone on the project sees it</p>`}</section>`;
+  return html`<article class="ptr" aria-label="Task ${t.title}" data-k="panel${t.id}">
+    <a class="pback ptr-back" href="#/tasks?p=${pidNow()}">${icon('left')}Tasks</a>
+    <div class="ptr-top">${pill(tone, t.status === 'in_progress' ? 'Being worked on' : t.status === 'todo' ? 'Up next' : label)}<span>${t.ref}</span>${t.milestone ? html`<span>${t.milestone.title}</span>` : ''}</div>
+    <h2>${t.title}</h2>
+    <div class="ptr-now"><div><b>${now}</b><span>${next}</span></div>${bar}</div>
+    <dl class="ptr-facts">${facts.map(([k, v]) => html`<div><dt>${k}</dt><dd>${v}</dd></div>`)}</dl>
+    ${t.description ? html`<section class="ptr-s"><h3>What it is</h3><p class="ptr-d">${t.description}</p></section>` : ''}
+    ${steps}${files}${talk}</article>`;
 }
 
 // ================= Messages =================
