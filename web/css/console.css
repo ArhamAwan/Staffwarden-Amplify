@@ -171,6 +171,9 @@ table.t tr.go:hover td.ch svg { transform: translateX(3px); color: var(--lilac);
 .cn-in .rise { animation: cnRise .6s var(--ease) both; animation-delay: calc(var(--i, 0) * 70ms); }
 .cn-in .bars i { animation: cnGrow .9s var(--ease) both; animation-delay: calc(250ms + var(--i, 0) * 60ms); }
 .cn-in tr.go { animation: cnRow .45s var(--ease) both; animation-delay: calc(200ms + var(--i, 0) * 35ms); }
+.rows-in tr.go { animation: cnRow .35s var(--ease) both; animation-delay: calc(var(--i, 0) * 25ms); }
+.rows-in .tbar i { animation: cnBar .7s var(--ease) both; }
+.rows-in .empty { animation: cnRise .35s var(--ease) both; }
 .cn-in .tbar i, .cn-in .life-fill { animation: cnBar 1s var(--ease) both; animation-delay: .35s; }
 .cn-in .tl li { animation: cnRise .5s var(--ease) both; animation-delay: calc(250ms + var(--i, 0) * 50ms); }
 @keyframes cnRise { from { opacity: 0; transform: translateY(14px); } }

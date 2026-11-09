@@ -183,7 +183,8 @@ async function overview() {
       <td class="r num">${c.monthly_cents ? usd(c.monthly_cents) : c.after_trial_cents ? `<span class="faint">${usd(c.after_trial_cents)} after trial</span>` : '<span class="faint">nothing</span>'}</td>
       <td>${day(c.created_at)}</td><td>${esc(ago(c.last_used_at))}</td><td class="ch">${ic('chev')}</td></tr>`; }).join('')}</tbody></table>`
       : `<div class="empty"><b>${q ? `Nothing matches “${esc(find)}”` : filter === 'attention' ? 'Nothing needs you' : filter === 'paying' ? 'No paying companies yet' : filter === 'trial' ? 'No trials right now' : 'No companies yet'}</b>${q ? 'Check the spelling, or clear the search.' : filter === 'all' ? 'Companies appear here as soon as they sign up.' : ''}</div>`;
-    if (animate) { main.classList.remove('cn-in'); void main.offsetWidth; main.classList.add('cn-in'); setTimeout(() => main.classList.remove('cn-in'), 1600); }
+    // a new filter: only the rows settle in again; the rest of the page stays still
+    if (animate) { const l = $('#list'); l.classList.remove('rows-in'); void l.offsetWidth; l.classList.add('rows-in'); setTimeout(() => l.classList.remove('rows-in'), 900); }
   };
   const slide = () => { const on = root.querySelector('.seg [aria-pressed="true"]'), ind = root.querySelector('.seg .ind'); if (on && ind) { ind.style.left = `${on.offsetLeft}px`; ind.style.width = `${on.offsetWidth}px`; } };
   draw(false); slide();
