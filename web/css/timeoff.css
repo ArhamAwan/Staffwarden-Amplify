@@ -40,3 +40,33 @@
 .lv-past { margin-top: 0; border-top: 1px solid var(--line-2); }
 .lv-past > summary { color: var(--muted); }
 .blist .lv-refdot { box-shadow: inset 0 0 0 2.5px #8FB0FF !important; background: transparent !important; }
+/* the month: each kind of day is its own colour, labelled in the cell, and listed below in date order */
+.lv-bento .lv-cal { gap: 4px; }
+.lv-bento .lv-cal .d { height: auto; min-height: 40px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 4px 0; box-shadow: none; line-height: 1.1; }
+.lv-bento .lv-cal .d b { font-size: 13px; font-weight: 650; }
+.lv-bento .lv-cal .d small { font-size: 9px; font-weight: 750; letter-spacing: .04em; opacity: .95; }
+.lv-bento .lv-cal .d.hol { background: #1F9D67; color: #fff; }
+.lv-bento .lv-cal .d.ref { background: rgba(110,150,255,.24); color: #DCE6FF; }
+.lv-bento .lv-cal .d.ref small { color: #A9C2FF; }
+.lv-bento .lv-cal .d.off { background: rgb(var(--v-7c64f0, 124 100 240) / .6); color: #fff; }
+.lv-bento .lv-cal .d.ask { background: rgba(247,170,60,.25); color: #FFE2A8; }
+.lv-bento .lv-cal .d.today { outline: 2px solid rgb(var(--v-e6deff, 230 222 255)); outline-offset: -2px; color: #fff; }
+.lv-key { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; font-size: 11.5px; color: var(--muted); }
+.lv-key span { display: inline-flex; align-items: center; gap: 6px; }
+.lv-key i { width: 10px; height: 10px; border-radius: 3px; }
+.lv-key .hol i { background: #1F9D67; } .lv-key .ref i { background: rgba(110,150,255,.55); } .lv-key .off i { background: rgb(var(--v-7c64f0, 124 100 240) / .8); } .lv-key .ask i { background: rgba(247,170,60,.6); }
+.lv-evs { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.lv-ev { display: flex; align-items: center; gap: 10px; padding: 7px 10px 7px 7px; border-radius: 10px; background: rgba(255,255,255,.04); }
+.lv-dt { width: 36px; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 36px; border-radius: 8px; font-size: 14px; font-weight: 700; line-height: 1; background: rgba(255,255,255,.08); color: var(--ink); }
+.lv-dt small { font-size: 9px; font-weight: 700; color: var(--muted); margin-bottom: 2px; text-transform: none; }
+.lv-ev.hol .lv-dt { background: #1F9D67; color: #fff; } .lv-ev.hol .lv-dt small { color: rgba(255,255,255,.85); }
+.lv-ev.ref .lv-dt { background: rgba(110,150,255,.24); color: #DCE6FF; }
+.lv-ev.off .lv-dt { background: rgb(var(--v-7c64f0, 124 100 240) / .6); color: #fff; }
+.lv-ev.ask .lv-dt { background: rgba(247,170,60,.25); color: #FFE2A8; }
+.lv-ev-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.lv-ev-t b { font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lv-ev-t span { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lv-tag { flex: none; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; }
+.lv-tag.hol { background: rgba(46,170,120,.2); color: #7BE3B0; } .lv-tag.ref { background: rgba(110,150,255,.18); color: #B9CDFF; }
+.lv-tag.off { background: rgb(var(--v-7c64f0, 124 100 240) / .25); color: rgb(var(--v-d5cbff, 213 203 255)); } .lv-tag.ask { background: rgba(247,170,60,.18); color: #FFD58A; }
+.lv-none { margin: 12px 0 0; }
