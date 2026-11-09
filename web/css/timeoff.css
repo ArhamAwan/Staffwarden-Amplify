@@ -134,3 +134,33 @@
 .lv-reqs tbody tr.lv-mo:first-child th { border-top: 0; }
 .lv-pg { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px 14px; border-top: 1px solid var(--line-2); }
 @media (max-width: 760px) { .lv-tools { margin-left: 0; width: 100%; } .lv-tools .psearch, .lv-tools .psearch input { width: 100%; } .lv-reqs table.stack tr.lv-mo { display: block; } .lv-reqs table.stack tr.lv-mo th { display: block; } }
+
+/* motion: the calendar, the month's list and the holiday cards settle in when the page opens; holiday
+   cards revealed by "Show more months" rise in; new request rows fade in. Nothing replays on live updates
+   (the page keeps the same elements), and none of it runs when the system asks for reduced motion. */
+@keyframes lvPop { from { opacity: 0; transform: scale(.82); } }
+@keyframes lvFill { 0% { box-shadow: 0 0 0 0 rgba(46,190,130,.55); } 100% { box-shadow: 0 0 0 9px rgba(46,190,130,0); } }
+@keyframes lvHalo { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(1.25); } }
+@keyframes lvRise { from { opacity: 0; transform: translateY(12px); } }
+@keyframes lvSlide { from { opacity: 0; transform: translateX(-10px); } }
+@keyframes lvArc { from { stroke-dasharray: 0 252; } }
+@keyframes lvRow { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: no-preference) {
+  #view.enter .lv-bento .lv-cal .d:not(:empty) { animation: lvPop .38s cubic-bezier(.2,.8,.2,1.2) both; animation-delay: calc(var(--i, 0) * 14ms + 120ms); }
+  /* once each time the calendar is drawn (not on live updates): the days off ripple, today breathes */
+  .lv-bento .lv-cal .d.hol::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; animation: lvFill 1s ease-out calc(var(--i, 0) * 14ms + 700ms) both; }
+  .lv-bento .lv-cal .d.today::after { content: ''; position: absolute; inset: -2px; border-radius: 10px; border: 2px solid rgb(var(--v-e6deff, 230 222 255) / .7); pointer-events: none; opacity: 0; animation: lvHalo 1.4s ease-out 900ms 2; }
+  #view.enter .lv-evs > li { animation: lvSlide .4s var(--ease, ease-out) both; }
+  #view.enter .lv-evs > li:nth-child(1) { animation-delay: .45s; } #view.enter .lv-evs > li:nth-child(2) { animation-delay: .52s; }
+  #view.enter .lv-evs > li:nth-child(3) { animation-delay: .59s; } #view.enter .lv-evs > li:nth-child(4) { animation-delay: .66s; }
+  #view.enter .lv-evs > li:nth-child(n+5) { animation-delay: .72s; }
+  #view.enter .lv-ring .bt-ring .fg { animation: lvArc .9s cubic-bezier(.3,.7,.2,1) .15s both; }
+  #view.enter .lvy-m, .lvy-more[open] .lvy-m { animation: lvRise .45s cubic-bezier(.2,.7,.2,1) both; animation-delay: calc(var(--i, 0) * 60ms + 80ms); }
+  .lvy-i.off .lvy-d { animation: lvFill 1s ease-out calc(var(--i, 0) * 60ms + 600ms); }
+  .lvy-i .lvy-d { transition: transform .18s ease; }
+  .lvy-i:hover .lvy-d { transform: translateY(-2px) scale(1.04); }
+  .lv-reqs tbody tr { animation: lvRow .3s ease-out both; }
+  .lv-reqs tbody tr.lv-mo { animation: lvRow .3s ease-out both; }
+  .lv-bento .lv-cal .d { position: relative; transition: transform .15s ease, filter .15s ease; }
+  .lv-bento .lv-cal .d:not(:empty):hover { transform: translateY(-2px); filter: brightness(1.15); }
+}
