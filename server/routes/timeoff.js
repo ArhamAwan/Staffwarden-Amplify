@@ -31,7 +31,7 @@ module.exports = (ctx) => {
     if (status) { where.push('status = ?'); args.push(status); }
     if (T.isDay(from)) { where.push('end_day >= ?'); args.push(from); }
     if (T.isDay(to)) { where.push('start_day <= ?'); args.push(to); }
-    return db.prepare(`SELECT * FROM leave_requests WHERE ${where.join(' AND ')} ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, start_day DESC LIMIT 500`).all(...args).map(out);
+    return db.prepare(`SELECT * FROM leave_requests WHERE ${where.join(' AND ')} ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, start_day DESC LIMIT 5000`).all(...args).map(out);
   });
 
   // ---- the company's rules: paid days a month (no carrying over), unpaid as needed, and no leave next to

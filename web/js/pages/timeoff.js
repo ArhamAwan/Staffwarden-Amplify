@@ -1,6 +1,6 @@
 import { html, raw, esc, icon, initials, avColor, dayShort, dayMD, dayLong, plural, todayIn, addDays, eachDay, monthEnd, monthLabel, dow, LEAVE_KIND } from '../util.js';
 import { get, post, del, qs } from '../api.js';
-import { S, actions, ring, kpis, tag, person, empty, openModal, confirmBox, toast, errMsg, meter } from '../ui.js';
+import { S, actions, ring, kpis, tag, person, empty, openModal, confirmBox, toast, errMsg, meter, qAttr } from '../ui.js';
 import { isMgr as isMgrOnly, loadPeople, select, companyToday, myToday } from '../parts.js';
 // HR decides everyone's time off, like a manager
 const isMgr = () => isMgrOnly() || !!S.me.hr;
@@ -26,7 +26,7 @@ export default {
   title: 'Time off',
   async load(q) {
     const year = (isMgr() ? companyToday() : myToday()).slice(0, 4);
-    const [reqs, bal, allHol, refs] = await Promise.all([get(`/api/timeoff${qs({ status: q.get('status') })}`), get(`/api/timeoff/balances${qs({ month: (isMgr() ? companyToday() : myToday()).slice(0, 7) })}`), get('/api/holidays'), get('/api/observances').catch(() => [])]);
+    const [reqs, bal, allHol, refs] = await Promise.all([get(`/api/timeoff${qs({ status: q.get('status'), from: `${Number(year) - 1}-01-01` })}`), get(`/api/timeoff/balances${qs({ month: (isMgr() ? companyToday() : myToday()).slice(0, 7) })}`), get('/api/holidays'), get('/api/observances').catch(() => [])]);
     if (isMgrOnly()) await loadPeople();
     else if (isMgr()) S.people = (await get('/api/hr/people')).filter((p) => p.role !== 'owner');
     const hol = allHol.filter((h) => h.day.startsWith(year));
@@ -47,21 +47,47 @@ export default {
       <td class="muted small">${r.note || ''}${r.decision_note ? html`<br><i>Reply: ${r.decision_note}</i>` : ''}${r.cancel_note ? html`<br><i>Why it was cancelled: ${r.cancel_note}</i>` : ''}</td>
       <td class="r nowrap">${r.status === 'pending' && isOwner() && r.user_id !== S.me.id ? html`<button class="btn sm primary" data-act="decide" data-id="${r.id}" data-approve="1" data-who="${r.user_name}" data-range="${range(r)}" data-emergency="${r.emergency ? '1' : ''}" data-note="${r.note || ''}">Approve</button> <button class="btn sm" data-act="decide" data-id="${r.id}" data-who="${r.user_name}" data-range="${range(r)}">Decline</button> `
         : ''}${canCancel(r, today) ? html`<button class="btn sm danger" data-act="cancel-leave" data-id="${r.id}" data-mine="${r.user_id === S.me.id ? '1' : ''}" data-who="${r.user_name}" data-range="${range(r)}">Cancel</button>` : ''}</td></tr>`;
-    const table = (list, empt) => list.length ? html`<div class="tbl-wrap"><table class="t stack"><thead><tr>${mgr ? html`<th>Person</th>` : ''}<th>Pay</th><th>Dates</th><th>Length</th><th>Status</th><th>Reason</th><th></th></tr></thead><tbody>${list.map(row)}</tbody></table></div>` : empty(empt[0], empt[1]);
+    const table = (list, empt) => list.length ? html`<div class="tbl-wrap"><table class="t stack"><thead><tr>${mgr ? html`<th>Person</th>` : ''}<th>Pay</th><th>Dates</th><th>Length</th><th>Status</th><th>Reason</th><th></th></tr></thead><tbody>${list.map((r) => (r.mo ? html`<tr class="lv-mo" data-k="m${r.mo}"><th colspan="${mgr ? 7 : 6}" scope="colgroup">${monthLabel(r.mo)}<span>${plural(r.n, 'request')}</span></th></tr>` : row(r)))}</tbody></table></div>` : empty(empt[0], empt[1]);
     return html`
       <div class="page-h"><div><h1>Time off</h1><p class="sub">${isOwner() ? 'You approve or decline every request' : `${owner()} approves every request`}</p></div>
         <div class="tools"><button class="btn primary" data-act="new-leave">${isOwner() ? 'Record time off' : mgr ? 'Ask for time off' : 'Request time off'}</button></div></div>
       ${rules()}
       ${leaveBento({ reqs, hol, refs, pending, away, upcoming, mine, mgr, today })}
       ${pending.length && !status ? html`<section class="panel flush"><header><h2>${isOwner() ? 'Waiting for your decision' : `Waiting for ${ownerFirst(false)}`}</h2></header><div class="body">${table(pending, ['', ''])}</div></section>` : ''}
-      <section class="panel flush"><header><h2>${status ? 'Requests' : 'All requests'}</h2>${select({ q: 'status', value: status, label: 'Status', options: [['', 'Any status'], ['pending', 'Waiting'], ['approved', 'Approved'], ['denied', 'Declined'], ['cancelled', 'Cancelled']] })}</header>
-        <div class="body">${table(status ? reqs : reqs.filter((r) => r.status !== 'pending'), ['No requests yet', mgr ? 'Requests from your people appear here.' : 'Use "Request time off" to ask for days off.'])}</div></section>
+      ${requestsPanel({ reqs, status, mgr, today, q, table })}
       ${holidaysPanel(allHol, refs, today)}
       ${mgr ? html`<section class="panel flush"><header><h2>This month</h2><span class="muted small">${monthLabel(today.slice(0, 7))} · ${plural(perMonth(), 'paid day')} each</span></header><div class="body"><div class="tbl-wrap"><table class="t"><thead><tr><th>Person</th><th class="r">Paid used</th><th class="r">Paid left</th><th class="r">Unpaid</th><th></th></tr></thead><tbody>
           ${bal.map((b) => html`<tr data-k="b${b.user_id}"><td><b>${b.name}</b></td><td class="r num">${b.taken} / ${b.allowance}</td><td class="r num"><b>${b.left}</b></td><td class="r num">${b.unpaid ? plural(b.unpaid, 'day') : '—'}</td><td class="small muted">${b.asked ? `${b.asked} paid asked for` : ''}${b.pending ? `${b.asked ? ', ' : ''}${b.pending} waiting` : ''}</td></tr>`)}</tbody></table></div></div></section>` : ''}
       `;
   },
 };
+
+// every request, built to stay usable at a few thousand: what's coming up first, then the past; grouped by month;
+// 25 at a time; managers can find a person by name
+const PAGE = 25;
+function requestsPanel({ reqs, status, mgr, today, q, table }) {
+  const when = q.get('when') || (mgr ? 'up' : 'all');
+  const find = (q.get('find') || '').trim().toLowerCase();
+  const shown = Math.max(PAGE, Number(q.get('n')) || PAGE);
+  let list = status ? reqs : reqs.filter((r) => r.status !== 'pending');
+  const up = list.filter((r) => r.end_day >= today), past = list.filter((r) => r.end_day < today);
+  list = when === 'up' ? up.sort((a, b) => (a.start_day < b.start_day ? -1 : 1)) : when === 'past' ? past : [...up.sort((a, b) => (a.start_day < b.start_day ? -1 : 1)), ...past];
+  if (find) list = list.filter((r) => String(r.user_name || '').toLowerCase().includes(find));
+  const page = list.slice(0, shown);
+  // a header row each time the month changes
+  const rows = []; let mo = '';
+  for (const r of page) { const m = r.start_day.slice(0, 7); if (m !== mo) { mo = m; const n = list.filter((x) => x.start_day.slice(0, 7) === m).length; rows.push({ mo: m, n }); } rows.push(r); }
+  const seg = (v, t, n) => html`<button type="button" data-act="q" ${raw(qAttr('when', v === (mgr ? 'up' : 'all') ? '' : v))} aria-pressed="${String(when === v)}">${t}${n != null ? html` <i>${n}</i>` : ''}</button>`;
+  const left = list.length - page.length;
+  return html`<section class="panel flush lv-reqs"><header><h2>${status ? 'Requests' : 'All requests'}</h2>
+      <div class="lv-tools">
+        ${mgr ? html`<label class="psearch"><span class="sr">Find a person</span>${icon('search')}<input type="search" placeholder="Find a person" value="${q.get('find') || ''}" data-q="find" autocomplete="off"></label>` : ''}
+        <div class="seg" role="group" aria-label="When">${seg('up', 'Now and coming up', up.length)}${seg('past', 'Past', past.length)}${seg('all', 'All')}</div>
+        ${select({ q: 'status', value: status, label: 'Status', options: [['', 'Any status'], ['pending', 'Waiting'], ['approved', 'Approved'], ['denied', 'Declined'], ['cancelled', 'Cancelled']] })}
+      </div></header>
+    <div class="body">${list.length ? table(rows, null) : empty(find ? `Nobody called “${q.get('find')}”` : when === 'up' ? 'Nothing coming up' : 'No requests yet', find ? 'Check the spelling, or clear the search.' : when === 'up' ? 'Approved and declined requests from today on show here. See “Past” for earlier ones.' : mgr ? 'Requests from your people appear here.' : 'Use "Request time off" to ask for days off.')}
+      ${left > 0 ? html`<div class="lv-pg"><span class="muted small">Showing ${page.length} of ${list.length}</span><button class="btn sm" type="button" data-act="q" ${raw(qAttr('n', String(shown + PAGE)))}>Show ${Math.min(PAGE, left)} more</button></div>` : ''}</div></section>`;
+}
 
 function rules() {
   const n = perMonth();
