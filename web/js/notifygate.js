@@ -29,10 +29,10 @@ const WHY = () => {
 };
 
 const STEPS = {
-  chrome: ['Click the <b>site settings icon</b> at the left of the address bar, next to <b>staffwarden.com</b>.', 'Turn <b>Notifications</b> on (or choose <b>Allow</b>).', 'Come back here. This screen closes by itself.'],
+  chrome: ['Click the <b>site settings icon</b> at the left of the address bar, next to <b>' + location.hostname + '</b>.', 'Turn <b>Notifications</b> on (or choose <b>Allow</b>).', 'Come back here. This screen closes by itself.'],
   edge: ['Click the <b>lock icon</b> at the left of the address bar.', 'Under <b>Permissions for this site</b>, set <b>Notifications</b> to <b>Allow</b>.', 'Come back here. This screen closes by itself.'],
   firefox: ['Click the <b>crossed-out bell</b> at the left of the address bar.', 'Next to <b>Send notifications</b>, click the <b>×</b> so it’s no longer blocked, then press <b>Check again</b>.', 'Choose <b>Allow</b> when Firefox asks.'],
-  safari: ['In the menu bar choose <b>Safari › Settings › Websites › Notifications</b>.', 'Find <b>staffwarden.com</b> and set it to <b>Allow</b>.', 'Come back here and press <b>Check again</b>.'],
+  safari: ['In the menu bar choose <b>Safari › Settings › Websites › Notifications</b>.', 'Find <b>' + location.hostname + '</b> and set it to <b>Allow</b>.', 'Come back here and press <b>Check again</b>.'],
   other: ['Open this site’s settings from the icon at the left of the address bar.', 'Set <b>Notifications</b> to <b>Allow</b>.', 'Come back here and press <b>Check again</b>.'],
 };
 

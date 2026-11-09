@@ -7,7 +7,7 @@ const num = (v, d) => (v === undefined || v === '' ? d : Number(v));
 const app = createApp({
   dbFile: process.env.DB_FILE || path.join(dataDir, 'tracker.db'),
   dataDir,
-  orgName: process.env.ORG_NAME || 'Amplify Media',
+  orgName: process.env.ORG_NAME || undefined,
   shiftStart: process.env.SHIFT_START || '09:00',
   shiftEnd: process.env.SHIFT_END || '18:00',
   graceMin: num(process.env.GRACE_MIN, 10),

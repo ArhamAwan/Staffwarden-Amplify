@@ -45,7 +45,7 @@ function cmpVersion(a, b) {
 function createApp(opts = {}) {
   // ---- configuration: constructor/env defaults, overridden by whatever the owner saved in Settings ----
   const defaults = {
-    orgName: opts.orgName || 'Amplify Media',
+    orgName: opts.orgName || 'Your company',
     shiftStart: opts.shiftStart || '09:00',
     shiftEnd: opts.shiftEnd || '18:00',
     breakStart: opts.breakStart || null,     // scheduled break, e.g. 13:00 to 14:00 (none by default)
@@ -119,6 +119,11 @@ function createApp(opts = {}) {
     cfg[key] = value;
   }
   loadSettings();
+  // an install from before the company's name was saved kept it only as the built-in default: save it, so
+  // changing that default (the app is for any company now) never renames a company already running
+  if (!opts.orgName && !db.prepare("SELECT 1 FROM settings WHERE key = 'orgName'").get() && db.prepare('SELECT 1 FROM users LIMIT 1').get()) {
+    saveSetting('orgName', 'Amplify Media'); cfg.orgName = 'Amplify Media';
+  }
 
   // ---- live updates (Server-Sent Events) ----
   // Events carry only a type and a user id, never data: clients re-fetch through the normal,

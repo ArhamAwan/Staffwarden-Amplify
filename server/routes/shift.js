@@ -200,10 +200,10 @@ module.exports = (ctx) => {
   // the boost button (owner only)
   // =================================================================================================
   const VIBES = {
-    chai: ['Two chais and a deadline. Let’s go, night shift.', 'Chai is brewing. So is greatness. Back to it.', 'Hydrate, caffeinate, dominate. In that order.'],
-    liftoff: ['Basit pressed the big button. Your keyboard has been notified.', 'Night-shift power-up: +10 focus, +5 vibes, −1 yawn.', 'Engines on. Tampa wakes up in a few hours: let’s give them something to wake up to.'],
+    chai: ['Two chais and a deadline. Let’s go, team.', 'Chai is brewing. So is greatness. Back to it.', 'Hydrate, caffeinate, dominate. In that order.'],
+    liftoff: ['Someone pressed the big button. Your keyboard has been notified.', 'Power-up: +10 focus, +5 vibes, −1 yawn.', 'Engines on. Let’s give the clients something good to wake up to.'],
     lasthour: ['Last hour. Finish strong, then check in.', 'One more push. The weekend is closer than it looks.', 'Mandatory fun detected. Please look busy, enthusiastically.'],
-    win: ['Big win tonight. Whoever closed it, the good chair is yours.', 'That’s how it’s done. Keep the streak going.', 'This is your CEO speaking: hydrate, stretch, then absolutely crush it.'],
+    win: ['Big win tonight. Whoever closed it, the good chair is yours.', 'That’s how it’s done. Keep the streak going.', 'This is your boss speaking: hydrate, stretch, then absolutely crush it.'],
   };
   const linesFor = (vibe) => [...(VIBES[vibe] || []), ...db.prepare('SELECT line FROM boost_lines WHERE vibe = ?').all(vibe).map((r) => r.line)];
   function lastBoost() {
