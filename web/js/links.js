@@ -2,7 +2,7 @@
 // a new password, taking over as owner, and the one-time code that brings a new owner over from sign-up
 // to the welcome screen where they invite their team. Also the screen for an account that was closed.
 import { post, get, setToken, getToken } from './api.js';
-import { esc, owl, avColor, initials } from './util.js';
+import { esc, owl, avColor, initials, copyText } from './util.js';
 
 const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 const LOCK = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
@@ -276,7 +276,7 @@ async function ready() {
       out.innerHTML = `<p class="lk-note" style="text-align:left;margin-bottom:8px">Email isn’t set up on this server, so send each person their link yourself. Each works once, for 7 days.</p>
         <ul class="lk-links">${links.map((l, i) => `<li><span>${esc(l.email)}</span><button class="lk-btn lk-sm" type="button" data-copy="${i}">Copy link</button></li>`).join('')}</ul>`;
       out.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
-        try { await navigator.clipboard.writeText(links[Number(b.dataset.copy)].link); b.textContent = 'Copied'; } catch { b.textContent = 'Copy failed'; }
+        b.textContent = (await copyText(links[Number(b.dataset.copy)].link)) ? 'Copied' : 'Copy failed';
       }));
     }
     if (!failed.length) {

@@ -2,7 +2,7 @@
 // box (marked data-own, so page refreshes leave it alone): messages arrive and update live, people
 // see each other typing, and replies, reactions, emoji, files, voice messages, edits and reads all
 // work like a phone messenger.
-import { esc, initials, avColor, owl } from './util.js';
+import { esc, initials, avColor, owl, copyText } from './util.js';
 import { get, post, patch, put, del, fileUrl, fileBytes, fileBase64, liveFresh } from './api.js';
 import { S, toast, errMsg, confirmBox, openModal } from './ui.js';
 import { morph } from './morph.js';
@@ -630,7 +630,7 @@ export function mountChat(el, opts) {
       else if (a === 'reply') startReply(m);
       else if (a === 'thread') opts.onThread(m);
       else if (a === 'task') makeTask(m);
-      else if (a === 'copy') { try { await navigator.clipboard.writeText(m.body); toast('Copied'); } catch { toast('Copy it by hand: your browser blocked copying', true); } }
+      else if (a === 'copy') { try { if (!(await copyText(m.body))) throw new Error('blocked'); toast('Copied'); } catch { toast('Copy it by hand: your browser blocked copying', true); } }
       else if (a === 'edit') startEdit(m);
       else if (a === 'pin') { try { await post(`/api/chat/messages/${m.id}/pin`, { on: !m.pinned }); load({ keepScroll: true }); } catch (e) { toast(errMsg(e), true); } }
       else if (a === 'info') info(m);

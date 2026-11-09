@@ -1,4 +1,4 @@
-import { html, raw, esc, icon, tzLabel, hhmmText, hoursText, relTime, plural, dur, tzPlace, zoneName, zoneShort, zoneOffset, fmtMin, tod, nowMs } from '../util.js';
+import { html, raw, esc, icon, copyText, tzLabel, hhmmText, hoursText, relTime, plural, dur, tzPlace, zoneName, zoneShort, zoneOffset, fmtMin, tod, nowMs } from '../util.js';
 import { get, post, patch, del, qs } from '../api.js';
 import { S, actions, tag, person, empty, openModal, confirmBox, toast, errMsg, liveTag } from '../ui.js';
 import { isMgr, zoneOptions, readZone } from '../parts.js';
@@ -388,7 +388,7 @@ function showInviteLink(name, link) {
   const m = openModal({
     title: `Send ${String(name).split(' ')[0]} their invite`, submit: 'Copy the link', cancel: 'Done',
     body: html`<p>Email isn’t set up on this server, so send this link yourself, by chat or email. It works once, for 7 days.</p><input class="mt" readonly value="${link}" aria-label="Invite link" style="font-size:13px">`,
-    onSubmit: async () => { await navigator.clipboard.writeText(link); toast('Link copied'); },
+    onSubmit: async () => { if (!(await copyText(link))) throw new Error('Couldn’t copy. Select the link above and copy it.'); toast('Link copied'); },
   });
   const i = m.form.querySelector('input'); i.addEventListener('focus', () => i.select());
 }
@@ -427,7 +427,7 @@ actions['invite-many'] = () => {
       out.innerHTML = html`${sent ? html`<p class="banner info" style="margin:0 0 10px"><span>${sent === 1 ? '1 invite sent' : `${sent} invites sent`}.</span></p>` : ''}
         ${links.length ? html`<p class="hint">Email isn’t set up on this server, so send each person their link yourself. Each works once, for 7 days.</p><ul class="iv-links">${links.map(([e, l], i) => html`<li><span>${e}</span><button type="button" class="btn sm" data-iv-copy="${i}">Copy link</button></li>`)}</ul>` : ''}
         ${failed.length ? html`<p class="err">${failed.join(' ')}</p>` : ''}`.toString();
-      out.querySelectorAll('[data-iv-copy]').forEach((b) => b.addEventListener('click', async () => { try { await navigator.clipboard.writeText(links[Number(b.dataset.ivCopy)][1]); b.textContent = 'Copied'; } catch { b.textContent = 'Copy failed'; } }));
+      out.querySelectorAll('[data-iv-copy]').forEach((b) => b.addEventListener('click', async () => { b.textContent = (await copyText(links[Number(b.dataset.ivCopy)][1])) ? 'Copied' : 'Select and copy'; }));
       form.querySelector('#iv-em').value = failed.map((f) => f.split(':')[0]).join(', ');
       const btn = form.querySelector('button[type=submit]'); if (!failed.length) btn.style.display = 'none';
       form.querySelector('[data-close]').textContent = 'Done';

@@ -2,7 +2,7 @@
 // what the agency shares: progress, tasks, the people on them, approvals, requests, calls, hours and a
 // live chat with the team. Never screenshots, activity, attendance or anything about other clients.
 import { get, post, patch, put, del, startLive, fileUrl, fileBase64, download, setToken, liveFresh, setViewAs, getViewAs, getToken } from '../api.js';
-import { html, raw, esc, icon, initials, avColor, relTime, plural, dateY, dayMD, dayLong, HELM, monthLabel, addMonths, addDays, nowMs } from '../util.js';
+import { html, raw, esc, icon, initials, avColor, relTime, plural, dateY, dayMD, dayLong, HELM, monthLabel, addMonths, addDays, nowMs, copyText } from '../util.js';
 import { toast, errMsg, openModal, confirmBox, trap } from '../ui.js';
 import { morph } from '../morph.js';
 import { mountChat, chatEvent, chatReloadAll } from '../chat.js';
@@ -1008,7 +1008,7 @@ function onClick(e) {
   if (a === 'retry') return run({ navigated: true });
   if (a === 'open') return openFile(b.dataset.url, b.dataset.name);
   if (a === 'as-send') return sendDialog();
-  if (a === 'copy') { navigator.clipboard.writeText(b.dataset.v).then(() => toast(`Copied ${b.dataset.v}`), () => toast('Your browser blocked copying', true)); return; }
+  if (a === 'copy') { copyText(b.dataset.v).then((ok) => (ok ? toast(`Copied ${b.dataset.v}`) : toast('Your browser blocked copying', true))); return; }
   if (a === 'csv') return download(`/api/portal/projects/${pidNow()}/hours.csv?month=${b.dataset.month}`, `hours-${b.dataset.month}.csv`).catch((err) => toast(errMsg(err), true));
   if (a === 'pdf') return download(`/api/portal/projects/${pidNow()}/statement.pdf?month=${b.dataset.month}`, `statement-${b.dataset.month}.pdf`).catch((err) => toast(errMsg(err), true));
   if (a === 'ics') return download(`/api/portal/meetings/${b.dataset.id}/ics`, 'call.ics').catch((err) => toast(errMsg(err), true));

@@ -1,6 +1,6 @@
 // Import people from their contracts. Everything is read here in the browser: typed PDFs are read
 // directly, scans and photos go through OCR. HR checks every field before anyone is created.
-import { html, raw, icon, plural, initials, avColor, money, dateY, L, CURRENCIES, homeCurrency } from '../util.js';
+import { html, raw, icon, plural, initials, avColor, money, dateY, L, CURRENCIES, homeCurrency, copyText } from '../util.js';
 import { get, post, fileBase64, fileBytes } from '../api.js';
 import { S, actions, tag, toast, errMsg, confirmBox } from '../ui.js';
 import { parseContract, joinItems } from '../contract-parse.js';
@@ -281,6 +281,6 @@ actions['imp-save'] = async () => {
 };
 actions['imp-reset'] = () => { st.files = []; st.results = []; st.phase = 'pick'; st.doc = null; S.refresh(); };
 actions['imp-drop'] = (el) => { st.files = st.files.filter((f) => f.id !== Number(el.dataset.id)); if (!st.files.length) st.phase = 'pick'; S.refresh(); };
-async function copy(text) { try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast('Copy it by hand: your browser blocked copying', true); } }
+async function copy(text) { try { if (!(await copyText(text))) throw new Error('blocked'); toast('Copied'); } catch { toast('Copy it by hand: your browser blocked copying', true); } }
 actions['imp-copy'] = (el) => copy(`${el.dataset.email}\n${el.dataset.pw}`);
 actions['imp-copy-all'] = () => copy(st.results.filter((r) => r.password).map((r) => `${r.name}\t${r.email}\t${r.password}`).join('\n'));

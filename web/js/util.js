@@ -236,3 +236,15 @@ export const icon = (name) => raw(`<svg class="ic" viewBox="0 0 24 24" aria-hidd
 
 export const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Copy text: the clipboard API where the page is secure (https, localhost), and the older way otherwise
+// (a test address like lvh.me over http), so "Copy" works everywhere.
+export async function copyText(text) {
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; } } catch { /* try the older way */ }
+  const t = document.createElement('textarea');
+  t.value = text; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+  document.body.appendChild(t); t.select(); t.setSelectionRange(0, text.length);
+  let ok = false; try { ok = document.execCommand('copy'); } catch { ok = false; }
+  t.remove();
+  return ok;
+}

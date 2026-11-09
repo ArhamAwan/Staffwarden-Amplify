@@ -1,7 +1,7 @@
 // The team's side of the client portal: the Clients page (who can sign in, what they see) and the
 // Client tab on a project (the chat with them, what is waiting on them, their requests, the weekly
 // update and milestones).
-import { html, raw, esc, icon, plural, relTime, dayShort, initials, avColor, ICON } from '../util.js';
+import { html, raw, esc, icon, plural, relTime, dayShort, initials, avColor, ICON, copyText } from '../util.js';
 import { get, post, patch, put, del, fileBase64, fileUrl, liveFresh } from '../api.js';
 import { S, actions, empty, toast, errMsg, openModal, confirmBox, qAttr, findPeople, findBox, longList } from '../ui.js';
 import { isMgr, zoneOptions, readZone } from '../parts.js';
@@ -138,7 +138,7 @@ function showPassword(name, email, password, again = false) {
     body: html`<p>Pass these on to ${name.split(' ')[0]}. The password is shown only now${again ? '; the old one no longer works' : ''}.</p>
       <dl class="cl-cred"><dt>Address</dt><dd>${location.origin}</dd><dt>Email</dt><dd>${email}</dd><dt>Password</dt><dd><code>${password}</code></dd></dl>
       <div class="cl-cred-a"><button type="button" class="btn primary" data-copy="${location.origin}\nEmail: ${email}\nPassword: ${password}">${icon('repeat')} Copy all three</button><button type="button" class="btn" data-close>Done</button></div>` });
-  setTimeout(() => { const b = document.querySelector('[data-copy]'); if (b) b.addEventListener('click', async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast('Copied'); } catch { toast('Copy it by hand: your browser blocked copying', true); } }); }, 30);
+  setTimeout(() => { const b = document.querySelector('[data-copy]'); if (b) b.addEventListener('click', async () => { try { if (!(await copyText(b.dataset.copy))) throw new Error('blocked'); toast('Copied'); } catch { toast('Copy it by hand: your browser blocked copying', true); } }); }, 30);
 }
 actions['client-invite'] = (el) => openModal({
   title: 'Invite someone', sub: 'They get a sign-in for the client portal. You pass the password on.', submit: 'Create the sign-in',

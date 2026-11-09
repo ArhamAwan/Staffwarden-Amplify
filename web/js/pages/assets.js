@@ -2,7 +2,7 @@
 // Brand (logos, colours, fonts), links, files and pictures, where logins are kept, and notes.
 // Designed on the "Client assets" canvas. Search and the kind filter work instantly on the page; adding
 // takes anything (a link, a colour code, a note, files) and works out what it is.
-import { html, raw, esc, relTime, plural, initials, avColor } from '../util.js';
+import { html, raw, esc, relTime, plural, initials, avColor, copyText } from '../util.js';
 import { get, post, patch, del, download, fileUrl, fileBase64, getToken } from '../api.js';
 import { S, actions, toast, errMsg, openModal, confirmBox } from '../ui.js';
 
@@ -123,7 +123,7 @@ actions['as-kind'] = (el) => {
 };
 document.addEventListener('input', (e) => { if (e.target.matches && e.target.matches('[data-as-q]')) { view.q = e.target.value; filter(); } });
 actions['as-copy'] = async (el) => {
-  try { await navigator.clipboard.writeText(el.dataset.v); toast(`Copied ${el.dataset.v.length > 40 ? 'the link' : el.dataset.v}`); } catch { toast('Your browser blocked copying. Select it and copy by hand.', true); }
+  try { if (!(await copyText(el.dataset.v))) throw new Error('blocked'); toast(`Copied ${el.dataset.v.length > 40 ? 'the link' : el.dataset.v}`); } catch { toast('Your browser blocked copying. Select it and copy by hand.', true); }
 };
 
 // upload one file, big ones as they are
