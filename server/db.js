@@ -1276,7 +1276,7 @@ function migrateV35(db) {
   migrateV36(db);
 }
 
-// v36: who cancelled time off, when and why (the approver stays in decided_by)
+// v36: who cancelled time off, when and why (the approver stays in decided_by); reference-only calendar days
 function migrateV36(db) {
   db.exec('BEGIN');
   try {
@@ -1284,6 +1284,8 @@ function migrateV36(db) {
     if (!cols.includes('cancelled_by')) db.exec('ALTER TABLE leave_requests ADD COLUMN cancelled_by INTEGER');
     if (!cols.includes('cancelled_at')) db.exec('ALTER TABLE leave_requests ADD COLUMN cancelled_at TEXT');
     if (!cols.includes('cancel_note')) db.exec('ALTER TABLE leave_requests ADD COLUMN cancel_note TEXT');
+    // days shown on the calendar for reference only (another country's holidays): not days off
+    db.exec(`CREATE TABLE IF NOT EXISTS observances (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, name TEXT NOT NULL, region TEXT, UNIQUE(day, name))`);
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {

@@ -169,6 +169,41 @@ module.exports = (ctx) => {
     emit('timeoff');
     return { ok: true };
   });
+  // ---- days on the calendar for reference only (another country's holidays): nobody gets them off ----
+  route('GET', '/api/observances', ({ query }) => {
+    const year = query.get('year');
+    return db.prepare(`SELECT id, day, name, region FROM observances ${year ? 'WHERE day LIKE ?' : ''} ORDER BY day, id`).all(...(year ? [`${year}-%`] : []));
+  });
+  route('DELETE', '/api/observances/:id', ({ user, params }) => {
+    needOwner(user);
+    db.prepare('DELETE FROM observances WHERE id = ?').run(Number(params.id));
+    emit('timeoff');
+    return { ok: true };
+  });
+  // a country's public holidays in one go, from today on: as days off, or for reference only
+  const { LISTS } = require('../lib/holidays');
+  route('GET', '/api/holidays/lists', () => Object.entries(LISTS).map(([code, l]) => ({ code, name: l.name, count: l.days.length })));
+  route('POST', '/api/holidays/import', ({ user, body }) => {
+    needOwner(user);
+    const list = LISTS[String(body.country || '').toUpperCase()];
+    need(list, 400, 'Choose a country');
+    const off = body.as !== 'reference';
+    const today = T.localDay(clockNow(), calc.companyTz());
+    let added = 0, kept = 0;
+    for (const [day, name] of list.days) {
+      if (day < today) continue;
+      if (off) {
+        if (db.prepare('SELECT 1 FROM holidays WHERE day = ?').get(day)) { kept++; continue; }
+        db.prepare('INSERT INTO holidays (day, name) VALUES (?,?)').run(day, name); added++;
+      } else {
+        const r = db.prepare('INSERT OR IGNORE INTO observances (day, name, region) VALUES (?,?,?)').run(day, name, list.name);
+        if (r.changes) added++; else kept++;
+      }
+    }
+    audit(user, 'holiday.imported', null, `${list.name}, ${off ? 'days off' : 'for reference'}: ${added} added`);
+    emit('timeoff');
+    return { added, kept, country: list.name, as: off ? 'off' : 'reference' };
+  });
   route('DELETE', '/api/holidays/:day', ({ user, params }) => {
     needOwner(user);
     db.prepare('DELETE FROM holidays WHERE day = ?').run(params.day);

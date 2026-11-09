@@ -199,6 +199,17 @@ test('time off: one paid day a month, unpaid as needed, no Monday or Friday unle
   assert.equal(g.holidays['2026-10-28'], 'Test holiday');
   const bal = await ok('GET', '/api/timeoff/balances?month=2026-10', { token: tokens.carol });
   assert.deepEqual([bal[0].allowance, bal[0].taken, bal[0].left, bal[0].unpaid], [1, 1, 0, 1]);
+  // a country's holidays in one go: Pakistan's as days off, the US's for reference only (people still work them)
+  assert.equal((await api('POST', '/api/holidays/import', { token: tokens.max, body: { country: 'PK' } })).status, 403);
+  const pk = await ok('POST', '/api/holidays/import', { token: tokens.owner, body: { country: 'PK' } });
+  assert.ok(pk.added > 5);
+  assert.equal((await ok('POST', '/api/holidays/import', { token: tokens.owner, body: { country: 'PK' } })).added, 0, 'twice adds nothing');
+  const us = await ok('POST', '/api/holidays/import', { token: tokens.owner, body: { country: 'US', as: 'reference' } });
+  assert.ok(us.added > 5);
+  assert.ok((await ok('GET', '/api/observances?year=2026', { token: tokens.carol })).some((o) => o.name === 'Thanksgiving'));
+  assert.ok(!(await ok('GET', '/api/holidays?year=2026', { token: tokens.carol })).some((h) => h.name === 'Thanksgiving'), 'not a day off');
+  const tg = await ok('GET', `/api/timesheets?from=2026-11-26&to=2026-11-26&user_id=${carolId}`, { token: tokens.owner });
+  assert.equal(tg.rows[0].cells['2026-11-26'].status, 'upcoming', 'Thanksgiving is a working day');
   // the day after a holiday counts as next to one too
   assert.deepEqual((await ok('POST', '/api/timeoff/check', { token: tokens.alice, body: { kind: 'unpaid', start_day: '2026-10-29', end_day: '2026-10-29' } })).sandwich_days, ['2026-10-29']);
   // several paid days at once: only one is paid

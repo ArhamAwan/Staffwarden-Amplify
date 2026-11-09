@@ -26,12 +26,13 @@ export default {
   title: 'Time off',
   async load(q) {
     const year = (isMgr() ? companyToday() : myToday()).slice(0, 4);
-    const [reqs, bal, hol] = await Promise.all([get(`/api/timeoff${qs({ status: q.get('status') })}`), get(`/api/timeoff/balances${qs({ month: (isMgr() ? companyToday() : myToday()).slice(0, 7) })}`), get(`/api/holidays${qs({ year })}`)]);
+    const [reqs, bal, allHol, refs] = await Promise.all([get(`/api/timeoff${qs({ status: q.get('status') })}`), get(`/api/timeoff/balances${qs({ month: (isMgr() ? companyToday() : myToday()).slice(0, 7) })}`), get('/api/holidays'), get('/api/observances').catch(() => [])]);
     if (isMgrOnly()) await loadPeople();
     else if (isMgr()) S.people = (await get('/api/hr/people')).filter((p) => p.role !== 'owner');
-    return { reqs, bal, hol, year };
+    const hol = allHol.filter((h) => h.day.startsWith(year));
+    return { reqs, bal, hol, allHol, refs, year };
   },
-  render({ reqs, bal, hol, year }, q) {
+  render({ reqs, bal, hol, allHol, refs, year }, q) {
     const status = q.get('status') || '';
     const today = isMgr() ? companyToday() : myToday();
     const pending = reqs.filter((r) => r.status === 'pending');
@@ -51,15 +52,14 @@ export default {
       <div class="page-h"><div><h1>Time off</h1><p class="sub">${isOwner() ? 'You approve or decline every request' : `${owner()} approves every request`}</p></div>
         <div class="tools"><button class="btn primary" data-act="new-leave">${isOwner() ? 'Record time off' : mgr ? 'Ask for time off' : 'Request time off'}</button></div></div>
       ${rules()}
-      ${leaveBento({ reqs, hol, pending, away, upcoming, mine, mgr, today })}
+      ${leaveBento({ reqs, hol, refs, pending, away, upcoming, mine, mgr, today })}
       ${pending.length && !status ? html`<section class="panel flush"><header><h2>${isOwner() ? 'Waiting for your decision' : `Waiting for ${ownerFirst(false)}`}</h2></header><div class="body">${table(pending, ['', ''])}</div></section>` : ''}
       <section class="panel flush"><header><h2>${status ? 'Requests' : 'All requests'}</h2>${select({ q: 'status', value: status, label: 'Status', options: [['', 'Any status'], ['pending', 'Waiting'], ['approved', 'Approved'], ['denied', 'Declined'], ['cancelled', 'Cancelled']] })}</header>
         <div class="body">${table(status ? reqs : reqs.filter((r) => r.status !== 'pending'), ['No requests yet', mgr ? 'Requests from your people appear here.' : 'Use "Request time off" to ask for days off.'])}</div></section>
       <div class="cols even">
         ${mgr ? html`<section class="panel flush"><header><h2>This month</h2><span class="muted small">${monthLabel(today.slice(0, 7))} · ${plural(perMonth(), 'paid day')} each</span></header><div class="body"><div class="tbl-wrap"><table class="t"><thead><tr><th>Person</th><th class="r">Paid used</th><th class="r">Paid left</th><th class="r">Unpaid</th><th></th></tr></thead><tbody>
           ${bal.map((b) => html`<tr data-k="b${b.user_id}"><td><b>${b.name}</b></td><td class="r num">${b.taken} / ${b.allowance}</td><td class="r num"><b>${b.left}</b></td><td class="r num">${b.unpaid ? plural(b.unpaid, 'day') : '—'}</td><td class="small muted">${b.asked ? `${b.asked} paid asked for` : ''}${b.pending ? `${b.asked ? ', ' : ''}${b.pending} waiting` : ''}</td></tr>`)}</tbody></table></div></div></section>` : ''}
-        <section class="panel flush"><header><h2>Company holidays</h2>${S.me.role === 'owner' ? html`<button class="btn sm" data-act="new-holiday">${raw('+')} Add holiday</button>` : ''}</header><div class="body">
-          ${hol.length ? html`<ul class="blist">${hol.map((h) => html`<li data-k="h${h.day}"><i class="dotbox" style="background:#3B8ED0"></i><span class="what">${h.name}</span><span class="len num">${S.me.role === 'owner' ? html`<button class="linkbtn" data-act="del-holiday" data-day="${h.day}">Remove</button>` : ''}</span><span class="when">${dayLong(h.day)}</span></li>`)}</ul>` : empty('No holidays added', S.me.role === 'owner' ? 'Add public holidays so they are not counted as absences.' : 'Public holidays show here once your company adds them.')}</div></section>
+        ${holidaysPanel(allHol, refs, today)}
       </div>`;
   },
 };
@@ -74,10 +74,26 @@ function rules() {
 }
 
 // the top of the page as a bento: what needs a decision, who is away, the holidays, and this month
-function leaveBento({ reqs, hol, pending, away, upcoming, mine, mgr, today }) {
+// holidays from today on: the days off, and other countries' days shown for reference (people work them)
+function holidaysPanel(allHol, refs, today) {
+  const own = S.me.role === 'owner';
+  const next = allHol.filter((h) => h.day >= today), past = allHol.filter((h) => h.day < today && h.day.slice(0, 4) === today.slice(0, 4)).reverse();
+  const ref = refs.filter((r) => r.day >= today);
+  const li = (h) => html`<li data-k="h${h.day}"><i class="dotbox" style="background:#2EAA78"></i><span class="what">${h.name}</span><span class="len num">${own ? html`<button class="linkbtn" data-act="del-holiday" data-day="${h.day}">Remove</button>` : ''}</span><span class="when">${dayLong(h.day)}${h.day.slice(0, 4) !== today.slice(0, 4) ? `, ${h.day.slice(0, 4)}` : ''}</span></li>`;
+  const rli = (r) => html`<li data-k="o${r.id}"><i class="dotbox lv-refdot"></i><span class="what">${r.name}<span class="muted small"> · ${r.region || 'Reference'}</span></span><span class="len num">${own ? html`<button class="linkbtn" data-act="del-ref" data-id="${r.id}">Remove</button>` : ''}</span><span class="when">${dayLong(r.day)}${r.day.slice(0, 4) !== today.slice(0, 4) ? `, ${r.day.slice(0, 4)}` : ''}</span></li>`;
+  // the next few, the rest a click away
+  const more = (list, row, one, many) => html`<ul class="blist">${list.slice(0, 4).map(row)}</ul>${list.length > 4 ? html`<details class="lv-more"><summary>${plural(list.length - 4, `more ${one}`, `more ${many}`)}</summary><ul class="blist">${list.slice(4).map(row)}</ul></details>` : ''}`;
+  return html`<section class="panel flush"><header><h2>Holidays</h2>${own ? html`<span class="lv-hb"><button class="btn sm" data-act="import-holidays">Add a country’s holidays</button><button class="btn sm" data-act="new-holiday">${raw('+')} Add one</button></span>` : ''}</header><div class="body">
+    <h3 class="lv-hh">Days off <span class="muted small">Nobody is expected to work</span></h3>
+    ${next.length ? more(next, li, 'day off', 'days off') : empty('No days off coming up', own ? 'Add your country’s public holidays so they aren’t counted as absences.' : 'Public holidays show here once your company adds them.')}
+    ${ref.length ? html`<h3 class="lv-hh">For reference <span class="muted small">Shown on the calendar; a normal working day</span></h3>${more(ref, rli, 'day', 'days')}` : ''}
+    ${past.length ? html`<details class="lv-past"><summary>Earlier this year · ${past.length}</summary><ul class="blist">${past.map(li)}</ul></details>` : ''}</div></section>`;
+}
+
+function leaveBento({ reqs, hol, refs, pending, away, upcoming, mine, mgr, today }) {
   const m = today.slice(0, 7), days = eachDay(`${m}-01`, monthEnd(m)), lead = (dow(days[0]) + 6) % 7;
   const live = reqs.filter((r) => (r.status === 'approved' || r.status === 'pending') && r.end_day >= `${m}-01` && r.start_day <= days[days.length - 1]);
-  const hols = hol.filter((h) => h.day.startsWith(m));
+  const hols = hol.filter((h) => h.day.startsWith(m)), rfs = (refs || []).filter((r) => r.day.startsWith(m));
   const on = (d) => live.filter((r) => r.start_day <= d && r.end_day >= d);
   const nextHol = hol.find((h) => h.day >= today);
   const p0 = pending[0];
@@ -88,7 +104,7 @@ function leaveBento({ reqs, hol, pending, away, upcoming, mine, mgr, today }) {
         ${p0 ? html`${p0.note ? html`<p class="lv-q">“${p0.note}”</p>` : ''}<div class="lv-who">${face(p0.user_id, p0.user_name)}<span><b>${p0.user_name}</b>, ${range(p0)}<br><span class="muted">${plural(p0.working_days, 'working day')}</span></span></div>` : html`${upcoming.length ? html`<ul class="at-who lv-up">${upcoming.slice(0, 3).map((r) => html`<li>${face(r.user_id, r.user_name)}<span><b>${first(r.user_name)}</b>, ${range(r)}</span></li>`)}</ul>` : ''}<div class="f">All caught up.${upcoming.length ? ` ${plural(upcoming.length, 'approved request')} coming up.` : ''} New requests show here and you get a notification.</div>`}</div>`
     : html`<div class="kpi bt-wa good"><div class="l">${icon('sun')}Paid days left in ${monthLabel(today.slice(0, 7)).split(' ')[0]}</div><div class="lv-ring"><div class="bt-ringw">${ring(mine ? (100 * mine.left) / Math.max(1, mine.allowance) : 0, 'good')}<span class="bt-rv"><b class="num">${mine ? mine.left : 0}</b><small>of ${mine ? mine.allowance : 0}</small></span></div>
         <span class="muted small">${mine && mine.taken ? `${mine.taken} used` : 'None used yet'}${mine && mine.asked ? `, ${mine.asked} asked for` : ''}${mine && mine.unpaid ? `. ${plural(mine.unpaid, 'unpaid day')} this month` : ''}${pending.length ? `. ${pending.length} waiting for ${ownerFirst(false)}` : ''}</span></div></div>`;
-  const chips = [...new Map([...live.map((r) => [`r${r.id}`, html`<span class="lv-chip ${r.status === 'pending' ? 'ask' : ''}"><i></i>${first(r.user_name)}, ${r.status === 'pending' ? 'asked' : r.paid ? 'paid' : 'unpaid'}</span>`]), ...hols.map((h) => [h.day, html`<span class="lv-chip hol"><i></i>${h.name}</span>`])]).values()].slice(0, 5);
+  const chips = [...new Map([...live.map((r) => [`r${r.id}`, html`<span class="lv-chip ${r.status === 'pending' ? 'ask' : ''}"><i></i>${first(r.user_name)}, ${r.status === 'pending' ? 'asked' : r.paid ? 'paid' : 'unpaid'}</span>`]), ...hols.map((h) => [h.day, html`<span class="lv-chip hol"><i></i>${h.name}</span>`]), ...rfs.filter((r) => !hols.some((h) => h.day === r.day)).map((r) => [`o${r.id}`, html`<span class="lv-chip ref"><i></i>${r.name} (${r.region === 'United States' ? 'US' : r.region || 'ref'})</span>`])]).values()].slice(0, 6);
   return html`<section class="kpis bento lv-bento" aria-label="Time off at a glance">
     ${lead1}
     <div class="kpi bt-aw"><div class="l">${icon('users')}Away today</div><div class="bt-row"><div class="v">${away.length}</div>${away.length ? html`<span class="stack bt-faces">${away.slice(0, 5).map((a) => face(a.user_id, a.user_name))}</span>` : ''}</div>
@@ -96,7 +112,7 @@ function leaveBento({ reqs, hol, pending, away, upcoming, mine, mgr, today }) {
     <div class="kpi bt-ho"><div class="l">${icon('cal')}Holidays this year</div><div class="v">${hol.length}</div><div class="f">${nextHol ? `Next: ${nextHol.name}, ${dayMD(nextHol.day)}` : hol.length ? 'No more this year' : 'None added yet'}</div></div>
     <div class="kpi bt-ca"><div class="l">${icon('cal')}${monthLabel(m)}<span class="bt-r">Who’s away</span></div>
       <div class="lv-cal">${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((w) => html`<span class="h">${w}</span>`)}${Array.from({ length: lead }, () => html`<span></span>`)}
-        ${days.map((d) => { const o = on(d), h = hols.find((x) => x.day === d); const cls = h ? 'hol' : o.some((r) => r.status === 'approved') ? 'off' : o.length ? 'ask' : ''; return html`<span class="d ${cls}${d === today ? ' today' : ''}" title="${[dayLong(d), h ? h.name : '', ...o.map((r) => `${r.user_name}${r.status === 'pending' ? ' (asked)' : ''}`)].filter(Boolean).join(', ')}">${Number(d.slice(8))}</span>`; })}</div>
+        ${days.map((d) => { const o = on(d), h = hols.find((x) => x.day === d), rf = rfs.filter((x) => x.day === d); const cls = (h ? 'hol' : o.some((r) => r.status === 'approved') ? 'off' : o.length ? 'ask' : '') + (rf.length ? ' ref' : ''); return html`<span class="d ${cls}${d === today ? ' today' : ''}" title="${[dayLong(d), h ? h.name : '', ...rf.map((x) => `${x.name} (${x.region || 'reference'}, a working day)`), ...o.map((r) => `${r.user_name}${r.status === 'pending' ? ' (asked)' : ''}`)].filter(Boolean).join(', ')}">${Number(d.slice(8))}</span>`; })}</div>
       <div class="lv-chips">${chips.length ? chips : html`<span class="muted small">Nobody away this month and no holidays</span>`}</div></div>
   </section>`;
 }
@@ -180,6 +196,21 @@ actions['new-holiday'] = () => openModal({
   body: html`<div class="field"><label class="f" for="hd">Date</label><input id="hd" type="date" name="day" required></div><div class="field"><label class="f" for="hn">Name</label><input id="hn" name="name" maxlength="100" required placeholder="Eid al-Fitr"></div>`,
   onSubmit: async (fd) => { await post('/api/holidays', { day: fd.get('day'), name: fd.get('name') }); toast('Holiday added'); S.refresh(); },
 });
+actions['import-holidays'] = async () => {
+  const lists = await get('/api/holidays/lists');
+  openModal({
+    title: 'Add a country’s holidays', submit: 'Add them', sub: 'From today on. Days already on the calendar stay as they are. Islamic holidays are expected dates: move them when the final dates are announced.',
+    body: html`<div class="field"><label class="f" for="ih-c">Country</label><select id="ih-c" name="country">${lists.map((l) => html`<option value="${l.code}">${l.name}</option>`)}</select></div>
+      <fieldset class="lv-pay"><legend class="f">Add them as</legend>
+        <label class="lv-opt"><input type="radio" name="as" value="off" checked><span><b>Days off</b><small>Nobody is expected to work; nobody is marked absent</small></span></label>
+        <label class="lv-opt"><input type="radio" name="as" value="reference"><span><b>For reference</b><small>Shown on the calendar; a normal working day</small></span></label></fieldset>`,
+    onSubmit: async (fd) => {
+      const r = await post('/api/holidays/import', { country: fd.get('country'), as: fd.get('as') });
+      toast(r.added ? `${plural(r.added, 'day')} added for ${r.country}${r.kept ? `, ${r.kept} already there` : ''}` : `Nothing new: ${r.country}’s holidays are already on the calendar`); S.refresh();
+    },
+  });
+};
+actions['del-ref'] = async (el) => { try { await del(`/api/observances/${el.dataset.id}`); toast('Removed'); S.refresh(); } catch (e) { toast(errMsg(e), true); } };
 actions['del-holiday'] = async (el) => {
   if (!(await confirmBox({ title: 'Remove this holiday?', message: 'People will be expected to work that day again.', confirm: 'Remove', danger: true }))) return;
   try { await del(`/api/holidays/${el.dataset.day}`); toast('Holiday removed'); S.refresh(); } catch (e) { toast(errMsg(e), true); }
