@@ -318,7 +318,7 @@ module.exports = (ctx) => {
   const human = (d) => (d ? new Date(`${String(d).slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
   const curSign = (c) => (c === 'USD' ? '$' : 'Rs');
   const xlsxOut = (buf, name) => ({ raw: buf, type: X.XLSX_TYPE, headers: { 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' } });
-  const approvedBy = (r) => `Approved by ${nameOf(r.approved_by) || 'the owner'}${r.approved_at ? ` on ${human(r.approved_at)}` : ''}`;
+  const approvedBy = (r) => `Approved by ${nameOf(r.approved_by) || 'the CEO'}${r.approved_at ? ` on ${human(r.approved_at)}` : ''}`;
   const statusLine = (r) => (r.status === 'paid' ? `Paid. ${approvedBy(r)}` : P().LOCKED(r.status) ? approvedBy(r) : 'Draft, not approved yet. Numbers can still change');
   // an IBAN in groups of four, the way banks print it
   const ibanText = (v) => String(v || '').replace(/\s+/g, '').toUpperCase().replace(/(.{4})(?=.)/g, '$1 ');

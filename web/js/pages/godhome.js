@@ -123,7 +123,7 @@ export const godHome = {
       <div class="gh-loot">${f.achievements.map((a) => html`<div class="gh-li${a.got ? ' got' : ''}" data-k="a${a.key}"><b class="px">${a.name.toUpperCase()}</b><span>${a.sub}</span></div>`)}</div></section>`;
 
     const foot = html`<div class="gh-foot"><div class="gh-fx"><span>Effects</span><div class="gh-seg" role="radiogroup" aria-label="Effects"><button type="button" data-act="gm-calm" data-v="0" aria-pressed="${String(!f.calm)}">Full power</button><button type="button" data-act="gm-calm" data-v="1" aria-pressed="${String(!!f.calm)}">Calm</button></div></div>
-      <p>${raw(shield(18))}<span>Same hours, same numbers: god mode only changes how they look. Screenshots and tracking are still ${S.settings.owner_name ? callName(S.settings.owner_name) : 'the owner'}’s settings. <a href="#/me">Boring view</a></span></p></div>`;
+      <p>${raw(shield(18))}<span>Same hours, same numbers: god mode only changes how they look. Screenshots and tracking are still ${S.settings.owner_name ? callName(S.settings.owner_name) : 'the CEO'}’s settings. <a href="#/me">Boring view</a></span></p></div>`;
 
     return html`${band}<div class="gh-body${f.calm ? ' calm' : ''}"><div class="gh-main">${boss}${log}</div><div class="gh-side">${party}${loot}${foot}</div></div>`;
   },

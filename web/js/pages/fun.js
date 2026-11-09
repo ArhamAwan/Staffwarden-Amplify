@@ -55,7 +55,7 @@ export function godPanels(f, d) {
   const got = f.achievements.filter((a) => a.got).length;
   const ach = html`<section class="panel gm-a"><header><h2>Achievements</h2><span class="muted small">${got} of ${f.achievements.length} unlocked</span></header><div class="gm-ag">
     ${f.achievements.map((a) => { const [i, c] = ACH[a.key] || ['bolt', 'y']; return html`<div class="gm-ac ${a.got ? `got ${c}` : ''}" data-k="a${a.key}"><span class="gm-ai">${pi(i, 19)}</span><b class="px">${a.name.toUpperCase()}</b><span>${a.sub}</span></div>`; })}</div></section>`;
-  const lock = html`<p class="gm-lock">${pi('lock', 16)}<span>Screenshots, tracking and who sees what are still ${S.settings.owner_name ? first(S.settings.owner_name) : 'the owner'}’s settings. God mode can’t touch them, however powerful it feels.</span></p>`;
+  const lock = html`<p class="gm-lock">${pi('lock', 16)}<span>Screenshots, tracking and who sees what are still ${S.settings.owner_name ? first(S.settings.owner_name) : 'the CEO'}’s settings. God mode can’t touch them, however powerful it feels.</span></p>`;
   return html`<div class="cols gm-cols"><div>${quests}</div><div>${tonight}${effects}${lock}</div></div>${ach}`;
 }
 actions['gm-start'] = (el) => openTask(Number(el.dataset.id)).catch(() => { location.hash = '#/tasks'; });

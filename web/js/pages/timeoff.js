@@ -7,7 +7,9 @@ const isMgr = () => isMgrOnly() || !!S.me.hr;
 
 // the company's rules: paid days a month (no carrying over), unpaid any time, nothing next to a weekend or
 // holiday unless it's an emergency, and only the owner decides
-const owner = () => S.settings.owner_name || 'The owner';
+// the one who approves, by name; "the CEO" when the install has no owner's name
+const owner = (cap = true) => S.settings.owner_name || (cap ? 'The CEO' : 'the CEO');
+const ownerFirst = (cap = true) => (S.settings.owner_name ? S.settings.owner_name.split(' ')[0] : cap ? 'The CEO' : 'the CEO');
 const perMonth = () => Number(S.settings.paid_leave_per_month ?? 1);
 const isOwner = () => S.me.role === 'owner';
 const range = (r) => (r.start_day === r.end_day ? dayShort(r.start_day) : `${dayMD(r.start_day)} to ${dayMD(r.end_day)}`);
@@ -42,7 +44,7 @@ export default {
         <div class="tools"><button class="btn primary" data-act="new-leave">${isOwner() ? 'Record time off' : mgr ? 'Ask for time off' : 'Request time off'}</button></div></div>
       ${rules()}
       ${leaveBento({ reqs, hol, pending, away, upcoming, mine, mgr, today })}
-      ${pending.length && !status ? html`<section class="panel flush"><header><h2>${isOwner() ? 'Waiting for your decision' : `Waiting for ${owner().split(' ')[0]}`}</h2></header><div class="body">${table(pending, ['', ''])}</div></section>` : ''}
+      ${pending.length && !status ? html`<section class="panel flush"><header><h2>${isOwner() ? 'Waiting for your decision' : `Waiting for ${ownerFirst(false)}`}</h2></header><div class="body">${table(pending, ['', ''])}</div></section>` : ''}
       <section class="panel flush"><header><h2>${status ? 'Requests' : 'All requests'}</h2>${select({ q: 'status', value: status, label: 'Status', options: [['', 'Any status'], ['pending', 'Waiting'], ['approved', 'Approved'], ['denied', 'Declined'], ['cancelled', 'Cancelled']] })}</header>
         <div class="body">${table(status ? reqs : reqs.filter((r) => r.status !== 'pending'), ['No requests yet', mgr ? 'Requests from your people appear here.' : 'Use "Request time off" to ask for days off.'])}</div></section>
       <div class="cols even">
@@ -60,7 +62,7 @@ function rules() {
     <div><b>${plural(n, 'paid day')} a month</b><span>Use ${n === 1 ? 'it' : 'them'} that month; unused days don’t carry over.</span></div>
     <div><b>Unpaid, any time</b><span>Take as many as you need. Each one comes off that month’s pay.</span></div>
     ${S.settings.no_sandwich_leave !== false ? html`<div><b>Not next to a weekend</b><span>No time off on a Friday, a Monday or beside a holiday, unless it’s an emergency.</span></div>` : ''}
-    <div><b>${owner().split(' ')[0]} approves</b><span>Every request goes to ${isOwner() ? 'you' : owner()}. You get a notification either way.</span></div></section>`;
+    <div><b>${ownerFirst()} approves</b><span>Every request goes to ${isOwner() ? 'you' : owner(false)}. You get a notification either way.</span></div></section>`;
 }
 
 // the top of the page as a bento: what needs a decision, who is away, the holidays, and this month
@@ -77,7 +79,7 @@ function leaveBento({ reqs, hol, pending, away, upcoming, mine, mgr, today }) {
     ? html`<div class="kpi bt-wa ${pending.length ? 'warn' : 'good'}"><div class="l">${icon('bell')}Waiting for a decision</div><div class="v">${pending.length}</div>
         ${p0 ? html`${p0.note ? html`<p class="lv-q">“${p0.note}”</p>` : ''}<div class="lv-who">${face(p0.user_id, p0.user_name)}<span><b>${p0.user_name}</b>, ${range(p0)}<br><span class="muted">${plural(p0.working_days, 'working day')}</span></span></div>` : html`${upcoming.length ? html`<ul class="at-who lv-up">${upcoming.slice(0, 3).map((r) => html`<li>${face(r.user_id, r.user_name)}<span><b>${first(r.user_name)}</b>, ${range(r)}</span></li>`)}</ul>` : ''}<div class="f">All caught up.${upcoming.length ? ` ${plural(upcoming.length, 'approved request')} coming up.` : ''} New requests show here and you get a notification.</div>`}</div>`
     : html`<div class="kpi bt-wa good"><div class="l">${icon('sun')}Paid days left in ${monthLabel(today.slice(0, 7)).split(' ')[0]}</div><div class="lv-ring"><div class="bt-ringw">${ring(mine ? (100 * mine.left) / Math.max(1, mine.allowance) : 0, 'good')}<span class="bt-rv"><b class="num">${mine ? mine.left : 0}</b><small>of ${mine ? mine.allowance : 0}</small></span></div>
-        <span class="muted small">${mine && mine.taken ? `${mine.taken} used` : 'None used yet'}${mine && mine.asked ? `, ${mine.asked} asked for` : ''}${mine && mine.unpaid ? `. ${plural(mine.unpaid, 'unpaid day')} this month` : ''}${pending.length ? `. ${pending.length} waiting for ${owner().split(' ')[0]}` : ''}</span></div></div>`;
+        <span class="muted small">${mine && mine.taken ? `${mine.taken} used` : 'None used yet'}${mine && mine.asked ? `, ${mine.asked} asked for` : ''}${mine && mine.unpaid ? `. ${plural(mine.unpaid, 'unpaid day')} this month` : ''}${pending.length ? `. ${pending.length} waiting for ${ownerFirst(false)}` : ''}</span></div></div>`;
   const chips = [...new Map([...live.map((r) => [`r${r.id}`, html`<span class="lv-chip ${r.status === 'pending' ? 'ask' : ''}"><i></i>${first(r.user_name)}, ${r.status === 'pending' ? 'asked' : r.paid ? 'paid' : 'unpaid'}</span>`]), ...hols.map((h) => [h.day, html`<span class="lv-chip hol"><i></i>${h.name}</span>`])]).values()].slice(0, 5);
   return html`<section class="kpis bento lv-bento" aria-label="Time off at a glance">
     ${lead1}
@@ -104,11 +106,11 @@ actions['new-leave'] = () => {
         <label class="lv-opt"><input type="radio" name="kind" value="paid" checked><span><b>Paid</b><small data-lv-paid>${plural(perMonth(), 'paid day')} a month</small></span></label>
         <label class="lv-opt"><input type="radio" name="kind" value="unpaid"><span><b>Unpaid</b><small>Comes off that month’s pay</small></span></label></fieldset>
       <div class="lv-check" data-lv-check role="status" aria-live="polite"></div>
-      <label class="lv-em" data-lv-em hidden><input type="checkbox" name="emergency"><span><b>This is an emergency</b><small>Say what happened below. ${owner().split(' ')[0]} decides.</small></span></label>
+      <label class="lv-em" data-lv-em hidden><input type="checkbox" name="emergency"><span><b>This is an emergency</b><small>Say what happened below. ${ownerFirst()} decides.</small></span></label>
       <div class="field"><label class="f" for="lv-n" data-lv-nl>Note (optional)</label><textarea id="lv-n" name="note" maxlength="500"></textarea></div>`,
     onSubmit: async (fd) => {
       await post('/api/timeoff', { user_id: fd.get('user_id') ? Number(fd.get('user_id')) : undefined, kind: fd.get('kind'), start_day: fd.get('start_day'), end_day: fd.get('end_day'), note: fd.get('note') || null, emergency: !!fd.get('emergency') });
-      toast(own ? 'Time off recorded' : `Sent to ${owner().split(' ')[0]}`); S.refresh();
+      toast(own ? 'Time off recorded' : `Sent to ${ownerFirst(false)}`); S.refresh();
     },
   });
   // as the dates and pay change: how many days, paid days left, and whether a day sits next to a weekend

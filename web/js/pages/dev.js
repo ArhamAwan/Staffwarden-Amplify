@@ -26,7 +26,7 @@ const errTag = (g) => (g.status === 'fixed' ? tag('approved', g.fixed_in ? `Fixe
     : nowMs() - Date.parse(g.first_at) < 86400000 ? tag('absent', 'New') : g.count > 1 ? tag('pending', 'Keeps happening') : tag('idle', 'Once'));
 const devTabs = (cur) => html`<nav class="dv-nav" aria-label="Developer pages">${[['dev', 'Overview', 'code'], ['dev-apps', 'Desktop apps', 'laptop'], ['dev-errors', 'Error reports', 'alert'], ['dev-tools', 'Switches and tools', 'sliders']].map(([r, n, ic]) => html`<a class="btn" href="#/${r}" ${raw(cur === r ? 'aria-current="page"' : '')}>${icon(ic)} ${n}</a>`)}</nav>`;
 const head = (cur, title, sub) => html`<div class="page-h dv-h"><div><h1>${title}${cur !== 'dev' ? html` <span class="dv-chip">${icon('code')} Developer</span>` : ''}</h1><p class="sub">${sub}</p></div>${devTabs(cur)}</div>`;
-const ownerName = () => (S.me.role === 'owner' && !S.me.dev_owner ? 'you' : 'the owner');
+const ownerName = () => (S.me.role === 'owner' && !S.me.dev_owner ? 'you' : 'the CEO');
 
 const backupAge = (ms) => { const h = Math.round(ms / 3600e3); return h < 1 ? 'Just now' : h === 1 ? '1 hour ago' : h < 48 ? `${h} hours ago` : `${Math.round(h / 24)} days ago`; };
 // ============================== Developer home ==============================

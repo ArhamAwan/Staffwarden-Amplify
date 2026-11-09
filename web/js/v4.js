@@ -256,7 +256,7 @@ export async function checkNudge(id = null) {
     body: { toString: () => `<div class="nd">${god ? GHOST : `<span class="nd-ic nd-owl">${owl('doze', 'The owl, dozing off')}</span>`}
       <p>${low ? `${(f.detail && f.detail.pct) ?? f.activity ?? 0}% keyboard and mouse in the last hour while your timer runs. All good? Tell us what you’re on so your hours stay right.` : `No keyboard or mouse for ${mins} minutes while your timer runs. Tell us what’s up so your hours stay right.`}</p>
       <div class="nd-l">${opts.map(([k, t, s], i) => `<button type="button" data-nd="${k}" class="${i === 0 ? 'on' : ''}"><b>${god && i === 0 ? `<span class="px">FIGHT:</span> ${t}` : t}</b><span>${s}</span></button>`).join('')}</div>
-      <p class="nd-foot">${f.alerted ? `${owner ? esc(first(owner.name)) : 'The owner'} has been told you were quiet. Answering adds your reason.` : `If there’s no answer soon, ${owner ? esc(first(owner.name)) : 'the owner'} is told. Your timer keeps running either way.`}</p></div>` },
+      <p class="nd-foot">${f.alerted ? `${owner ? esc(first(owner.name)) : 'The CEO'} has been told you were quiet. Answering adds your reason.` : `If there’s no answer soon, ${owner ? esc(first(owner.name)) : 'the CEO'} is told. Your timer keeps running either way.`}</p></div>` },
   });
   nudgeOpen.form.classList.add('nd-sheet');
   if (god) { nudgeOpen.form.classList.add('nd-god'); sfx('hit'); }
@@ -303,7 +303,7 @@ export async function refreshAnnBar() {
   // HR asked you to update your details: stays here, on every page, until you send them (not on Profile, where the form is)
   const detPill = det && !/^#\/profile(\?|$)/.test(location.hash) ? `<button type="button" class="ab-pill det" data-ab="det" title="${esc(det.by || 'HR')} asked you${det.note ? `: ${esc(det.note)}` : ''}">${ic('idcard', 16)}<span class="ab-l">HR request</span><b>Update your ${esc(det.label)}</b><span class="ab-go">Update</span></button>` : '';
   const a = /^#\/announcements/.test(location.hash) ? null : list[0];
-  const annPill = a ? `<button type="button" class="ab-pill" data-ab="read" data-id="${a.id}" title="Announcement from ${esc(a.author ? a.author.name : 'the owner')}">${ic('mega', 16)}<span class="ab-l">Announcement</span><b>${esc(a.title)}</b>${list.length > 1 ? `<i>+${list.length - 1}</i>` : ''}<span class="ab-go">Read it</span></button>` : '';
+  const annPill = a ? `<button type="button" class="ab-pill" data-ab="read" data-id="${a.id}" title="Announcement from ${esc(a.author ? a.author.name : 'the CEO')}">${ic('mega', 16)}<span class="ab-l">Announcement</span><b>${esc(a.title)}</b>${list.length > 1 ? `<i>+${list.length - 1}</i>` : ''}<span class="ab-go">Read it</span></button>` : '';
   if (!detPill && !annPill) { bar.hidden = true; bar.innerHTML = ''; return; }
   bar.hidden = false;
   bar.innerHTML = detPill + annPill;
@@ -358,7 +358,7 @@ export function godIntro(fun) {
     <div class="px gm-code">&gt; CHEAT CODE ACCEPTED: IDDQD</div>
     <div class="gm-pop">${shield(150)}</div>
     <h1 id="gm-on-t" class="px gm-shine">GOD MODE</h1>
-    <p>${esc(first(S.me.name))} is now invincible${until ? ` until ${esc(until)}` : ''}. Bugs fear you. Deadlines take half damage. ${owner ? esc(first(owner.name)) : 'The owner'} approved this.</p>
+    <p>${esc(first(S.me.name))} is now invincible${until ? ` until ${esc(until)}` : ''}. Bugs fear you. Deadlines take half damage. ${owner ? esc(first(owner.name)) : 'The CEO'} approved this.</p>
     <div class="gm-tags"><span class="px t-y">HP <b>∞</b></span>${fun.double_xp ? '<span class="px t-g">XP ×2 TONIGHT</span>' : ''}<span class="px t-p">BUG SLAYER +1</span></div>
     <button type="button" class="px gm-start" data-gm="start">PRESS START</button>
     <span class="gm-note">Only you see this. Nothing about your access changes.</span></div>`;

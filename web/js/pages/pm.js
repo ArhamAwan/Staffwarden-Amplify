@@ -113,7 +113,7 @@ const roleName = (r) => (r === 'lead' ? 'Project manager' : r === 'deputy' ? 'St
 export function teamTab(p, plan) {
   const mgr = p.lead, dep = p.deputy, owner = p.owner;
   const mName = mgr ? first(mgr.name) : 'the manager';
-  const ownerName = owner ? first(owner.name) : 'The owner';
+  const ownerName = owner ? first(owner.name) : 'The CEO';
   const team = [...p.workload].sort((a, b) => (a.role === 'lead') - (b.role === 'lead') || (a.role === 'deputy') - (b.role === 'deputy') || a.name.localeCompare(b.name));
   const today = plan ? new Map(plan.people.map((x) => [x.user_id, x])) : null;
   const todayCell = (uid) => {
@@ -165,7 +165,7 @@ export function teamTab(p, plan) {
           ].map(([what, a, b, c]) => html`<div role="row"><span role="cell">${what}</span>${[a, b, c].map((v) => html`<span role="cell" class="${v === 1 ? 'yes' : v === 0 ? 'no' : 'some'}">${v === 1 ? 'Yes' : v === 0 ? 'No' : v}</span>`)}</div>`)}
         </div></div></section>
       <section class="panel pm-owner" aria-labelledby="pm-oh"><div class="body">
-        <div class="pm-oh">${owner ? av(owner.id, owner.name, 'sm') : ''}<h2 id="pm-oh">${owner ? `${owner.name}, as the owner` : 'The owner'}</h2></div>
+        <div class="pm-oh">${owner ? av(owner.id, owner.name, 'sm') : ''}<h2 id="pm-oh">${owner ? `${owner.name}, as the CEO` : 'The CEO'}</h2></div>
         <p class="muted">${mgr ? `Sees every project and can step in, but isn’t asked to approve anything while ${p.name} has a manager${dep ? ' and a stand-in' : ''}. Picks each project’s manager.` : `Picks each project’s manager. Until ${p.name} has one, its finished work goes to ${fallbackText(p)} to approve.`}</p></div></section>
     </aside>
   </div>`;

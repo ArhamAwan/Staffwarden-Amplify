@@ -99,7 +99,7 @@ module.exports = (ctx) => {
   });
 
   route('POST', '/api/timeoff/:id/decision', ({ user, params, body }) => {
-    need(user.role === 'owner', 403, `Only ${(owners()[0] || { name: 'the owner' }).name} approves time off`);
+    need(user.role === 'owner', 403, `Only ${(owners()[0] || {}).name || 'the CEO'} approves time off`);
     const r = db.prepare('SELECT * FROM leave_requests WHERE id = ?').get(Number(params.id));
     need(r, 404, 'Request not found');
     need(r.status === 'pending', 409, 'That request has already been decided');

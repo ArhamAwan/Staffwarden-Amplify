@@ -316,7 +316,7 @@ module.exports = (ctx) => {
     staffOnly(user);
     const b = db.prepare('SELECT * FROM boosts WHERE id = ?').get(Number(params.id));
     need(b, 404, 'Not found');
-    const a = userRow(b.author_id) || { name: 'The owner' };
+    const a = userRow(b.author_id) || { name: 'The CEO' };
     const n = db.prepare("SELECT COUNT(*) n FROM boost_answers WHERE boost_id = ? AND answer = 'boosted'").get(b.id).n;
     const mine = db.prepare('SELECT answer FROM boost_answers WHERE boost_id = ? AND user_id = ?').get(b.id, user.id);
     const pop = db.prepare('SELECT 1 FROM boost_popups WHERE boost_id = ? AND user_id = ?').get(b.id, user.id);
