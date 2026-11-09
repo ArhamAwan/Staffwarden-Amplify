@@ -56,11 +56,10 @@ export default {
       ${pending.length && !status ? html`<section class="panel flush"><header><h2>${isOwner() ? 'Waiting for your decision' : `Waiting for ${ownerFirst(false)}`}</h2></header><div class="body">${table(pending, ['', ''])}</div></section>` : ''}
       <section class="panel flush"><header><h2>${status ? 'Requests' : 'All requests'}</h2>${select({ q: 'status', value: status, label: 'Status', options: [['', 'Any status'], ['pending', 'Waiting'], ['approved', 'Approved'], ['denied', 'Declined'], ['cancelled', 'Cancelled']] })}</header>
         <div class="body">${table(status ? reqs : reqs.filter((r) => r.status !== 'pending'), ['No requests yet', mgr ? 'Requests from your people appear here.' : 'Use "Request time off" to ask for days off.'])}</div></section>
-      <div class="cols even">
-        ${mgr ? html`<section class="panel flush"><header><h2>This month</h2><span class="muted small">${monthLabel(today.slice(0, 7))} · ${plural(perMonth(), 'paid day')} each</span></header><div class="body"><div class="tbl-wrap"><table class="t"><thead><tr><th>Person</th><th class="r">Paid used</th><th class="r">Paid left</th><th class="r">Unpaid</th><th></th></tr></thead><tbody>
+      ${holidaysPanel(allHol, refs, today)}
+      ${mgr ? html`<section class="panel flush"><header><h2>This month</h2><span class="muted small">${monthLabel(today.slice(0, 7))} · ${plural(perMonth(), 'paid day')} each</span></header><div class="body"><div class="tbl-wrap"><table class="t"><thead><tr><th>Person</th><th class="r">Paid used</th><th class="r">Paid left</th><th class="r">Unpaid</th><th></th></tr></thead><tbody>
           ${bal.map((b) => html`<tr data-k="b${b.user_id}"><td><b>${b.name}</b></td><td class="r num">${b.taken} / ${b.allowance}</td><td class="r num"><b>${b.left}</b></td><td class="r num">${b.unpaid ? plural(b.unpaid, 'day') : '—'}</td><td class="small muted">${b.asked ? `${b.asked} paid asked for` : ''}${b.pending ? `${b.asked ? ', ' : ''}${b.pending} waiting` : ''}</td></tr>`)}</tbody></table></div></div></section>` : ''}
-        ${holidaysPanel(allHol, refs, today)}
-      </div>`;
+      `;
   },
 };
 
@@ -73,21 +72,50 @@ function rules() {
     <div><b>${ownerFirst()} approves</b><span>Every request goes to ${isOwner() ? 'you' : owner(false)}. You get a notification either way.</span></div></section>`;
 }
 
-// the top of the page as a bento: what needs a decision, who is away, the holidays, and this month
-// holidays from today on: the days off, and other countries' days shown for reference (people work them)
+const code = (r) => ({ 'United States': 'US', Pakistan: 'PK' }[r] || String(r || '').slice(0, 2).toUpperCase());
+const wd = (d) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dow(d)];
+
+// holidays as a year at a glance: one small card per month, days off in green, other countries' days in blue.
+// Runs of the same holiday (Eid over three days) are one line. The next six months show; the rest a click away.
 function holidaysPanel(allHol, refs, today) {
   const own = S.me.role === 'owner';
-  const next = allHol.filter((h) => h.day >= today), past = allHol.filter((h) => h.day < today && h.day.slice(0, 4) === today.slice(0, 4)).reverse();
-  const ref = refs.filter((r) => r.day >= today);
-  const li = (h) => html`<li data-k="h${h.day}"><i class="dotbox" style="background:#2EAA78"></i><span class="what">${h.name}</span><span class="len num">${own ? html`<button class="linkbtn" data-act="del-holiday" data-day="${h.day}">Remove</button>` : ''}</span><span class="when">${dayLong(h.day)}${h.day.slice(0, 4) !== today.slice(0, 4) ? `, ${h.day.slice(0, 4)}` : ''}</span></li>`;
-  const rli = (r) => html`<li data-k="o${r.id}"><i class="dotbox lv-refdot"></i><span class="what">${r.name}<span class="muted small"> · ${r.region || 'Reference'}</span></span><span class="len num">${own ? html`<button class="linkbtn" data-act="del-ref" data-id="${r.id}">Remove</button>` : ''}</span><span class="when">${dayLong(r.day)}${r.day.slice(0, 4) !== today.slice(0, 4) ? `, ${r.day.slice(0, 4)}` : ''}</span></li>`;
-  // the next few, the rest a click away
-  const more = (list, row, one, many) => html`<ul class="blist">${list.slice(0, 4).map(row)}</ul>${list.length > 4 ? html`<details class="lv-more"><summary>${plural(list.length - 4, `more ${one}`, `more ${many}`)}</summary><ul class="blist">${list.slice(4).map(row)}</ul></details>` : ''}`;
-  return html`<section class="panel flush"><header><h2>Holidays</h2>${own ? html`<span class="lv-hb"><button class="btn sm" data-act="import-holidays">Add a country’s holidays</button><button class="btn sm" data-act="new-holiday">${raw('+')} Add one</button></span>` : ''}</header><div class="body">
-    <h3 class="lv-hh">Days off <span class="muted small">Nobody is expected to work</span></h3>
-    ${next.length ? more(next, li, 'day off', 'days off') : empty('No days off coming up', own ? 'Add your country’s public holidays so they aren’t counted as absences.' : 'Public holidays show here once your company adds them.')}
-    ${ref.length ? html`<h3 class="lv-hh">For reference <span class="muted small">Shown on the calendar; a normal working day</span></h3>${more(ref, rli, 'day', 'days')}` : ''}
-    ${past.length ? html`<details class="lv-past"><summary>Earlier this year · ${past.length}</summary><ul class="blist">${past.map(li)}</ul></details>` : ''}</div></section>`;
+  const items = [
+    ...allHol.map((h) => ({ day: h.day, name: h.name, off: true, key: h.day })),
+    // a reference day that is also one of our days off shows once, as the day off
+    ...refs.filter((r) => !allHol.some((h) => h.day === r.day && h.name.replace(/\s*\(.*\)$/, '') === r.name.replace(/\s*\(.*\)$/, ''))).map((r) => ({ day: r.day, name: r.name, off: false, region: r.region, key: String(r.id) })),
+  ].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : a.off === b.off ? 0 : a.off ? -1 : 1));
+  // join back-to-back days of the same holiday into one run
+  const runs = [];
+  for (const it of items) {
+    const last = runs.filter((r) => r.name === it.name && r.off === it.off && r.region === it.region).pop();
+    if (last && addDays(last.to, 1) === it.day && last.to.slice(0, 7) === it.day.slice(0, 7)) { last.to = it.day; last.keys.push(it.key); }
+    else runs.push({ ...it, from: it.day, to: it.day, keys: [it.key] });
+  }
+  const next = runs.filter((r) => r.to >= today), past = runs.filter((r) => r.to < today && r.from.slice(0, 4) === today.slice(0, 4));
+  const months = (list) => { const m = new Map(); for (const r of list) { const k = r.from.slice(0, 7); if (!m.has(k)) m.set(k, []); m.get(k).push(r); } return [...m]; };
+  const line = (r) => {
+    const d1 = Number(r.from.slice(8)), d2 = Number(r.to.slice(8)), span = r.from !== r.to;
+    const label = `${r.name}${span ? `, ${dayMD(r.from)} to ${dayMD(r.to)}` : `, ${dayLong(r.from)}`}`;
+    return html`<li class="lvy-i ${r.off ? 'off' : 'ref'}${r.to < today ? ' gone' : ''}" data-k="y${r.off ? 'h' : 'o'}${r.keys.join('-')}" title="${label}${r.off ? ': day off' : `: ${r.region || 'elsewhere'}, a working day here`}">
+      <span class="lvy-d${span ? ' span' : ''}"><b class="num">${span ? `${d1}–${d2}` : d1}</b><small>${span ? `${r.to.slice(8) - r.from.slice(8) + 1} days` : wd(r.from)}</small></span>
+      <span class="lvy-n">${r.name}</span>
+      ${r.off ? '' : html`<span class="lvy-c">${code(r.region)}</span>`}
+      ${own ? html`<button class="lvy-x" data-act="${r.off ? 'del-holiday' : 'del-ref'}" data-${r.off ? 'day' : 'id'}="${r.keys.join(',')}" aria-label="Remove ${r.name}" title="Remove">${raw('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>')}</button>` : ''}</li>`;
+  };
+  const card = ([ym, list]) => { const [mn, yr] = monthLabel(ym).split(' '); const offs = list.filter((r) => r.off).reduce((n, r) => n + r.keys.length, 0);
+    return html`<section class="lvy-m${ym === today.slice(0, 7) ? ' now' : ''}" data-k="m${ym}"><h3>${mn}${yr !== today.slice(0, 4) ? html` <span>${yr}</span>` : ''}<em>${offs ? plural(offs, 'day off', 'days off') : 'We work'}</em></h3><ul>${list.map(line)}</ul></section>`; };
+  const ahead = months(next), soon = ahead.slice(0, 6), later = ahead.slice(6);
+  const offCount = next.filter((r) => r.off).reduce((n, r) => n + r.keys.length, 0);
+  return html`<section class="panel flush lvy" aria-label="Holidays"><header><h2>Holidays</h2>
+      <span class="lvy-key" aria-hidden="true"><span class="off"><i></i>Day off</span><span class="ref"><i></i>Holiday elsewhere, we work</span></span>
+      ${own ? html`<span class="lv-hb"><button class="btn sm" data-act="import-holidays">Add a country’s holidays</button><button class="btn sm" data-act="new-holiday">${raw('+')} Add one</button></span>` : ''}</header>
+    <div class="body">
+      ${!next.length ? empty('No holidays coming up', own ? 'Add your country’s public holidays so they aren’t counted as absences.' : 'Public holidays show here once your company adds them.')
+        : html`${!offCount ? html`<p class="lvy-note">${own ? 'None of these are days off yet. Add your own country’s holidays as “Days off” so nobody is marked absent on them.' : 'None of these are days off. Everyone works them as normal.'}</p>` : ''}<div class="lvy-grid">${soon.map(card)}</div>`}
+      ${later.length || past.length ? html`<div class="lvy-foot">
+        ${later.length ? html`<details class="lvy-more"><summary>Show ${plural(later.length, 'more month')}, to ${monthLabel(later[later.length - 1][0])}</summary><div class="lvy-grid">${later.map(card)}</div></details>` : ''}
+        ${past.length ? html`<details class="lvy-more lvy-past"><summary>Earlier this year</summary><div class="lvy-grid">${months(past).map(card)}</div></details>` : ''}</div>` : ''}
+    </div></section>`;
 }
 
 function leaveBento({ reqs, hol, refs, pending, away, upcoming, mine, mgr, today }) {
@@ -104,8 +132,6 @@ function leaveBento({ reqs, hol, refs, pending, away, upcoming, mine, mgr, today
         ${p0 ? html`${p0.note ? html`<p class="lv-q">“${p0.note}”</p>` : ''}<div class="lv-who">${face(p0.user_id, p0.user_name)}<span><b>${p0.user_name}</b>, ${range(p0)}<br><span class="muted">${plural(p0.working_days, 'working day')}</span></span></div>` : html`${upcoming.length ? html`<ul class="at-who lv-up">${upcoming.slice(0, 3).map((r) => html`<li>${face(r.user_id, r.user_name)}<span><b>${first(r.user_name)}</b>, ${range(r)}</span></li>`)}</ul>` : ''}<div class="f">All caught up.${upcoming.length ? ` ${plural(upcoming.length, 'approved request')} coming up.` : ''} New requests show here and you get a notification.</div>`}</div>`
     : html`<div class="kpi bt-wa good"><div class="l">${icon('sun')}Paid days left in ${monthLabel(today.slice(0, 7)).split(' ')[0]}</div><div class="lv-ring"><div class="bt-ringw">${ring(mine ? (100 * mine.left) / Math.max(1, mine.allowance) : 0, 'good')}<span class="bt-rv"><b class="num">${mine ? mine.left : 0}</b><small>of ${mine ? mine.allowance : 0}</small></span></div>
         <span class="muted small">${mine && mine.taken ? `${mine.taken} used` : 'None used yet'}${mine && mine.asked ? `, ${mine.asked} asked for` : ''}${mine && mine.unpaid ? `. ${plural(mine.unpaid, 'unpaid day')} this month` : ''}${pending.length ? `. ${pending.length} waiting for ${ownerFirst(false)}` : ''}</span></div></div>`;
-  const code = (r) => ({ 'United States': 'US', Pakistan: 'PK' }[r] || String(r || '').slice(0, 2).toUpperCase());
-  const wd = (d) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dow(d)];
   // this month, in date order: holidays (off or for reference), then who is away or asked
   const rows = [
     ...hols.map((h) => ({ day: h.day, k: `h${h.day}`, html: html`<li class="lv-ev hol"><span class="lv-dt"><small>${wd(h.day)}</small>${Number(h.day.slice(8))}</span><span class="lv-ev-t"><b>${h.name}</b><span>Day off for everyone</span></span><span class="lv-tag hol">Day off</span></li>` })),
@@ -219,8 +245,8 @@ actions['import-holidays'] = async () => {
     },
   });
 };
-actions['del-ref'] = async (el) => { try { await del(`/api/observances/${el.dataset.id}`); toast('Removed'); S.refresh(); } catch (e) { toast(errMsg(e), true); } };
+actions['del-ref'] = async (el) => { try { for (const id of el.dataset.id.split(',')) await del(`/api/observances/${id}`); toast('Removed'); S.refresh(); } catch (e) { toast(errMsg(e), true); } };
 actions['del-holiday'] = async (el) => {
   if (!(await confirmBox({ title: 'Remove this holiday?', message: 'People will be expected to work that day again.', confirm: 'Remove', danger: true }))) return;
-  try { await del(`/api/holidays/${el.dataset.day}`); toast('Holiday removed'); S.refresh(); } catch (e) { toast(errMsg(e), true); }
+  try { for (const d of el.dataset.day.split(',')) await del(`/api/holidays/${d}`); toast('Holiday removed'); S.refresh(); } catch (e) { toast(errMsg(e), true); }
 };
