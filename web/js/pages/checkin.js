@@ -2,7 +2,7 @@
 // timer, so nobody types them. It posts in #check-ins, and managers see everyone's on one page.
 import { html, raw, esc, dur, plural, dayLong, initials, avColor, hhmmText, dayShort } from '../util.js';
 import { get, post, put, qs } from '../api.js';
-import { S, actions, toast, errMsg, openModal } from '../ui.js';
+import { S, actions, toast, errMsg, openModal, findPeople, findBox, longList } from '../ui.js';
 import { dayNav, companyToday } from '../parts.js';
 import { gameSaved } from '../v4.js';
 
@@ -133,21 +133,23 @@ export const checkinsPage = {
     const today = companyToday();
     const c = d.counts;
     ciItems = new Map(d.items.map((x) => [x.id, x])); ciDay = d.day;
-    const list = d.items.filter((x) => (f === 'blocked' ? x.blockers : f === 'rough' ? x.mood === 'rough' : true));
+    // a big team: find a person, 25 cards at a time
+    const list = findPeople(d.items.filter((x) => (f === 'blocked' ? x.blockers : f === 'rough' ? x.mood === 'rough' : true)), q, (x) => x.user.name), pg = longList(list, q);
+    const missAll = findPeople(d.missing, q, (m) => m.user.name), mpg = longList(missAll, q, { key: 'nm', size: 30 });
     const st = (l, v, foot, cls = '') => html`<div class="ibx-st"><span>${l}</span><b class="${cls}">${v}</b><small>${foot}</small></div>`;
     const moodsTxt = [c.moods.busy ? `${c.moods.busy} busy` : '', c.moods.rough ? `${c.moods.rough} rough` : ''].filter(Boolean).join(' · ') || 'nobody had a rough one';
     const stats = html`<div class="ibx-stats ci-stats">${st('Checked in', `${c.checked} of ${c.expected}`, c.expected - c.checked > 0 ? `${c.expected - c.checked} still to go` : 'everyone')}${st('Tracked', `${Math.round(c.tracked_secs / 3600)}h`, 'all of you, from timers')}${st('Blocked', String(c.blocked), c.blocked ? 'their leads have been told' : 'nothing in the way', c.blocked ? 'warn' : '')}${c.checked ? st('How it went', `${c.moods.smooth} smooth`, moodsTxt) : ''}</div>`;
     const seg = (label, v, n) => html`<button type="button" data-act="q" data-q="f" data-v="${v}" aria-current="${f === v ? 'page' : 'false'}">${label}${n != null ? html` <span>${n}</span>` : ''}</button>`;
     const card = (x) => html`<article class="cic${x.blockers ? ' blk' : ''}" data-k="c${x.id}">${cardInner(x, false, html`<span class="cic-a">${x.user.id !== S.me.id ? html`<button type="button" class="linkbtn" data-act="ci-reply" data-id="${x.user.id}">Reply</button>` : html`<a class="linkbtn" href="#/checkin">Change it</a>`}<a class="linkbtn" href="#/timeline?user=${x.user.id}&day=${d.day}">See the day</a></span>`)}</article>`;
-    const miss = d.missing.length ? html`<section class="panel"><header><h2>Not checked in yet</h2></header><div class="body"><ul class="ci-miss">${d.missing.map((m) => html`<li data-k="m${m.user.id}">${av(m.user, 32)}<span><b>${m.user.name}</b><span>${m.state === 'running' ? `Timer still running · ${hm(m.worked_secs)}` : m.state === 'off' ? 'On time off · skipped' : `Stopped, no check-in · ${hm(m.worked_secs)}`}</span></span>${m.state !== 'off' && S.me.role !== 'employee' ? html`<button type="button" class="btn sm" data-act="ci-nudge" data-id="${m.user.id}">Nudge</button>` : ''}</li>`)}</ul></div></section>` : '';
+    const miss = missAll.length ? html`<section class="panel"><header><h2>Not checked in yet</h2><span class="muted small">${missAll.length}</span></header><div class="body"><ul class="ci-miss">${mpg.items.map((m) => html`<li data-k="m${m.user.id}">${av(m.user, 32)}<span><b>${m.user.name}</b><span>${m.state === 'running' ? `Timer still running · ${hm(m.worked_secs)}` : m.state === 'off' ? 'On time off · skipped' : `Stopped, no check-in · ${hm(m.worked_secs)}`}</span></span>${m.state !== 'off' && S.me.role !== 'employee' ? html`<button type="button" class="btn sm" data-act="ci-nudge" data-id="${m.user.id}">Nudge</button>` : ''}</li>`)}</ul>${mpg.more}</div></section>` : '';
     const blk = d.items.filter((x) => x.blockers);
     const blocks = blk.length ? html`<section class="panel"><header><h2>Blockers</h2></header><div class="body"><ul class="ci-blks">${blk.map((x) => html`<li data-k="b${x.id}">${av(x.user, 30)}<span><b>${x.user.name}</b><span>${x.blockers}</span></span></li>`)}</ul></div></section>` : '';
     const mine = d.items.find((x) => x.user.id === S.me.id);
     return html`<div class="page-h"><div><h1>Check-ins</h1><p class="sub">What everyone did and what’s next, with their tracked hours. Newest first.</p></div>
       <div class="tools">${S.me.tracks_time && !mine && d.day === today ? html`<a class="btn primary" href="#/checkin">Check in yourself</a>` : ''}${dayNav(d.day, today)}</div></div>
       ${d.week ? ciBento(d, d.day === today) : stats}
-      <div class="csub"><nav class="cseg" aria-label="Show">${seg('Everyone', '', d.items.length)}${seg('Blocked', 'blocked', c.blocked)}${seg('Rough shift', 'rough', c.moods.rough)}</nav></div>
-      <div class="cols ci-team"><div>${list.length ? html`<div class="cic-grid">${list.map(card)}</div>` : html`<section class="panel"><div class="body"><div class="empty"><b>${d.items.length ? 'Nobody here with this filter' : 'No check-ins yet'}</b>${d.items.length ? 'Try Everyone.' : 'They show up here as people finish their shift.'}</div></div></section>`}${d.week && list.length < 5 ? weekPanel(d.week, true) : ''}</div><div>${miss}${blocks}${d.week && list.length >= 5 ? weekPanel(d.week) : ''}</div></div>`;
+      <div class="csub"><nav class="cseg" aria-label="Show">${seg('Everyone', '', d.items.length)}${seg('Blocked', 'blocked', c.blocked)}${seg('Rough shift', 'rough', c.moods.rough)}</nav>${d.items.length + d.missing.length > 8 ? findBox(q) : ''}</div>
+      <div class="cols ci-team"><div>${list.length ? html`<div class="cic-grid">${pg.items.map(card)}</div>${pg.more}` : html`<section class="panel"><div class="body"><div class="empty"><b>${q.get('find') ? `No check-in from anyone called “${q.get('find')}”` : d.items.length ? 'Nobody here with this filter' : 'No check-ins yet'}</b>${q.get('find') ? 'Check the spelling, or clear the search.' : d.items.length ? 'Try Everyone.' : 'They show up here as people finish their shift.'}</div></div></section>`}${d.week && list.length < 5 ? weekPanel(d.week, q, true) : ''}</div><div>${miss}${blocks}${d.week && list.length >= 5 ? weekPanel(d.week, q) : ''}</div></div>`;
   },
 };
 
@@ -174,9 +176,11 @@ function ciBento(d, isToday) {
 }
 const ringSvg = (pct) => { const r = 40, cc = 2 * Math.PI * r, v = Math.max(0, Math.min(100, pct || 0)); return raw(`<svg class="bt-ring" viewBox="0 0 96 96" aria-hidden="true"><circle cx="48" cy="48" r="${r}" class="tr"/><circle cx="48" cy="48" r="${r}" class="fg" stroke-dasharray="${((cc * v) / 100).toFixed(1)} ${cc.toFixed(1)}" transform="rotate(-90 48 48)"/></svg>`); };
 // who checked in on which days this week
-function weekPanel(w, wide = false) {
+function weekPanel(w, q, wide = false) {
   if (!w.people.length) return '';
-  return html`<section class="panel ci-week${wide ? ' wide' : ''}"><header><h2>Check-ins this week</h2><span class="muted small">${dayShort(w.days[0].day).slice(0, 3)} to ${dayShort(w.days[w.days.length - 1].day).slice(0, 3)}</span></header><div class="body"><ul class="ci-wl">${w.people.map((p) => html`<li>${av(p.user, 28)}<b>${p.user.name.split(' ')[0]}</b><span class="ci-dots" aria-label="${p.days.filter(Boolean).length} of ${p.days.length} days">${p.days.map((on) => html`<i class="${on ? 'on' : ''}"></i>`)}</span></li>`)}</ul></div></section>`;
+  // a big team: the find box above applies here too, 20 people at a time
+  const pg = longList(findPeople(w.people, q, (p) => p.user.name), q, { key: 'nw', size: 20 });
+  return html`<section class="panel ci-week${wide ? ' wide' : ''}"><header><h2>Check-ins this week</h2><span class="muted small">${dayShort(w.days[0].day).slice(0, 3)} to ${dayShort(w.days[w.days.length - 1].day).slice(0, 3)}</span></header><div class="body"><ul class="ci-wl">${pg.items.map((p) => html`<li>${av(p.user, 28)}<b title="${p.user.name}">${p.user.name}</b><span class="ci-dots" aria-label="${p.days.filter(Boolean).length} of ${p.days.length} days">${p.days.map((on) => html`<i class="${on ? 'on' : ''}"></i>`)}</span></li>`)}</ul>${pg.items.length ? '' : html`<p class="muted small">Nobody by that name.</p>`}</div>${pg.more}</section>`;
 }
 actions['ci-nudge'] = async (el) => { el.disabled = true; try { await post('/api/checkins/nudge', { user_id: Number(el.dataset.id) }); el.textContent = 'Nudged'; toast('Asked for their check-in'); } catch (e) { el.disabled = false; toast(errMsg(e), true); } };
 actions['ci-reply'] = async (el) => { try { const r = await post('/api/team/dm', { user_id: Number(el.dataset.id) }); location.hash = `#/chat?t=${r.id}`; } catch (e) { toast(errMsg(e), true); } };

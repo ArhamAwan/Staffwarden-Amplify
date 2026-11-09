@@ -2,7 +2,7 @@
 // every line, what HR adds, the rules HR chooses, and past months.
 import { html, raw, esc, icon, money, periodLabel, dayShort, dateY, relTime, plural, addMonths, initials, avColor } from '../util.js';
 import { get, post, put, del, qs, download } from '../api.js';
-import { S, actions, tag, empty, openModal, confirmBox, toast, errMsg, qAttr } from '../ui.js';
+import { S, actions, tag, empty, openModal, confirmBox, toast, errMsg, qAttr, findPeople, findBox, longList, noMatch } from '../ui.js';
 import { companyToday } from '../parts.js';
 import { payBar, slipLines, questionsBlock, STATUS } from './pay.js';
 
@@ -38,12 +38,12 @@ export default {
     const run = runId ? await get(`/api/payroll/runs/${runId}`) : null;
     return { tab, ov, run };
   },
-  render(d) {
+  render(d, q) {
     if (d.tab === 'slip') return slipView(d);
     if (d.tab === 'rules') return rulesView(d.ov);
     if (d.tab === 'history') return historyView(d.ov);
     if (!d.run) return firstView(d.ov);
-    return runView(d.ov, d.run);
+    return runView(d.ov, d.run, q);
   },
 };
 
@@ -77,7 +77,7 @@ function dlMenu(r) {
 }
 document.addEventListener('click', (e) => { for (const d of document.querySelectorAll('.pr-dlm[open]')) if (!d.contains(e.target) || e.target.closest('.pr-mi')) d.open = false; });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') for (const d of document.querySelectorAll('.pr-dlm[open]')) { d.open = false; d.querySelector('summary').focus(); } });
-function runView(ov, d) {
+function runView(ov, d, q) {
   const r = d.run, s = r.status, pk = d.totals.PKR, usd = d.totals.USD;
   const tools = s === 'draft' ? html`<button class="btn" data-act="pr-refresh" data-id="${r.id}">${icon('refresh')} Work it out again</button><button class="btn primary" data-act="pr-submit" data-id="${r.id}">Send for approval</button>`
     : s === 'review' ? html`<button class="btn" data-act="pr-refresh" data-id="${r.id}">${icon('refresh')} Work it out again</button>${d.can_approve ? html`<button class="btn primary" data-act="pr-approve" data-id="${r.id}">${icon('check')} Approve ${periodLabel(r.period).split(' ')[0]}</button>` : ''}`
@@ -95,7 +95,9 @@ function runView(ov, d) {
         ${d.checks.length ? d.checks.map((c) => html`<a class="pr-check ${c.kind}" href="${c.kind === 'missing' ? '#/hr' : c.people && c.people[0] && c.kind !== 'missing' ? `#/payroll?id=${c.people[0].id}` : '#/payroll'}" data-k="c${c.kind}">${icon({ question: 'msg', bank: 'bank', attendance: 'flag', shown: 'eye', missing: 'users' }[c.kind])}<span>${c.text}</span>${icon('right')}</a>`)
           : html`<p class="pr-ok">${icon('check')} Nothing to look at.</p>`}</div></div>`;
   const paidCol = s === 'approved' || s === 'paid', canEdit = s === 'draft' || s === 'review';
-  const rows = d.slips.map((x) => html`<tr class="link" data-k="s${x.id}" data-act="go" data-href="#/payroll?id=${x.id}" tabindex="0">
+  // a big company: find a person, 25 at a time; the total row still counts everyone
+  const found = findPeople(d.slips, q), pg = longList(found, q);
+  const rows = pg.items.map((x) => html`<tr class="link" data-k="s${x.id}" data-act="go" data-href="#/payroll?id=${x.id}" tabindex="0">
       <td class="nm"><span class="person">${av(x)}<span><b>${x.name}</b><span>${x.title || ''}</span></span></span></td>
       <td class="r num">${money(x.lines.find((l) => l.kind === 'base').amount, x.currency)}${x.facts.employed_days < x.facts.workdays ? html`<div class="small muted">${x.facts.employed_days} of ${x.facts.workdays} days</div>` : ''}</td>
       <td>${changes(x)}</td><td class="r num">${x.tax ? money(x.tax, x.currency) : html`<span class="muted">None</span>`}</td><td class="r num"><b>${money(x.net, x.currency)}</b></td>
@@ -112,8 +114,8 @@ function runView(ov, d) {
       ${hero}
       ${ptabs('month')}</div>
     ${nudge()}
-    <section class="panel flush"><header><h2>Everyone this month</h2><span class="muted small">Open a person to see every line and where it came from</span></header><div class="body">
-      ${d.slips.length ? html`<div class="tbl-wrap"><table class="t prt"><thead><tr><th>Person</th><th class="r">Base</th><th>This month</th><th class="r">Income tax</th><th class="r">Net pay</th>${paidCol ? html`<th>Paid</th>` : ''}<th>Check</th>${canEdit ? html`<th><span class="sr">Leave off</span></th>` : ''}</tr></thead><tbody>${rows}${totalRow}</tbody></table></div>` : empty('Nobody on this month', 'Set pay for people on People and pay, then work it out again.')}</div></section>
+    <section class="panel flush"><header><h2>Everyone this month</h2><span class="muted small">Open a person to see every line and where it came from</span>${d.slips.length > 8 ? findBox(q) : ''}</header><div class="body">
+      ${d.slips.length && !found.length ? noMatch(q) : d.slips.length ? html`<div class="tbl-wrap"><table class="t prt"><thead><tr><th>Person</th><th class="r">Base</th><th>This month</th><th class="r">Income tax</th><th class="r">Net pay</th>${paidCol ? html`<th>Paid</th>` : ''}<th>Check</th>${canEdit ? html`<th><span class="sr">Leave off</span></th>` : ''}</tr></thead><tbody>${rows}${totalRow}</tbody></table></div>${pg.more}` : empty('Nobody on this month', 'Set pay for people on People and pay, then work it out again.')}</div></section>
     ${offList}
     ${s === 'draft' ? html`<p class="small muted">${icon('lock')} Only HR and the owner see this page. Every change is in the audit log. <button class="linkbtn danger" data-act="pr-remove" data-id="${r.id}" data-period="${periodLabel(r.period)}">Remove this draft</button></p>` : html`<p class="small muted">${icon('lock')} Only HR and the owner see this page. Every change is in the audit log.${S.me.role === 'owner' && s === 'approved' ? html` <button class="linkbtn" data-act="pr-reopen" data-id="${r.id}" data-period="${periodLabel(r.period)}" data-paid="${r.paid_count}">Reopen to change it</button>` : ''}${S.me.role === 'owner' || S.me.is_dev ? html` <button class="linkbtn danger" data-act="pr-remove-any" data-id="${r.id}" data-period="${periodLabel(r.period)}" data-status="${s}">Remove this month</button>` : ''}</p>`}`;
 }

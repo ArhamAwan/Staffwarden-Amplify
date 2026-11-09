@@ -96,9 +96,12 @@ module.exports = (ctx) => {
   });
   route('GET', '/api/time-requests', ({ user, query }) => {
     const status = query.get('status');
+    // everything still waiting, plus the last year of decisions. Visibility is checked before the cap, so a
+    // manager in a big company never loses their own people's requests behind everyone else's.
+    const since = new Date(Date.now() - 366 * 86400000).toISOString();
     const rows = isManager(user)
-      ? db.prepare(`SELECT * FROM time_requests ${status ? 'WHERE status = ?' : ''} ORDER BY created_at DESC LIMIT 200`).all(...(status ? [status] : [])).filter((r) => r.user_id === user.id || canSee(user, r.user_id))
-      : db.prepare(`SELECT * FROM time_requests WHERE user_id = ? ${status ? 'AND status = ?' : ''} ORDER BY created_at DESC LIMIT 200`).all(user.id, ...(status ? [status] : []));
+      ? db.prepare(`SELECT * FROM time_requests WHERE (status = 'pending' OR created_at >= ?) ${status ? 'AND status = ?' : ''} ORDER BY created_at DESC`).all(since, ...(status ? [status] : [])).filter((r) => r.user_id === user.id || canSee(user, r.user_id)).slice(0, 3000)
+      : db.prepare(`SELECT * FROM time_requests WHERE user_id = ? ${status ? 'AND status = ?' : ''} ORDER BY created_at DESC LIMIT 500`).all(user.id, ...(status ? [status] : []));
     return rows.map(reqOut);
   });
   route('DELETE', '/api/time-requests/:id', ({ user, params }) => {

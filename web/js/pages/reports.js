@@ -1,6 +1,6 @@
 import { html, raw, icon, dur, pctText, dayShort, dayMD, addDays, mondayOf, monthKey, monthStart, monthEnd, addMonths, plural, hoursText } from '../util.js';
 import { get, qs } from '../api.js';
-import { S, actions, kpis, empty, meter, qAttr } from '../ui.js';
+import { S, actions, kpis, empty, meter, qAttr, findPeople, findBox, longList, noMatch } from '../ui.js';
 import { teamSelect, companyToday } from '../parts.js';
 
 function presets(today) {
@@ -25,6 +25,8 @@ export default {
   },
   render({ r, from, to, group, today, days }, q) {
     const rows = r.rows;
+    // many people or projects: find one by name, 25 at a time (by day stays whole)
+    const shown = group === 'day' ? rows : findPeople(rows, q, (x) => x.label), pg = group === 'day' ? { items: rows, more: '' } : longList(shown, q);
     const worked = rows.reduce((n, x) => n + x.worked_secs, 0);
     const maxW = Math.max(1, ...rows.map((x) => x.worked_secs));
     const actW = rows.reduce((n, x) => n + (x.activity_pct == null ? 0 : x.activity_pct * x.worked_secs), 0);
@@ -41,11 +43,11 @@ export default {
         <div class="chips" role="group" aria-label="Period">${presets(today).map((p) => html`<button type="button" class="chip" aria-pressed="${String(active === p)}" data-act="range" data-from="${p[1]}" data-to="${p[2]}">${p[0]}</button>`)}</div>
         <div class="inline-form rp-dates"><div><label class="f" for="rf">From</label><input id="rf" type="date" value="${from}" data-q="from"></div><div><label class="f" for="rt">To</label><input id="rt" type="date" value="${to}" data-q="to"></div></div></div></section>
       ${reportBento({ rows, days, from, to, group, full, worked, act: worked ? Math.round(actW / worked) : null, sum })}
-      <section class="panel flush"><div class="body">${rows.length ? html`<div class="tbl-wrap"><table class="t"><thead><tr><th>${label}</th><th style="min-width:200px">Worked</th>${full ? html`<th class="r">Breaks</th><th class="r">Idle</th><th class="r">Activity</th>` : ''}<th class="r">Days worked</th>${full ? html`<th class="r">Late</th><th class="r">Absent</th><th class="r">Screenshots</th>` : ''}</tr></thead><tbody>
-        ${rows.map((x) => html`<tr data-k="${x.key}"><td><b>${group === 'day' ? dayShort(x.label) : x.label}</b></td>
+      <section class="panel flush">${group !== 'day' && rows.length > 8 ? html`<header><h2>${group === 'member' ? 'People' : 'Projects'}</h2>${findBox(q, group === 'member' ? 'Find a person' : 'Find a project')}</header>` : ''}<div class="body">${rows.length && !shown.length ? empty(`Nothing called “${q.get('find')}”`, 'Check the spelling, or clear the search.') : rows.length ? html`<div class="tbl-wrap"><table class="t"><thead><tr><th>${label}</th><th style="min-width:200px">Worked</th>${full ? html`<th class="r">Breaks</th><th class="r">Idle</th><th class="r">Activity</th>` : ''}<th class="r">Days worked</th>${full ? html`<th class="r">Late</th><th class="r">Absent</th><th class="r">Screenshots</th>` : ''}</tr></thead><tbody>
+        ${pg.items.map((x) => html`<tr data-k="${x.key}"><td><b>${group === 'day' ? dayShort(x.label) : x.label}</b></td>
           <td><span class="pct"><b class="num" style="min-width:64px">${dur(x.worked_secs)}</b>${meter((100 * x.worked_secs) / maxW)}</span></td>
           ${full ? html`<td class="r num">${dur(x.break_secs)}</td><td class="r num">${dur(x.idle_secs)}</td><td class="r num">${pctText(x.activity_pct)}</td>` : ''}
-          <td class="r num">${x.days_worked}</td>${full ? html`<td class="r num">${x.late_days || '–'}</td><td class="r num">${x.absent_days || '–'}</td><td class="r num">${x.shots}</td>` : ''}</tr>`)}</tbody></table></div>` : empty('No data for this period', 'Try a longer period or another team.')}</div></section>`;
+          <td class="r num">${x.days_worked}</td>${full ? html`<td class="r num">${x.late_days || '–'}</td><td class="r num">${x.absent_days || '–'}</td><td class="r num">${x.shots}</td>` : ''}</tr>`)}</tbody></table></div>${pg.more}` : empty('No data for this period', 'Try a longer period or another team.')}</div></section>`;
   },
 };
 

@@ -2,7 +2,7 @@
 // the tasks they finished and what they wrote in their check-in, with the PDF to download.
 import { html, raw, icon, dur, pctText, dayShort, plural } from '../util.js';
 import { get, download } from '../api.js';
-import { S, actions, toast, errMsg, avatar, ring, meter, empty } from '../ui.js';
+import { S, actions, toast, errMsg, avatar, ring, meter, empty, findPeople, findBox, longList, noMatch } from '../ui.js';
 
 const LABEL = { present: 'On time', late: 'Late', absent: 'Absent', not_started: 'Not started', leave: 'On leave', holiday: 'Holiday', off: 'Day off', upcoming: 'Not yet' };
 const TONE = { present: 'good', late: 'warn', absent: 'bad', not_started: 'bad', leave: 'muted', holiday: 'muted', off: 'muted', upcoming: 'muted' };
@@ -19,9 +19,11 @@ export default {
     const r = await get(`/api/shift-reports/${day}`);
     return { list, r };
   },
-  render({ list, r }) {
+  render({ list, r }, q) {
     const t = r.totals;
     const worked = r.people.filter((p) => p.worked_secs > 0 || p.running || p.checkin);
+    // a big team: find a person, 25 at a time; the ones with flags come first
+    const LVN2 = { red: 0, amber: 1 }, found = findPeople([...r.people].sort((a, b) => (LVN2[a.level] ?? 2) - (LVN2[b.level] ?? 2)), q), pg = longList(found, q);
     const missing = r.people.filter((p) => !worked.includes(p));
     const days = list.days.some((d) => d.day === r.day) ? list.days : [{ day: r.day, final: r.final }, ...list.days];
     const readyAt = r.ready_at ? new Date(r.ready_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null;
@@ -34,9 +36,9 @@ export default {
         : html`<b>In progress.</b> These are the numbers so far.${readyAt ? html` The report is final at ${readyAt}, and the owner and managers get a notification then.` : ''}`}</span></div>
       ${bento(r)}
       ${attention(r)}
-      <section class="panel flush"><header><h2>The team at a glance</h2><span class="muted small">${plural(t.people, 'person', 'people')}, times in each person’s own time zone</span></header><div class="body">
-        ${r.people.length ? html`<div class="tbl-wrap"><table class="t sr-t"><thead><tr><th>Name</th><th>Status</th><th>In</th><th>Out</th><th class="r">Worked</th><th class="r">Breaks</th><th class="r">Idle</th><th class="r">Activity</th><th class="r">Tasks done</th><th>Check-in</th><th class="r">Flags</th></tr></thead><tbody>
-          ${r.people.map((p) => html`<tr class="${p.level === 'red' || p.level === 'amber' ? `sr-f-${p.level}` : ''}"><td><span class="sr-who">${avatar(p, true)}<b>${p.name}</b></span></td>
+      <section class="panel flush"><header><h2>The team at a glance</h2><span class="muted small">${plural(t.people, 'person', 'people')}, times in each person’s own time zone</span>${r.people.length > 8 ? findBox(q) : ''}</header><div class="body">
+        ${r.people.length && !found.length ? noMatch(q) : r.people.length ? html`<div class="tbl-wrap"><table class="t sr-t"><thead><tr><th>Name</th><th>Status</th><th>In</th><th>Out</th><th class="r">Worked</th><th class="r">Breaks</th><th class="r">Idle</th><th class="r">Activity</th><th class="r">Tasks done</th><th>Check-in</th><th class="r">Flags</th></tr></thead><tbody>
+          ${pg.items.map((p) => html`<tr class="${p.level === 'red' || p.level === 'amber' ? `sr-f-${p.level}` : ''}"><td><span class="sr-who">${avatar(p, true)}<b>${p.name}</b></span></td>
             <td><span class="tag ${p.status}"><i></i>${p.status === 'late' ? `Late ${p.late_by_min}m` : LABEL[p.status] || p.status}</span></td>
             <td class="num ${lv(p, 'late')}">${p.first_start || '–'}</td><td class="num ${lv(p, 'early', 'running')}">${p.running ? html`<span class="sr-on">working</span>` : p.last_end || '–'}</td>
             <td class="r num ${lv(p, 'short', 'overtime', 'dayoff')}"><b>${p.worked_secs ? dur(p.worked_secs) : '–'}</b></td><td class="r num ${lv(p, 'breaks')}">${p.break_secs >= 60 ? dur(p.break_secs) : '–'}</td>
@@ -44,8 +46,8 @@ export default {
             <td class="r num">${p.tasks.filter((x) => x.done).length || '–'}</td>
             <td>${p.checkin ? html`<span class="sr-ci${p.checkin.blockers.trim() ? ' bad' : ''}">${icon(p.checkin.blockers.trim() ? 'alert' : 'check')}${p.checkin.blockers.trim() ? 'Blocked' : 'Written'}</span>` : html`<span class="muted">–</span>`}</td>
             <td class="r">${p.flags.length ? html`<span class="sr-fn lv-${p.level}">${p.flags.length}</span>` : html`<span class="muted">–</span>`}</td></tr>`)}
-        </tbody></table></div>` : empty('Nobody was scheduled on this day', 'Pick another day above.')}</div></section>
-      ${worked.length ? html`<h2 class="sr-h2">Each person</h2><div class="sr-grid">${worked.map(card)}</div>` : ''}
+        </tbody></table></div>${pg.more}` : empty('Nobody was scheduled on this day', 'Pick another day above.')}</div></section>
+      ${worked.length ? html`<h2 class="sr-h2">Each person</h2><div class="sr-grid">${pg.items.filter((p) => worked.includes(p)).map(card)}</div>${pg.more}` : ''}
       ${missing.length ? html`<section class="panel sr-miss"><div class="body"><b>Didn’t work this day</b><div class="sr-chips">${missing.map((p) => html`<span class="sr-chip">${avatar(p, true)}${p.name}<em class="${TONE[p.status] || ''}">${LABEL[p.status] || p.status}</em></span>`)}</div></div></section>` : ''}`;
   },
 };

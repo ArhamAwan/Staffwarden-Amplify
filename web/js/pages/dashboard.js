@@ -1,6 +1,6 @@
 import { rel, relRange, nowMs, html, raw, dur, hoursText, pctText, dayLong, dayShort, plural, tod, minOfDayIn, todayIn, relTime, addDays, mondayOf, tzLabel, tzShort, reasonLabel, fmtMin, hhmmText, ATT } from '../util.js';
 import { get, qs } from '../api.js';
-import { S, actions, ring, kpis, tag, attTag, liveTag, stateTags, person, ribbon, ribbonAxis, ribbonLegend, windowFor, bars, meter, toneFor, empty, setShots, shotTile, dial } from '../ui.js';
+import { S, actions, ring, kpis, tag, attTag, liveTag, stateTags, person, ribbon, ribbonAxis, ribbonLegend, windowFor, bars, meter, toneFor, empty, setShots, shotTile, dial, findPeople, findBox, noMatch, qAttr, LIST_PAGE } from '../ui.js';
 import { initials, avColor, icon } from '../util.js';
 import { hrPanel } from './hr.js';
 import { isMgr, companyToday, dayNav, teamSelect, breaksPanel, dayRibbonBlock, zoneBadge } from '../parts.js';
@@ -79,6 +79,10 @@ export const teamPage = {
     }
     const groups = (isToday ? GROUPS_TODAY : GROUPS_PAST).map(([g, label, full]) => [g, label, full, d.members.filter((m) => groupOf(m, isToday) === g)]);
     const anyFull = groups.some(([, , full, list]) => full && list.length);
+    // the roster in a big company: find a person, and each lane shows 25 until asked for more
+    const lanes = groups.map(([g, label, full, list]) => [g, label, full, findPeople(list, q)]);
+    const cap = Math.max(LIST_PAGE, Number(q.get('n')) || LIST_PAGE);
+    const laneMore = (list, max) => (list.length > max ? html`<tr class="lane-more"><td colspan="8"><span class="muted small">Showing ${max} of ${list.length}</span><button class="btn sm" type="button" data-act="q" ${raw(qAttr('n', String(cap + LIST_PAGE)))}>Show more</button></td></tr>` : '');
     const count = (g) => (groups.find((x) => x[0] === g) || [0, 0, 0, []])[3].length;
     const n = d.members.length, sbr = relRange(S.settings.break_start, S.settings.break_end, ds);
     const nowRel = rel(minOfDayIn(S.settings.tz_offset_min || 0), ds);
@@ -114,11 +118,11 @@ export const teamPage = {
       ${k.pending_requests ? html`<div class="banner info"><span><b>${plural(k.pending_requests, 'request')}</b> to add missing time waiting for a decision.</span><a class="btn sm" href="#/requests">Review</a></div>` : ''}
       ${isToday && d.idle ? nudgeBoard(d.idle) : ''}
       ${dashBento(k, d, isToday, shiftWin, d.members.map(onAxis), nowRel)}
-      <section class="panel flush roster"><header><h2>Everyone</h2><div class="legend"><span><i class="sw s-working"></i>Working</span><span><i class="sw s-break"></i>Break</span><span><i class="sw s-idle"></i>Idle</span></div></header>
-        <div class="body">${d.members.length ? html`<div class="tbl-wrap"><table class="t">${anyFull ? html`<thead><tr><th>Person</th><th class="th-rib" style="min-width:230px"><span class="sr">${isToday ? 'Today' : 'That day'}, by hour</span>${ribbonAxis(win, { maxLabels: 5, ds })}</th><th>Started</th><th class="r">Worked</th><th class="r">Breaks</th><th class="r">Activity</th><th>This week</th><th class="r">Last screenshot</th></tr></thead>` : ''}
-          ${groups.filter(([, , , list]) => list.length).map(([g, label, full, list]) => html`<tbody class="lane" id="lane-${g}" data-k="l${g}">
+      <section class="panel flush roster"><header><h2>Everyone</h2>${d.members.length > 8 ? findBox(q) : ''}<div class="legend"><span><i class="sw s-working"></i>Working</span><span><i class="sw s-break"></i>Break</span><span><i class="sw s-idle"></i>Idle</span></div></header>
+        <div class="body">${d.members.length && !lanes.some(([, , , l]) => l.length) ? noMatch(q) : d.members.length ? html`<div class="tbl-wrap"><table class="t">${anyFull ? html`<thead><tr><th>Person</th><th class="th-rib" style="min-width:230px"><span class="sr">${isToday ? 'Today' : 'That day'}, by hour</span>${ribbonAxis(win, { maxLabels: 5, ds })}</th><th>Started</th><th class="r">Worked</th><th class="r">Breaks</th><th class="r">Activity</th><th>This week</th><th class="r">Last screenshot</th></tr></thead>` : ''}
+          ${lanes.filter(([, , , list]) => list.length).map(([g, label, full, list]) => html`<tbody class="lane" id="lane-${g}" data-k="l${g}">
             <tr class="lane-h"><th colspan="8"><i class="sw s-${DOT[g]}"></i>${label}<span class="lane-c num">${list.length}</span></th></tr>
-            ${full ? list.map((m) => {
+            ${full ? list.slice(0, cap).map((m) => {
               const wk = m.week_target_secs ? Math.round((100 * m.week_secs) / m.week_target_secs) : 0;
               const nm = m.attendance && isToday ? rel(minOfDayIn(m.tz_offset_min), ds) : null;
               return html`<tr class="link" data-k="m${m.user_id}" data-act="go" data-href="#/timeline?user=${m.user_id}&day=${d.day}" tabindex="0">
@@ -130,7 +134,8 @@ export const teamPage = {
                 <td class="r">${m.activity_pct == null ? html`<span class="faint">–</span>` : html`<span class="pct">${meter(m.activity_pct, toneFor(m.activity_pct, 35, 50))}<span class="num">${m.activity_pct}%</span></span>`}</td>
                 <td style="min-width:150px"><span class="num small">${dur(m.week_secs)} <span class="muted">of ${hoursText(m.week_target_secs)}</span></span>${meter(wk)}</td>
                 <td class="r muted small num">${m.last_shot_at ? relTime(m.last_shot_at) : html`<span class="faint">None</span>`}</td></tr>`;
-            }) : html`<tr class="lane-chips"><td colspan="8"><div class="pgrid2">${sortLane(list, g).map((m) => personTile(m, g, d.day, isToday))}</div></td></tr>`}
+            }) : html`<tr class="lane-chips"><td colspan="8"><div class="pgrid2">${sortLane(list, g).slice(0, cap).map((m) => personTile(m, g, d.day, isToday))}</div></td></tr>`}
+            ${laneMore(list, cap)}
           </tbody>`)}</table></div>
 ` : empty('Nobody to show yet', html`Add people on the <a href="#/people">People</a> page.`)}</div></section>
       <div class="cols${dupAttn ? ' cols-one' : ''}">

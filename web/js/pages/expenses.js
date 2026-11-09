@@ -2,7 +2,7 @@
 // that on); HR approves them for payroll and decides advances.
 import { html, raw, icon, money, dayShort, dayMD, relTime, plural, initials, avColor } from '../util.js';
 import { get, post, qs, fileUrl } from '../api.js';
-import { S, actions, tag, empty, openModal, toast, errMsg, qAttr, kpis } from '../ui.js';
+import { S, actions, tag, empty, openModal, toast, errMsg, qAttr, kpis, findPeople, findBox, longList, noMatch } from '../ui.js';
 import { ptabs } from './payroll.js';
 import { EXP_STATUS, CATS } from './pay.js';
 import { isHRme } from './hr.js';
@@ -42,22 +42,24 @@ export default {
     if (c && c.has_receipt && tab === 'claims') { try { receipt = await fileUrl(`/api/expenses/${c.id}/receipt`); } catch { receipt = null; } }
     return { tab, claims, advances, sel, receipt };
   },
-  render({ tab, claims, advances, sel, receipt }) {
+  render({ tab, claims, advances, sel, receipt }, q) {
     const hr = isHRme();
     const waiting = claims.filter(mine);
     const sub = hr ? html`<nav class="seg-tabs" aria-label="Show">${[['claims', `Claims${waiting.length ? ' · ' + waiting.length : ''}`], ['advances', `Advances${advances.filter((a) => a.status === 'pending').length ? ' · ' + advances.filter((a) => a.status === 'pending').length : ''}`]].map(([v, n]) => html`<button type="button" data-act="q" ${raw(qAttr('tab', v === 'claims' ? '' : v))} aria-pressed="${String(tab === v)}">${n}</button>`)}</nav>` : '';
     const head = html`<div class="page-h"><div><h1>Expenses</h1><p class="sub">${hr ? 'People send a receipt, their manager approves it, and it is paid with their salary.' : 'Claims from your team. You approve them first, then HR.'}</p></div>
       <div class="tools">${sub}</div>${hr ? ptabs('expenses') : ''}</div>`;
-    if (tab === 'advances' && hr) return html`${head}${advancesView(advances)}`;
+    if (tab === 'advances' && hr) return html`${head}${advancesView(advances, q)}`;
     const sum = (list) => list.reduce((n, e) => n + (e.currency === 'PKR' ? e.amount : 0), 0);
     if (!claims.length) return html`${head}<section class="panel">${empty('No expense claims yet', 'People send them from their Pay page with a photo of the receipt.')}</section>`;
     const c = claims.find((x) => x.id === sel) || claims[0];
-    const list = html`<section class="panel flush"><div class="body"><div class="tbl-wrap"><table class="t ext"><thead><tr><th>Person</th><th>Claim</th><th class="r">Amount</th><th>Where it is</th></tr></thead><tbody>
-      ${claims.map((e) => { const over = e.limit != null && e.amount > e.limit; const [k, w] = EXP_STATUS[e.status];
+    // a big company: find a person, 25 at a time (waiting ones come first from the server)
+    const found = findPeople(claims, q), pg = longList(found, q);
+    const list = html`<section class="panel flush"><header><h2>Claims</h2>${findBox(q)}</header><div class="body">${found.length ? html`<div class="tbl-wrap"><table class="t ext"><thead><tr><th>Person</th><th>Claim</th><th class="r">Amount</th><th>Where it is</th></tr></thead><tbody>
+      ${pg.items.map((e) => { const over = e.limit != null && e.amount > e.limit; const [k, w] = EXP_STATUS[e.status];
         return html`<tr class="link ${e.id === c.id ? 'sel' : ''}" data-k="e${e.id}" data-act="q" ${raw(qAttr('id', e.id))} tabindex="0"><td class="nm"><span class="person">${av(e.user_id, e.user_name)}<span><b>${e.user_name}</b><span>${relTime(e.created_at)}</span></span></span></td>
         <td><b>${e.note}</b><div class="small muted">${catName(e.category)} · ${dayMD(e.spent_on)}</div></td><td class="r num"><b>${money(e.amount, e.currency)}</b></td>
-        <td>${over && mine(e) ? tag('absent', `Over the ${catName(e.category).toLowerCase()} limit`) : tag(k, mine(e) ? (e.status === 'manager_ok' ? `${e.manager_name || 'Manager'} approved, waiting for you` : 'Waiting for you') : w)}</td></tr>`; })}</tbody></table></div>
-      <p class="ext-foot"><span>${plural(claims.length, 'claim')}</span><b class="num">${money(sum(claims.filter((e) => e.status !== 'declined')))}${claims.some((e) => e.currency !== 'PKR') ? ' and more in other currencies' : ''}</b></p></div></section>`;
+        <td>${over && mine(e) ? tag('absent', `Over the ${catName(e.category).toLowerCase()} limit`) : tag(k, mine(e) ? (e.status === 'manager_ok' ? `${e.manager_name || 'Manager'} approved, waiting for you` : 'Waiting for you') : w)}</td></tr>`; })}</tbody></table></div>${pg.more}` : noMatch(q)}
+      <p class="ext-foot"><span>${plural(found.length, 'claim')}</span><b class="num">${money(sum(found.filter((e) => e.status !== 'declined')))}${found.some((e) => e.currency !== 'PKR') ? ' and more in other currencies' : ''}</b></p></div></section>`;
     const [k, w] = EXP_STATUS[c.status];
     const over = c.limit != null && c.amount > c.limit;
     const detail = html`<section class="panel exp-detail" data-k="d${c.id}"><div class="body">
@@ -72,14 +74,15 @@ export default {
   },
 };
 
-function advancesView(list) {
-  if (!list.length) return html`<section class="panel">${empty('No advances', 'People ask for one from their Pay page. You decide here.')}</section>`;
+function advancesView(all, q) {
+  if (!all.length) return html`<section class="panel">${empty('No advances', 'People ask for one from their Pay page. You decide here.')}</section>`;
+  const found = findPeople(all, q), pg = longList(found, q), list = pg.items;
   const st = { pending: ['break', 'Waiting for you'], approved: ['working', 'Being paid back'], repaid: ['offline', 'Paid back'], declined: ['absent', 'Declined'] };
-  return html`<section class="panel flush"><div class="body"><div class="tbl-wrap"><table class="t"><thead><tr><th>Person</th><th class="r">Amount</th><th>Paid back</th><th>Why</th><th>Status</th><th></th></tr></thead><tbody>
+  return html`<section class="panel flush"><header><h2>Advances</h2>${findBox(q)}</header><div class="body">${found.length ? html`<div class="tbl-wrap"><table class="t"><thead><tr><th>Person</th><th class="r">Amount</th><th>Paid back</th><th>Why</th><th>Status</th><th></th></tr></thead><tbody>
     ${list.map((a) => html`<tr data-k="a${a.id}"><td class="nm"><span class="person">${av(a.user_id, a.user_name)}<span><b>${a.user_name}</b><span>${relTime(a.created_at)}</span></span></span></td><td class="r num"><b>${money(a.amount, a.currency)}</b></td>
       <td class="num">${money(a.installment, a.currency)} × ${a.months}</td><td class="small">${a.reason || html`<span class="muted">–</span>`}</td><td>${tag(...st[a.status])}${a.decision_note ? html`<div class="small muted">${a.decision_note}</div>` : ''}</td>
       <td class="r nowrap">${a.status === 'pending' && a.user_id !== S.me.id ? html`<button class="btn sm" data-act="adv-decide" data-id="${a.id}" data-name="${a.user_name}">Decline</button> <button class="btn sm primary" data-act="adv-decide" data-id="${a.id}" data-approve="1" data-name="${a.user_name}">Approve</button>` : ''}</td></tr>`)}
-    </tbody></table></div></div></section><p class="small muted">An approved advance is paid to them straight away, by hand. It comes off their payslips from the next month, and each payslip shows what is left.</p>`;
+    </tbody></table></div>${pg.more}` : noMatch(q)}</div></section><p class="small muted">An approved advance is paid to them straight away, by hand. It comes off their payslips from the next month, and each payslip shows what is left.</p>`;
 }
 
 actions['exp-open'] = async (el) => { try { window.open(await fileUrl(`/api/expenses/${el.dataset.id}/receipt`), '_blank', 'noopener'); } catch (e) { toast(errMsg(e), true); } };

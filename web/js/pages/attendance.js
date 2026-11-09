@@ -1,6 +1,6 @@
 import { html, raw, icon, initials, avColor, dur, pctText, dayNum, dow, addDays, monthKey, monthStart, monthEnd, addMonths, monthLabel, todayIn, tod, hhmmText, plural, LEAVE_KIND, eachDay, dayLong } from '../util.js';
 import { get, qs } from '../api.js';
-import { S, ring, kpis, person, empty, qAttr, dateNav, toneFor, tag, meter } from '../ui.js';
+import { S, ring, kpis, person, empty, qAttr, dateNav, toneFor, tag, meter, findPeople, findBox, longList, noMatch } from '../ui.js';
 import { isMgr, loadPeople, select, teamSelect, dayNav, companyToday, myToday, withZone } from '../parts.js';
 
 // One word or phrase per status, the same everywhere on this page.
@@ -53,7 +53,7 @@ export default {
         ${d.who === 'all' ? teamSelect(q.get('team')) : ''}` : ''}
       ${d.view === 'day' ? dayNav(d.day, d.today) : monthNav(d.month, d.today)}`;
     const sub = d.view === 'day' ? dayLong(d.day) : mgr && d.who === 'all' ? `${monthLabel(d.month)}, ${plural(d.g.rows.length, 'person', 'people')}` : monthLabel(d.month);
-    const body = d.view === 'day' ? dayView(d) : d.who === 'all' ? monthTable(d) : monthCalendar(d);
+    const body = d.view === 'day' ? dayView(d, q) : d.who === 'all' ? monthTable(d, q) : monthCalendar(d);
     return html`
       <div class="page-h"><div><h1>Attendance</h1><p class="sub">${sub}</p></div><div class="tools">${tools}</div></div>
       ${body}
@@ -67,7 +67,7 @@ function monthNav(month, today) {
 }
 
 // ---------- one day, everyone: who came in, when, and who didn't ----------
-function dayView({ g, mg, day, today }) {
+function dayView({ g, mg, day, today }, q) {
   const rows = g.rows.map((r) => ({ r, c: r.cells[day] })).sort((a, b) => (ORDER[a.c.status] ?? 9) - (ORDER[b.c.status] ?? 9) || a.r.name.localeCompare(b.r.name));
   const n = (s) => rows.filter((x) => s.includes(x.c.status)).length;
   const came = n(['present', 'late']), absent = n(['absent']), waiting = n(['not_started']);
@@ -81,17 +81,18 @@ function dayView({ g, mg, day, today }) {
     { label: 'On time off', value: String(n(['leave', 'holiday'])), foot: 'Approved leave or a holiday' },
   ];
   if (!rows.length) return html`${kpis(cells)}<section class="panel">${empty('Nobody to show', 'Pick another team or person.')}</section>`;
+  const found = findPeople(rows, q, (x) => x.r.name), pg = longList(found, q);
   return html`${dayBento(rows, { came, absent, waiting, planned, rate }, day === today)}
-    <section class="panel flush"><div class="tbl-wrap"><table class="t att-day stack"><thead><tr>
+    <section class="panel flush"><header><h2>Everyone</h2><span class="muted small">Problems first</span>${findBox(q)}</header>${found.length ? html`<div class="tbl-wrap"><table class="t att-day stack"><thead><tr>
       <th>Person</th><th>Status</th><th>Shift</th><th>Started</th><th>Stopped</th><th class="r">Worked</th></tr></thead><tbody>
-      ${rows.map(({ r, c }) => html`<tr class="link" data-k="u${r.user_id}" data-act="go" data-href="#/timeline?user=${r.user_id}&day=${day}" tabindex="0">
+      ${pg.items.map(({ r, c }) => html`<tr class="link" data-k="u${r.user_id}" data-act="go" data-href="#/timeline?user=${r.user_id}&day=${day}" tabindex="0">
         <td class="nm">${person(r, withZone(r.title || '', r))}</td>
         <td>${statusTag(c)}</td>
         <td class="num muted">${shiftOf(r.user_id) || '–'}</td>
         <td class="num">${c.first_in ? tod(c.first_in, r.tz_offset_min) : html`<span class="faint">–</span>`}</td>
         <td class="num">${c.running ? html`<span class="muted">Still working</span>` : c.last_out ? tod(c.last_out, r.tz_offset_min) : html`<span class="faint">–</span>`}</td>
         <td class="num r"><b>${c.worked_secs ? dur(c.worked_secs) : html`<span class="faint">–</span>`}</b></td></tr>`)}
-    </tbody></table></div></section>
+    </tbody></table></div>${pg.more}` : html`<div class="body">${noMatch(q)}</div>`}</section>
     ${mg ? monthGlance(mg, day) : ''}`;
 }
 
@@ -163,12 +164,13 @@ function monthKpis(g) {
   ]);
 }
 
-function monthTable({ g, month }) {
+function monthTable({ g, month }, q) {
   if (!g.rows.length) return html`${monthKpis(g)}<section class="panel">${empty('Nobody to show', 'Pick another team or person.')}</section>`;
+  const found = findPeople(g.rows, q), pg = longList(found, q);
   return html`${monthKpis(g)}
-    <section class="panel flush"><div class="tbl-wrap"><table class="t"><thead><tr>
+    <section class="panel flush"><header><h2>Everyone</h2>${findBox(q)}</header>${found.length ? html`<div class="tbl-wrap"><table class="t"><thead><tr>
       <th>Person</th><th class="r">Present</th><th>On time</th><th class="r">Late</th><th class="r">Absent</th><th class="r">Time off</th><th>Worked</th></tr></thead><tbody>
-      ${g.rows.map((r) => {
+      ${pg.items.map((r) => {
         const t = r.totals, ont = t.days_present ? Math.round((100 * (t.days_present - t.days_late)) / t.days_present) : null;
         const prog = t.expected_secs ? Math.round((100 * t.worked_secs) / t.expected_secs) : null;
         return html`<tr class="link" data-k="u${r.user_id}" data-act="go" data-href="#/attendance?view=month&user=${r.user_id}&month=${month}" tabindex="0">
@@ -180,7 +182,7 @@ function monthTable({ g, month }) {
           <td class="num r">${t.days_leave || html`<span class="faint">0</span>`}</td>
           <td style="min-width:170px"><span class="inline-meter">${meter(prog ?? 0, toneFor(prog, 70, 90))}<span class="num">${dur(t.worked_secs)}</span></span></td></tr>`;
       })}
-    </tbody></table></div><p class="small muted" style="padding:10px 18px 14px;border-top:1px solid var(--line-2)">Select a person to see their month as a calendar.</p></section>`;
+    </tbody></table></div>${pg.more}` : html`<div class="body">${noMatch(q)}</div>`}<p class="small muted" style="padding:10px 18px 14px;border-top:1px solid var(--line-2)">Select a person to see their month as a calendar.</p></section>`;
 }
 
 // ---------- one month, one person: a calendar ----------

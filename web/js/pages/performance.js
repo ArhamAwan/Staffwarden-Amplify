@@ -2,7 +2,7 @@
 // accuracy) for a chosen period, per person and in total. Which apps or sites people use is not tracked.
 import { html, raw, dur, pctText, dayShort, addDays, todayIn, mondayOf, plural } from '../util.js';
 import { get, qs } from '../api.js';
-import { S, kpis, toneFor, meter, empty, person, qAttr } from '../ui.js';
+import { S, kpis, toneFor, meter, empty, person, qAttr, findPeople, findBox, longList, noMatch } from '../ui.js';
 import { isMgr, loadPeople, select, teamSelect, companyToday, myToday } from '../parts.js';
 
 const PERIODS = [['today', 'Today'], ['7', 'Last 7 days'], ['week', 'This week'], ['30', 'Last 30 days'], ['month', 'This month']];
@@ -44,9 +44,10 @@ export default {
     ];
     const tools = html`<div class="seg" role="group" aria-label="Period">${PERIODS.map(([v, n]) => html`<button type="button" data-act="q" ${raw(qAttr('p', v === '7' ? '' : v))} aria-pressed="${String(period === v)}">${n}</button>`)}</div>
       ${mgr ? html`${select({ q: 'user', value: who, label: 'Person', options: [['all', 'Everyone'], ...S.people.map((p) => [p.id, p.name])] })}${who === 'all' ? teamSelect(q.get('team')) : ''}` : ''}`;
-    const people = mgr && d.people.length > 1 ? html`<section class="panel flush"><header><h2>People</h2><span class="muted small">Select a person to see only them</span></header><div class="tbl-wrap"><table class="t"><thead><tr>
+    const ppl = findPeople([...d.people].sort((a, b) => b.worked_secs - a.worked_secs), q), pg = longList(ppl, q);
+    const people = mgr && d.people.length > 1 ? html`<section class="panel flush"><header><h2>People</h2><span class="muted small">Select a person to see only them</span>${findBox(q)}</header>${ppl.length ? html`<div class="tbl-wrap"><table class="t"><thead><tr>
         <th>Person</th><th class="r">Worked</th><th>Activity</th><th class="r">Done</th><th class="r">Open</th><th class="r">Overdue</th><th>Completion</th><th>On time</th><th>Accuracy</th></tr></thead><tbody>
-        ${[...d.people].sort((a, b) => b.worked_secs - a.worked_secs).map((p) => html`<tr class="link" data-k="u${p.user_id}" data-act="q" ${raw(qAttr('user', String(p.user_id)))} tabindex="0">
+        ${pg.items.map((p) => html`<tr class="link" data-k="u${p.user_id}" data-act="q" ${raw(qAttr('user', String(p.user_id)))} tabindex="0">
           <td class="nm">${person({ id: p.user_id, name: p.name }, p.title || '')}</td>
           <td class="r num">${dur(p.worked_secs)}</td>
           <td style="min-width:120px">${pctCell(p.activity_pct, 30, 50)}</td>
@@ -56,7 +57,7 @@ export default {
           <td style="min-width:110px">${pctCell(p.tasks.completion_pct, 60, 85)}</td>
           <td style="min-width:110px">${pctCell(p.tasks.on_time_pct, 60, 85)}</td>
           <td style="min-width:110px">${pctCell(p.tasks.accuracy_pct, 60, 85)}</td></tr>`)}
-      </tbody></table></div></section>` : '';
+      </tbody></table></div>${pg.more}` : html`<div class="body">${noMatch(q)}</div>`}</section>` : '';
     const none = !d.people.length ? html`<section class="panel">${empty('Nobody to show', 'People who track time appear here.')}</section>` : '';
     return html`
       <div class="page-h"><div><h1>Performance</h1><p class="sub">${d.from === d.to ? dayShort(d.from) : `${dayShort(d.from)} to ${dayShort(d.to)}`}${mgr && who === 'all' ? `, ${plural(d.people.length, 'person', 'people')}` : who !== 'all' && d.people[0] ? `, ${d.people[0].name}` : ''}</p></div><div class="tools">${tools}</div></div>

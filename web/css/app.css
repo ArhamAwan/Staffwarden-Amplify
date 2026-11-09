@@ -1720,3 +1720,12 @@ input[type="file"]::file-selector-button:hover { background: rgb(var(--v-735abf,
 .pr-paid { display: inline-flex; align-items: center; gap: 4px; color: var(--green, #84E2B1); font-weight: 600; font-size: 13.5px; }
 .pr-paid svg { width: 14px; height: 14px; }
 .prt .linkbtn.small { font-size: 12.5px; margin-left: 6px; vertical-align: baseline; }
+
+/* long lists: find a person + show more */
+.lst-more { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px 14px; border-top: 1px solid var(--line-2); }
+.lst-find input { width: 200px; }
+@media (max-width: 760px) { .lst-find, .lst-find input { width: 100%; } }
+.roster tr.lane-more td { padding: 10px 18px 12px; }
+.roster tr.lane-more td { display: table-cell; }
+.roster tr.lane-more .btn { margin-left: 12px; }
+.ci-wl b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

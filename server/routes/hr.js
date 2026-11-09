@@ -396,9 +396,11 @@ module.exports = (ctx) => {
     return { id };
   });
   route('GET', '/api/expenses', ({ user, query }) => {
-    if (query.get('scope') === 'mine' || (!isHR(user) && !isManager(user))) return db.prepare('SELECT * FROM expenses WHERE user_id = ? ORDER BY created_at DESC LIMIT 100').all(user.id).map(expOut);
-    const rows = db.prepare('SELECT * FROM expenses ORDER BY CASE status WHEN \'pending\' THEN 0 WHEN \'manager_ok\' THEN 1 ELSE 2 END, created_at DESC LIMIT 300').all();
-    return rows.filter((e) => isHR(user) || (e.user_id !== user.id && canSee(user, e.user_id))).map(expOut);
+    if (query.get('scope') === 'mine' || (!isHR(user) && !isManager(user))) return db.prepare('SELECT * FROM expenses WHERE user_id = ? ORDER BY created_at DESC LIMIT 500').all(user.id).map(expOut);
+    // everything still open, plus the last year of closed claims; who may see a claim is checked before the cap
+    const since = new Date(Date.now() - 366 * 86400000).toISOString();
+    const rows = db.prepare("SELECT * FROM expenses WHERE status IN ('pending','manager_ok') OR created_at >= ? ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'manager_ok' THEN 1 ELSE 2 END, created_at DESC").all(since);
+    return rows.filter((e) => isHR(user) || (e.user_id !== user.id && canSee(user, e.user_id))).slice(0, 3000).map(expOut);
   });
   route('GET', '/api/expenses/:id/receipt', ({ user, params }) => {
     const e = db.prepare('SELECT * FROM expenses WHERE id = ?').get(Number(params.id)); need(e && e.receipt, 404, 'No receipt');
@@ -454,7 +456,7 @@ module.exports = (ctx) => {
   });
   route('GET', '/api/advances', ({ user, query }) => {
     if (query.get('scope') === 'mine' || !isHR(user)) return db.prepare('SELECT * FROM advances WHERE user_id = ? ORDER BY id DESC').all(user.id).map(advOut);
-    return db.prepare("SELECT * FROM advances ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, id DESC LIMIT 200").all().map(advOut);
+    return db.prepare("SELECT * FROM advances ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, id DESC LIMIT 3000").all().map(advOut);
   });
   route('POST', '/api/advances/:id/decide', ({ user, params, body }) => {
     needHR(user);

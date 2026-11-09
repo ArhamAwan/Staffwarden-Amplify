@@ -203,6 +203,21 @@ actions['dn-pick'] = (el) => {
 };
 export const qAttr = (k, v) => `data-q="${esc(k)}" data-v="${esc(v ?? '')}"`;
 
+// ---------- long lists (a company with hundreds of people): find by name, then 25 at a time.
+// Both live in the address (?find= and ?n=), so a reload or a shared link keeps them.
+export const LIST_PAGE = 25;
+export function findPeople(list, q, name = (x) => x.user_name || x.name || '') {
+  const f = String(q.get('find') || '').trim().toLowerCase();
+  return f ? list.filter((x) => String(name(x)).toLowerCase().includes(f)) : list;
+}
+export const findBox = (q, placeholder = 'Find a person') => html`<label class="psearch lst-find"><span class="sr">${placeholder}</span>${icon('search')}<input type="search" placeholder="${placeholder}" value="${q.get('find') || ''}" data-q="find" autocomplete="off"></label>`;
+export function longList(list, q, { size = LIST_PAGE, key = 'n' } = {}) {
+  const n = Math.max(size, Number(q.get(key)) || size), items = list.slice(0, n), left = list.length - items.length;
+  return { items, more: left > 0 ? html`<div class="lst-more"><span class="muted small">Showing ${items.length} of ${list.length}</span><button class="btn sm" type="button" data-act="q" ${raw(qAttr(key, String(n + size)))}>Show ${Math.min(size, left)} more</button></div>` : '' };
+}
+// "Nobody called …" in place of an empty table when the search found nothing
+export const noMatch = (q) => empty(`Nobody called “${q.get('find')}”`, 'Check the spelling, or clear the search.');
+
 // ---------- screenshots
 export function setShots(list) { S.shots = list; }
 export function shotTile(s, i, { showName = false } = {}) {

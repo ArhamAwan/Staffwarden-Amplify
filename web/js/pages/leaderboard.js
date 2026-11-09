@@ -2,7 +2,7 @@
 // and developers choose what it ranks by, what it shows and who can see it.
 import { html, raw, icon, dur, plural, initials, avColor, dayLong, owl } from '../util.js';
 import { get, put, qs } from '../api.js';
-import { S, actions, toast, empty, openModal, qAttr } from '../ui.js';
+import { S, actions, toast, empty, openModal, qAttr, findPeople, findBox, longList, noMatch } from '../ui.js';
 
 const RANK = { hours: 'Hours worked', activity: 'Activity', points: 'Points' };
 const COLS = { hours: 'Hours', activity: 'Activity', tasks: 'Tasks done', points: 'Points' };
@@ -41,7 +41,7 @@ export default {
     const period = ['month', 'year'].includes(q.get('period')) ? q.get('period') : 'week';
     return get(`/api/leaderboard${qs({ period: period === 'week' ? '' : period })}`);
   },
-  render(d) {
+  render(d, q) {
     const s = d.settings, by = s.rank_by;
     const ranked = d.rows.filter((r) => r.place != null), unranked = d.rows.filter((r) => r.place == null);
     const sub = d.period === 'week' ? `${dayLong(d.from)} to ${dayLong(d.ends)}. Starts again on Monday.` : d.period === 'month' ? `${dayLong(d.from)} until today.` : `Since ${dayLong(d.from)}.`;
@@ -72,9 +72,11 @@ export default {
         ${av(r, 34)}<span class="lb-li-n"><b>${r.name}${me ? html` <em>(you)</em>` : ''}</b><span>${i ? other : (by === 'activity' ? 'Under 2 hours worked' : by === 'points' ? 'No points yet' : 'Hasn’t worked yet')}</span></span>
         <b class="lb-li-v">${i ? big(r, by) : ''}${i ? html`<small>${unit(by)}</small>` : ''}</b></li>`;
     };
-    const table = html`<section class="panel flush lb-table"><header><h2>Everyone</h2><span class="muted small">Ranked by ${RANK[by].toLowerCase()}</span></header>
-      <div class="body">${d.rows.length ? html`<div class="tbl-wrap lb-wide"><table class="t"><thead><tr><th>Place</th><th>Person</th><th class="lb-barc">${RANK[by]}</th>${s.columns.map((c) => html`<th class="r">${COLS[c]}</th>`)}</tr></thead>
-        <tbody>${ranked.map(row)}${unranked.map(row)}</tbody></table></div><ol class="lb-list">${[...ranked, ...unranked].map(item)}</ol>` : empty('Nobody tracks time yet', 'People appear here once they track time with the desktop app.')}</div></section>`;
+    // a big company: find a person (their place stays), 25 at a time
+    const found = findPeople([...ranked, ...unranked], q), pg = longList(found, q);
+    const table = html`<section class="panel flush lb-table"><header><h2>Everyone</h2><span class="muted small">Ranked by ${RANK[by].toLowerCase()}</span>${d.rows.length > 8 ? findBox(q) : ''}</header>
+      <div class="body">${d.rows.length && !found.length ? noMatch(q) : d.rows.length ? html`<div class="tbl-wrap lb-wide"><table class="t"><thead><tr><th>Place</th><th>Person</th><th class="lb-barc">${RANK[by]}</th>${s.columns.map((c) => html`<th class="r">${COLS[c]}</th>`)}</tr></thead>
+        <tbody>${pg.items.map(row)}</tbody></table></div><ol class="lb-list">${pg.items.map(item)}</ol>${pg.more}` : empty('Nobody tracks time yet', 'People appear here once they track time with the desktop app.')}</div></section>`;
     // your spot
     const mine = d.rows.find((r) => r.id === d.me);
     let you = '';

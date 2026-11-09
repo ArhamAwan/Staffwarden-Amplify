@@ -1,6 +1,6 @@
 import { html, raw, icon, dur, hoursText, pctText, dayShort, dayNum, dowShort, dow, mondayOf, addDays, eachDay, tod, plural, dayMD, ATT, todayIn, tzLabel } from '../util.js';
 import { get, qs, download } from '../api.js';
-import { S, actions, ring, kpis, tag, attTag, person, meter, toneFor, empty, toast, errMsg, qAttr, dateNav, avatar } from '../ui.js';
+import { S, actions, ring, kpis, tag, attTag, person, meter, toneFor, empty, toast, errMsg, qAttr, dateNav, avatar, findPeople, findBox, longList, noMatch } from '../ui.js';
 import { isMgr, loadPeople, select, teamSelect, companyToday, myToday, withZone } from '../parts.js';
 
 // ---------- the week grid: one row a person, one cell a day ----------
@@ -38,7 +38,7 @@ function dayCell(r, d, c, today) {
 
 function grid(g, days, today, q) {
   const sort = sorters[q.get('sort')] ? q.get('sort') : 'name';
-  const rows = [...g.rows].sort(sorters[sort]);
+  const found = findPeople([...g.rows].sort(sorters[sort]), q), pg = longList(found, q), rows = pg.items;
   const dayTot = (d) => g.rows.reduce((n, r) => n + r.cells[d].worked_secs, 0);
   const dayDue = (d) => g.rows.reduce((n, r) => n + (r.cells[d].expected_secs || 0), 0);
   const worked = g.rows.reduce((n, r) => n + r.totals.worked_secs, 0), due = g.rows.reduce((n, r) => n + dueOf(r.totals), 0);
@@ -47,7 +47,8 @@ function grid(g, days, today, q) {
   const week = q.get('week') ? `&week=${q.get('week')}` : '';
   return html`<header class="tsg-head"><h2>Hours by day</h2>
       <div class="tsg-tools"><span class="tsg-key" aria-hidden="true"><span><i class="k-live"></i>Timer running</span><span><i class="k-late"></i>Started late</span><span><i class="k-bar"></i>Share of the day’s hours</span></span>
-      <span class="tsg-sort"><span aria-hidden="true">Sort by</span>${select({ q: 'sort', value: sort, label: 'Sort people by', options: SORTS })}</span></div></header>
+      ${findBox(q)}<span class="tsg-sort"><span aria-hidden="true">Sort by</span>${select({ q: 'sort', value: sort, label: 'Sort people by', options: SORTS })}</span></div></header>
+    ${found.length ? '' : html`<div class="body">${noMatch(q)}</div>`}
     <div class="tbl-wrap tsg-wrap"><table class="t grid tsg"><thead><tr><th class="nm">Person</th>
       ${days.map((d) => html`<th class="tsg-dh${dow(d) % 6 === 0 ? ' we' : ''}${d === today ? ' today' : ''}"><span>${dowShort(d)}</span><b>${dayNum(d)}</b>${d === today ? html`<em>Today</em>` : ''}</th>`)}
       <th class="tsg-wk">Week</th><th class="tsg-act">Activity</th></tr></thead><tbody>
@@ -59,7 +60,7 @@ function grid(g, days, today, q) {
       </tbody><tfoot><tr><td class="nm"><b>Everyone</b><span class="muted small">${plural(g.rows.length, 'person', 'people')}</span></td>
         ${days.map((d) => { const w = dayTot(d), e = dayDue(d); return html`<td class="tsg-d${dow(d) % 6 === 0 ? ' we' : ''}${d === today ? ' today' : ''}">${w ? html`<span class="tsg-h num">${dur(w)}</span><span class="tsg-bar"><i style="width:${fill(w, e) || (w ? 100 : 0)}%"></i></span>` : html`<span class="tsg-x none">–</span>`}</td>`; })}
         <td class="tsg-wk"><span class="tsg-tot"><b class="num">${dur(worked)}</b>${due ? html`<span class="num">of ${dur(due)}</span>` : ''}</span><span class="tsg-bar"><i style="width:${fill(worked, due)}%"></i></span>${pace(worked, due)}</td>
-        <td class="tsg-act">${act == null ? html`<span class="faint">–</span>` : html`<span class="pct">${meter(act, toneFor(act, 35, 50))}<span class="num">${act}%</span></span>`}</td></tr></tfoot></table></div>`;
+        <td class="tsg-act">${act == null ? html`<span class="faint">–</span>` : html`<span class="pct">${meter(act, toneFor(act, 35, 50))}<span class="num">${act}%</span></span>`}</td></tr></tfoot></table></div>${pg.more}`;
 }
 
 

@@ -6,7 +6,7 @@
 //    and what changed since they last agreed to the tracking policy.
 import { html, raw, esc, dur, tod, fmtMin, relTime, dayShort, plural, initials, avColor, rel, icon, nowMs, zoneShort, todayIn } from '../util.js';
 import { get, post, put, del } from '../api.js';
-import { S, actions, tag, empty, openModal, confirmBox, toast, errMsg } from '../ui.js';
+import { S, actions, tag, empty, openModal, confirmBox, toast, errMsg, findPeople, findBox, longList, noMatch } from '../ui.js';
 
 // ---------------- a person's day ----------------
 const KIND_WORDS = { late: 'Late start', idle: 'Idle', shot: 'Screenshot', day: 'This day' };
@@ -311,7 +311,7 @@ export const requestsPage = {
   title: 'Missing time',
   async load(q) { return get('/api/time-requests'); },
   render(list, q) {
-    const pending = list.filter((r) => r.status === 'pending'), done = list.filter((r) => r.status !== 'pending').slice(0, 40);
+    const pending = list.filter((r) => r.status === 'pending'), allDone = findPeople(list.filter((r) => r.status !== 'pending'), q), done = longList(allDone, q);
     const tzOf = (r) => ((S.people || []).find((p) => p.id === r.user_id) || {}).tz_offset_min ?? S.settings.tz_offset_min;
     const row = (r) => html`<li data-k="q${r.id}">
       <div class="rq-who"><span class="avatar" style="background:${avColor(r.user_id)}">${initials(r.user_name)}</span><span><b>${r.user_name}</b><span class="small muted">${dayShort(r.day)} · asked ${relTime(r.created_at)}</span></span></div>
@@ -323,6 +323,6 @@ export const requestsPage = {
       ${askBento(list, pending)}
       <section class="panel flush"><header><h2>Waiting for a decision</h2><span class="muted small">${plural(pending.length, 'request')}</span></header>
         <div class="body">${pending.length ? html`<ul class="rq">${pending.map(row)}</ul>` : empty('All caught up', 'When someone asks for missing time, it shows here and you get a notification.')}</div></section>
-      ${done.length ? html`<section class="panel flush"><header><h2>Decided</h2></header><div class="body"><ul class="rq">${done.map(row)}</ul></div></section>` : ''}`;
+      ${list.some((r) => r.status !== 'pending') ? html`<section class="panel flush"><header><h2>Decided</h2><span class="muted small">${plural(allDone.length, 'request')}</span>${findBox(q)}</header><div class="body">${done.items.length ? html`<ul class="rq">${done.items.map(row)}</ul>` : noMatch(q)}${done.more}</div></section>` : ''}`;
   },
 };
