@@ -576,11 +576,17 @@ function createPlatform(opts) {
       day: today,
     };
   }
+  // when anyone at the company last used it (their own sign-ins, read live)
+  const lastUsed = (r) => {
+    const app = tenants.get(r.slug);
+    if (!app) return r.last_used_at || null;
+    try { const t = (app.db.prepare('SELECT MAX(last_used_at) AS t FROM sessions').get() || {}).t; return t ? `${String(t).replace(' ', 'T')}${/Z|[+-]\d\d:?\d\d$/.test(t) ? '' : 'Z'}` : r.last_used_at || null; } catch { return r.last_used_at || null; }
+  };
   const companyOut = (r) => {
     const each = P.seatCents(r.plan, r.interval);
     const monthly = r.comped ? 0 : Math.round((r.seats || 0) * (r.interval === 'year' ? each / 12 : each));
     const late = store.prepare("SELECT at FROM payments WHERE slug = ? AND status = 'failed' ORDER BY at DESC LIMIT 1").get(r.slug);
-    return { slug: r.slug, name: r.name, address: hostOf(r.slug), url: urlOf(r.slug), country: (byCode(r.country) || {}).name || r.country, owner_email: r.owner_email, owner_name: r.owner_name, status: r.status, plan: r.plan, interval: r.interval, seats: r.seats, monthly_cents: ['active', 'past_due'].includes(r.status) ? monthly : 0, after_trial_cents: r.status === 'trial' ? monthly : 0, comped: !!r.comped, manual_billing: !!r.manual_billing, trial_ends_at: r.trial_ends_at, grace_ends_at: r.grace_ends_at, paused_at: r.paused_at, closing_at: r.closing_at, delete_after: r.delete_after, created_at: r.created_at, last_used_at: r.last_used_at, failed_at: late ? late.at : null, due_for_deletion: !!(r.delete_after && Date.parse(r.delete_after) <= now() && paused(r)) };
+    return { slug: r.slug, name: r.name, address: hostOf(r.slug), url: urlOf(r.slug), country: (byCode(r.country) || {}).name || r.country, owner_email: r.owner_email, owner_name: r.owner_name, status: r.status, plan: r.plan, interval: r.interval, seats: r.seats, monthly_cents: ['active', 'past_due'].includes(r.status) ? monthly : 0, after_trial_cents: r.status === 'trial' ? monthly : 0, comped: !!r.comped, manual_billing: !!r.manual_billing, trial_ends_at: r.trial_ends_at, grace_ends_at: r.grace_ends_at, paused_at: r.paused_at, closing_at: r.closing_at, delete_after: r.delete_after, created_at: r.created_at, last_used_at: lastUsed(r), trial_days: P.TRIAL_DAYS, failed_at: late ? late.at : null, due_for_deletion: !!(r.delete_after && Date.parse(r.delete_after) <= now() && paused(r)) };
   };
 
   // ---------------- the plain address and the console: their API ----------------
@@ -704,6 +710,16 @@ function createPlatform(opts) {
       paying: paying.length, trials: list.filter((c) => c.status === 'trial').length, trials_ending_week: list.filter((c) => c.status === 'trial' && c.trial_ends_at && Date.parse(c.trial_ends_at) - now() < 7 * DAY).length,
       people: paying.reduce((a, c) => a + (c.seats || 0), 0), attention: list.filter((c) => c.status === 'past_due' || c.due_for_deletion).length,
       companies: list, mail: mailer.configured, payments: stripe.ready,
+      months: (() => {
+        const out = [], d = new Date(now());
+        for (let i = 5; i >= 0; i--) {
+          const m = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - i, 1)), n = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth() + 1, 1));
+          out.push({ month: m.toISOString().slice(0, 7),
+            paid_cents: store.prepare("SELECT COALESCE(SUM(amount_cents), 0) AS s FROM payments WHERE status = 'paid' AND at >= ? AND at < ?").get(m.toISOString(), n.toISOString()).s,
+            signups: store.prepare('SELECT COUNT(*) AS n FROM companies WHERE created_at >= ? AND created_at < ?').get(m.toISOString(), n.toISOString()).n });
+        }
+        return out;
+      })(),
     };
   });
   on('GET', '/api/console/companies/:slug', ({ req, params }) => {
