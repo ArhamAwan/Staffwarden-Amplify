@@ -25,7 +25,9 @@ fi
 {
   echo "$DOMAIN {"
   echo "  encode gzip"
-  echo "  reverse_proxy 127.0.0.1:3000"
+  echo "  reverse_proxy 127.0.0.1:3000 {"
+  echo "    header_up X-Forwarded-For {client_ip}"
+  echo "  }"
   echo "}"
   if [[ "$LEGACY" == yes ]]; then
     cat <<EOF
@@ -34,7 +36,9 @@ fi
 http://$IP {
   @update path /api/app/latest /downloads/*
   handle @update {
-    reverse_proxy 127.0.0.1:3000
+    reverse_proxy 127.0.0.1:3000 {
+      header_up X-Forwarded-For {client_ip}
+    }
   }
   handle {
     redir https://$DOMAIN{uri} 308

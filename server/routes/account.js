@@ -12,6 +12,8 @@ const { createZip } = require('../lib/zipfile');
 const MIN = 60000, DAY = 86400000;
 const SECRET_TABLES = new Set(['sessions', 'client_sessions', 'email_links', 'push_subscriptions', 'settings_secret']);
 const SECRET_COLS = /^(pw_salt|pw_hash|token|secret|smtp_pass|pass|password|endpoint|p256dh|auth)$/i;
+// settings rows that hold a password or a private key (the report mailbox, push keys, the GIF key)
+const SECRET_SETTINGS = new Set(['report_mail', 'vapid', 'gif_key', 'smtp']);
 
 module.exports = (ctx) => {
   const { db, cfg, route, nowIso, audit, emit, tokenHash, newToken, hashPassword, passwordProblem, publicUser, publicClient, clientIp } = ctx;
@@ -57,6 +59,8 @@ module.exports = (ctx) => {
   route('POST', '/api/users/:id/invite', async ({ user, params }) => {
     ctx.needManager(user);
     const u = ctx.targetUser(user, params.id);
+    // an invite link signs its holder in as that person: for HR and developer accounts, only the owner sends it
+    need((!u.hr && !u.is_dev) || (user.role === 'owner' && !user.dev_owner), 403, 'Only the owner can invite an HR or developer account');
     need(u.invited_at && !u.joined_at, 400, `${u.name} has already joined`);
     const r = await ctx.sendInvite(u.id, user);
     return { ok: true, sent: !!(r && r.sent), ...(r && r.sent ? {} : { link: r.link }) };
@@ -186,6 +190,8 @@ module.exports = (ctx) => {
     const to = db.prepare("SELECT * FROM users WHERE id = ? AND active = 1 AND role = 'manager'").get(Number(body.user_id));
     need(to, 400, 'Choose an admin to hand over to');
     need(to.joined_at || !to.invited_at, 400, `${to.name} hasn’t joined yet`);
+    // one handover at a time: asking someone new takes back any earlier offer
+    db.prepare("UPDATE email_links SET used_at = ? WHERE kind = 'handover' AND used_at IS NULL").run(nowIso());
     const token = makeLink('handover', to.id, user.id, 7 * DAY);
     await ctx.mail('handover', to.email, { name: to.name.split(' ')[0], from: user.name, link: `${base()}/#handover?t=${token}` });
     audit(user, 'owner.handover_asked', to.id, to.name);
@@ -200,7 +206,10 @@ module.exports = (ctx) => {
     const l = findLink(body.token, ['handover']);
     need(user && user.id === l.user_id && user.role === 'manager', 403, 'Sign in as the person this was sent to');
     const old = db.prepare("SELECT * FROM users WHERE role = 'owner' AND active = 1 ORDER BY id LIMIT 1").get();
+    // only an offer from whoever owns the company now counts
+    need(old && l.created_by === old.id, 410, 'This handover is no longer open');
     useLink(l);
+    db.prepare("UPDATE email_links SET used_at = ? WHERE kind = 'handover' AND used_at IS NULL").run(nowIso());
     db.exec('BEGIN');
     try {
       db.prepare("UPDATE users SET role = 'owner', tracks_time = 0 WHERE id = ?").run(user.id);
@@ -264,7 +273,8 @@ module.exports = (ctx) => {
     for (const t of tables) {
       const cols = db.prepare(`PRAGMA table_info("${t}")`).all().map((c) => c.name).filter((c) => !SECRET_COLS.test(c));
       if (!cols.length) continue;
-      const rows = db.prepare(`SELECT ${cols.map((c) => `"${c}"`).join(', ')} FROM "${t}" LIMIT 1000000`).all();
+      let rows = db.prepare(`SELECT ${cols.map((c) => `"${c}"`).join(', ')} FROM "${t}" LIMIT 1000000`).all();
+      if (t === 'settings' && cols.includes('key')) rows = rows.filter((r) => !SECRET_SETTINGS.has(String(r.key)));
       sheets.push({ name: t.slice(0, 31), cols: cols.map(() => 18), rows: [cols.map((c) => ({ v: c, s: 'head' })), ...rows.map((r) => cols.map((c) => (r[c] == null ? '' : typeof r[c] === 'number' ? r[c] : String(r[c]).slice(0, 32000))))], freeze: 1 });
     }
     zip.add(`${T ? T.slug : 'company'}-data.xlsx`, workbook(sheets, { title: `${orgName()}: everything in Staffwarden` }));

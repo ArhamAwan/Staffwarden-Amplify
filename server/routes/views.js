@@ -83,7 +83,7 @@ module.exports = (ctx) => {
     return { from, to, group, rows: calc.report(list, from, to, group) };
   });
 
-  const csvCell = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const csvCell = require('../lib/csv').cell;
   const csv = (rows) => '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
   const hours = (s) => (s / 3600).toFixed(2);
   const hm = (iso, tz) => { if (!iso) return ''; const m = T.localMinOfDay(Date.parse(iso), tz); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };

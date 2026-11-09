@@ -109,6 +109,9 @@ module.exports = (ctx) => {
     need(user.role === 'owner' || t.role === 'employee' || t.id === user.id, 403, 'Only the owner can change managers');
     // a developer account sees what the owner sees: only the owner changes or removes it
     need(!t.is_dev || t.id === user.id || (user.role === 'owner' && !user.dev_owner), 403, 'Only the owner can change or remove a developer account');
+    // HR sees everyone's records and pay, so an HR account is above any team manager: only the owner sets
+    // its password or turns it off (a manager can still edit its name, team and schedule)
+    if (('password' in body || 'active' in body) && t.hr && t.id !== user.id) need(user.role === 'owner' && !user.dev_owner, 403, 'Only the owner can change the password of, or turn off, an HR account');
     const set = {};
     if ('name' in body) set.name = str(body.name, 'name', 100);
     if ('title' in body) set.title = optStr(body.title, 'title', 100);
@@ -134,7 +137,7 @@ module.exports = (ctx) => {
       set.role = body.role;
     }
     if ('hr' in body) {
-      need(user.role === 'owner', 403, 'Only the owner decides who is in HR');
+      need(ctx.isRealOwner(user), 403, 'Only the owner decides who is in HR');
       need(t.role !== 'owner', 400, 'The owner already sees everything HR does');
       set.hr = body.hr ? 1 : 0;
     }
@@ -146,6 +149,8 @@ module.exports = (ctx) => {
       need(t.id !== user.id, 400, 'You cannot deactivate yourself');
       need(t.role !== 'owner', 400, 'The owner cannot be deactivated');
       set.active = body.active ? 1 : 0;
+      // turned off means signed out everywhere: turning them back on later doesn't revive old sign-ins
+      if (!set.active) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(t.id);
     }
     Object.assign(set, readSchedule(body));
     if ('password' in body) {

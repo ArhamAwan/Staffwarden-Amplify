@@ -21,7 +21,7 @@ Desktop apps that talk to the plain address keep reaching it.
 | `BASE_DOMAIN` | `staffwarden.com`. Set by `service.sh`. |
 | `DEFAULT_TENANT` | The address of the company that was on this server first. |
 | `PLATFORM_ADMINS` | Emails that may open the console (comma separated). |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Email for sign-up codes, invites, password links, receipts and reminders. Without it, nothing is sent: codes are shown on the sign-up page and invite links are shown to whoever invites. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Email for sign-up codes, invites, password links, receipts and reminders. Required in production: without it, sign-up stays closed (on a test server the code is shown on the page instead). Invite links are shown to whoever invites. |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Card payments. |
 | `STRIPE_PRICE_<STARTER\|BUSINESS\|PRO>_<YEAR\|MONTH>` | The six Stripe price ids, each priced per person: yearly $48 / $84 / $120, monthly $4.80 / $8.40 / $12. |
 

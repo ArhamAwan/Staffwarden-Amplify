@@ -296,7 +296,7 @@ test('people management: scoped creation, deactivate, password reset and change'
   await login('n3@test.com', 'brandnew-pass');
 
   await ok('PATCH', `/api/users/${n3.id}`, { token: tokens.mia, body: { active: false } });
-  assert.equal((await api('GET', '/api/me', { token: t3 })).status, 403, 'existing sessions stop working');
+  assert.equal((await api('GET', '/api/me', { token: t3 })).status, 401, 'existing sessions are signed out');
   assert.equal((await api('POST', '/api/auth/login', { body: { email: 'n3@test.com', password: 'brandnew-pass' } })).status, 403);
   assert.ok(!(await ok('GET', '/api/users', { token: tokens.mia })).some((x) => x.name === 'N3'), 'hidden from the default list');
   assert.ok((await ok('GET', '/api/users?all=1', { token: tokens.mia })).some((x) => x.name === 'N3'));

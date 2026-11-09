@@ -141,7 +141,7 @@ module.exports = (ctx) => {
   route('GET', '/api/push/key', () => ({ key: P().vapid().publicKey }), C);
   route('POST', '/api/push/subscribe', ({ user, body }) => {
     const ep = str(body.endpoint, 'endpoint', 1000);
-    need(/^https:\/\/[^\s/]+\//.test(ep), 400, 'That is not a push address');
+    need(/^https:\/\/[^\s/]+\//.test(ep) && require('../lib/webpush').pushAddressOk(ep), 400, 'That is not a push address');
     const k = body.keys || {};
     need(typeof k.p256dh === 'string' && /^[\w-]{80,100}$/.test(k.p256dh) && typeof k.auth === 'string' && /^[\w-]{16,32}$/.test(k.auth), 400, 'Missing push keys');
     const [kind, id] = ownerOf(user);
@@ -289,7 +289,14 @@ module.exports = (ctx) => {
   // =================================================================================================
   // requests: a thread on each, edit or cancel while new, and an estimate the client answers
   // =================================================================================================
-  const reqFor = (user, id) => { const r = db.prepare('SELECT * FROM client_requests WHERE id = ?').get(Number(id)); need(r, 404, 'Request not found'); return { r, a: access(user, r.project_id) }; };
+  // with requests switched off for the client, none of their request routes answer the client
+  const reqFor = (user, id) => {
+    const r = db.prepare('SELECT * FROM client_requests WHERE id = ?').get(Number(id));
+    need(r, 404, 'Request not found');
+    const a = access(user, r.project_id);
+    if (a.client) need(a.s.requests, 403, 'Requests are switched off for this project');
+    return { r, a };
+  };
   const reqMsgOut = (m, user) => ({ id: m.id, body: m.body, created_at: m.created_at, author: who(m.author_kind, m.author_id), mine: m.author_kind === (user.kind === 'client' ? 'client' : 'staff') && m.author_id === user.id });
   route('GET', '/api/portal/requests/:id/messages', ({ user, params }) => {
     const { r } = reqFor(user, params.id);
@@ -451,7 +458,7 @@ module.exports = (ctx) => {
   function threadsFor(user, a) {
     const all = db.prepare('SELECT * FROM chat_threads WHERE project_id = ?').all(a.p.id);
     return all.filter((th) => {
-      if (th.kind === 'direct') return a.client ? th.client_user_id === user.id && a.s.direct : th.staff_id === user.id;
+      if (th.kind === 'direct') return !user.preview && (a.client ? th.client_user_id === user.id && a.s.direct : th.staff_id === user.id);
       return !a.client || a.s.messages;
     });
   }
@@ -502,13 +509,26 @@ module.exports = (ctx) => {
   // only http(s) on the usual ports, never to this machine or a private network (checked on every
   // redirect, and the connection goes to the address that was checked), small pages, a few seconds
   const privateIp = (ip) => {
-    if (net.isIPv4(ip)) { const [a, b] = ip.split('.').map(Number); return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224; }
+    if (net.isIPv4(ip)) {
+      const [a, b, c] = ip.split('.').map(Number);
+      return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127)
+        || (a === 198 && (b === 18 || b === 19)) || (a === 192 && b === 0 && c === 0) || a >= 224;
+    }
     const x = ip.toLowerCase();
     if (x.startsWith('::ffff:')) return privateIp(x.slice(7));
-    return x === '::1' || x === '::' || x.startsWith('fc') || x.startsWith('fd') || x.startsWith('fe80') || x.startsWith('ff');
+    const v4 = /^::(\d+\.\d+\.\d+\.\d+)$/.exec(x);          // the old ::a.b.c.d form
+    if (v4) return true;
+    return x === '::1' || x === '::' || x.startsWith('fc') || x.startsWith('fd') || x.startsWith('fe80') || x.startsWith('ff')
+      || x.startsWith('64:ff9b:') || x.startsWith('2002:');              // NAT64 and 6to4 reach IPv4 behind them
   };
+  ctx.privateIp = privateIp;
   function fetchPage(url, hops = 0) {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve0, reject0) => {
+      // one deadline for the whole fetch, however slowly a server drips its page
+      let done = false;
+      const deadline = setTimeout(() => { if (!done) { done = true; reject0(new Error('timeout')); } }, 8000);
+      const resolve = (v) => { if (!done) { done = true; clearTimeout(deadline); resolve0(v); } };
+      const reject = (e) => { if (!done) { done = true; clearTimeout(deadline); reject0(e); } };
       let u;
       try { u = new URL(url); } catch { reject(new Error('bad url')); return; }
       if (!['http:', 'https:'].includes(u.protocol) || (u.port && !['80', '443'].includes(u.port)) || u.username || u.password) { reject(new Error('not allowed')); return; }
@@ -520,7 +540,7 @@ module.exports = (ctx) => {
           if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && hops < 3) { res.resume(); fetchPage(new URL(res.headers.location, u).toString(), hops + 1).then(resolve, reject); return; }
           if (res.statusCode !== 200 || !/text\/html|application\/xhtml/i.test(String(res.headers['content-type'] || ''))) { res.resume(); reject(new Error('not a page')); return; }
           let size = 0; const chunks = [];
-          res.on('data', (c) => { size += c.length; if (size > 512 * 1024) { req.destroy(); return; } chunks.push(c); });
+          res.on('data', (c) => { size += c.length; if (size > 512 * 1024) { req.destroy(); resolve({ html: Buffer.concat(chunks).toString('utf8'), url: u }); return; } chunks.push(c); });
           res.on('end', () => resolve({ html: Buffer.concat(chunks).toString('utf8'), url: u }));
           res.on('error', reject);
         });
@@ -531,12 +551,26 @@ module.exports = (ctx) => {
     });
   }
   const decode = (s) => String(s || '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n) || 32)).replace(/\s+/g, ' ').trim();
-  function meta(html, name) {
-    const re = new RegExp(`<meta[^>]+(?:property|name)=["']${name}["'][^>]*>`, 'i');
-    const tag = re.exec(html);
-    if (!tag) return null;
-    const c = /content=["']([^"']*)["']/i.exec(tag[0]);
-    return c ? decode(c[1]) : null;
+  // The <meta> tags of a page, read in one pass (a regex over a hostile page could hold the server for minutes).
+  function metaTags(html) {
+    const out = new Map();
+    let p = 0;
+    while ((p = html.indexOf('<meta', p)) !== -1 && out.size < 200) {
+      const e = html.indexOf('>', p);
+      if (e === -1) break;
+      const tag = html.slice(p, Math.min(e, p + 2000));
+      p = e + 1;
+      const n = /\b(?:property|name)\s*=\s*["']([^"']{1,80})["']/i.exec(tag);
+      const c = /\bcontent\s*=\s*["']([^"']*)["']/i.exec(tag);
+      if (n && c && !out.has(n[1].toLowerCase())) out.set(n[1].toLowerCase(), decode(c[1]));
+    }
+    return out;
+  }
+  function titleOf(html) {
+    const a = html.search(/<title[\s>]/i);
+    if (a === -1) return null;
+    const b = html.indexOf('>', a), c = html.indexOf('</', b);
+    return b === -1 || c === -1 || c - b > 2000 ? null : decode(html.slice(b + 1, c).slice(0, 300));
   }
   ctx.linkPreviewFetch = fetchPage;
   route('GET', '/api/chat/preview', async ({ query }) => {
@@ -547,10 +581,11 @@ module.exports = (ctx) => {
     let out = { ok: false };
     try {
       const { html, url: u } = await fetchPage(url);
-      const head = html.slice(0, 200000);
-      const title = meta(head, 'og:title') || meta(head, 'twitter:title') || decode((/<title[^>]*>([^<]{1,300})<\/title>/i.exec(head) || [])[1]);
-      const description = meta(head, 'og:description') || meta(head, 'description') || meta(head, 'twitter:description');
-      const site = meta(head, 'og:site_name') || u.hostname.replace(/^www\./, '');
+      const head = html.slice(0, 100000);
+      const m = metaTags(head);
+      const title = m.get('og:title') || m.get('twitter:title') || titleOf(head);
+      const description = m.get('og:description') || m.get('description') || m.get('twitter:description');
+      const site = m.get('og:site_name') || u.hostname.replace(/^www\./, '');
       if (title) out = { ok: true, title: title.slice(0, 200), description: description ? description.slice(0, 300) : null, site: site.slice(0, 80) };
     } catch { out = { ok: false }; }
     db.prepare('INSERT OR REPLACE INTO link_previews (url, ok, title, description, site, fetched_at) VALUES (?,?,?,?,?,?)').run(url, out.ok ? 1 : 0, out.title || null, out.description || null, out.site || null, nowIso());

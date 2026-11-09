@@ -9,13 +9,17 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { makeEnv } = require('./helpers');
+const ReleaseKey = require('../lib/release-key');
+// a throwaway release key for these tests; the real private key never leaves the developer's computer
+const signing = crypto.generateKeyPairSync('ed25519');
+const signFor = (file, sha) => crypto.sign(null, ReleaseKey.message(file, sha), signing.privateKey).toString('base64');
 
 let env, dev, ana, mgr, backupDir;
 before(async () => {
   backupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wh-bk-'));
   fs.writeFileSync(path.join(backupDir, 'tracker-2026-10-22.db'), 'x'.repeat(100));
   fs.writeFileSync(path.join(backupDir, 'tracker-2026-10-23.db'), 'x'.repeat(120));
-  env = await makeEnv({ app: { backupDir, offsiteLog: path.join(backupDir, 'offsite.log') } });
+  env = await makeEnv({ app: { releaseKey: signing.publicKey, backupDir, offsiteLog: path.join(backupDir, 'offsite.log') } });
   dev = await env.person('dev', 'Arham Dev');
   ana = await env.person('ana', 'Ana');
   mgr = await env.person('mgr', 'Maya', { role: 'manager' });
@@ -143,7 +147,15 @@ test('a new desktop version uploads in pieces, is checked, replaces the current 
   for (let off = 0; off < data.length; off += up.chunk) {
     await ok('POST', `/api/dev/releases/${up.id}/chunk`, { token: tokens.dev, body: { name, offset: off, data: data.subarray(off, off + up.chunk).toString('base64') } });
   }
-  const pub = await ok('POST', `/api/dev/releases/${up.id}/publish`, { token: tokens.dev, body: { notes: 'Faster boost clip' } });
+  // unsigned, or signed for a different file, is refused: the apps would never install it
+  assert.equal((await api('POST', `/api/dev/releases/${up.id}/publish`, { token: tokens.dev, body: { notes: 'x' } })).status, 400);
+  assert.equal((await api('POST', `/api/dev/releases/${up.id}/publish`, { token: tokens.dev, body: { notes: 'x', signatures: { [name]: signFor('Staffwarden-9.9.9-mac-AppleSilicon.zip', sha) } } })).status, 400);
+  const other = crypto.generateKeyPairSync('ed25519');
+  assert.equal((await api('POST', `/api/dev/releases/${up.id}/publish`, { token: tokens.dev, body: { notes: 'x', signatures: { [name]: crypto.sign(null, ReleaseKey.message(name, sha), other.privateKey).toString('base64') } } })).status, 400);
+  const pub = await ok('POST', `/api/dev/releases/${up.id}/publish`, { token: tokens.dev, body: { notes: 'Faster boost clip', signatures: { [name]: signFor(name, sha) } } });
+  assert.ok(fs.existsSync(path.join(dl, `${name}.sig`)), 'the signature is published next to the installer');
+  const latest = await ok('GET', '/api/app/latest?platform=darwin&arch=arm64');
+  assert.ok(ReleaseKey.verify(signing.publicKey, latest.file || name, latest.sha256 || sha, latest.sig), 'the apps get the signature with the update');
   assert.equal(pub.version, '0.9.22'); assert.equal(pub.previous, '0.9.21');
   assert.ok(fs.existsSync(path.join(dl, name)));
   assert.ok(!fs.existsSync(path.join(dl, 'Staffwarden-0.9.21-mac-AppleSilicon.zip')));

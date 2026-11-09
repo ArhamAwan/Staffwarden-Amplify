@@ -294,7 +294,7 @@ test('push: a phone subscribes, and the message it gets opens only with its own 
     assert.ok(key.key.length > 80);
     assert.equal((await e2.api('POST', '/api/push/subscribe', { token: e2.tokens.lee, body: { endpoint: 'http://insecure/x', keys: { p256dh, auth } } })).status, 400);
     assert.equal((await e2.api('POST', '/api/push/test', { token: e2.tokens.lee })).status, 400);
-    await e2.ok('POST', '/api/push/subscribe', { token: e2.tokens.lee, body: { endpoint: 'https://push.example.com/send/abc', keys: { p256dh, auth }, device: 'iPhone' } });
+    await e2.ok('POST', '/api/push/subscribe', { token: e2.tokens.lee, body: { endpoint: 'https://fcm.googleapis.com/fcm/send/send/abc', keys: { p256dh, auth }, device: 'iPhone' } });
     await e2.ok('POST', '/api/push/test', { token: e2.tokens.lee });
     for (let i = 0; i < 100 && !got.length; i++) await new Promise((r) => setTimeout(r, 20));
     assert.equal(got.length, 1);

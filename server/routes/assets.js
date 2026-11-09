@@ -188,7 +188,8 @@ module.exports = (ctx) => {
     // a file's name, section and who sees it apply to every version
     const where = a.kind === 'file' && keys.some((k) => ['title', 'section', 'shared'].includes(k)) ? 'chain_id = ?' : 'id = ?';
     const shared = keys.filter((k) => ['title', 'section', 'shared', 'updated_at'].includes(k));
-    if (where === 'chain_id = ?') db.prepare(`UPDATE assets SET ${shared.map((k) => `${k} = ?`).join(', ')} WHERE chain_id = ?`).run(...shared.map((k) => set[k]), a.chain_id || a.id);
+    const [sw, sv] = scopeSql(scopeOfAsset(a));    // only versions in the same client's (or project's) assets
+    if (where === 'chain_id = ?') db.prepare(`UPDATE assets SET ${shared.map((k) => `${k} = ?`).join(', ')} WHERE chain_id = ? AND ${sw}`).run(...shared.map((k) => set[k]), a.chain_id || a.id, sv);
     const own = keys.filter((k) => where === 'id = ?' || !['title', 'section', 'shared'].includes(k));
     if (own.length) db.prepare(`UPDATE assets SET ${own.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...own.map((k) => set[k]), a.id);
     changed(scopeOfAsset(a));
@@ -208,7 +209,9 @@ module.exports = (ctx) => {
     const p = path.join(dir, a.file);
     need(fs.existsSync(p), 404, 'File missing');
     const show = inline && INLINE.test(a.mime || '');
-    return { raw: fs.readFileSync(p), type: show ? a.mime : a.mime || 'application/octet-stream', headers: { 'Content-Disposition': `${show ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(a.file_name || 'file')}`, 'X-Content-Type-Options': 'nosniff', ...(show ? { 'Content-Security-Policy': "default-src 'none'" } : {}) } };
+    // anything not shown inline is plain bytes: a declared text/html or SVG never reaches a browser as a page
+    const safe = /^(image\/(png|jpeg|webp|gif)|application\/pdf|audio\/[\w.+-]+|video\/(mp4|webm|quicktime))$/.test(a.mime || '');
+    return { raw: fs.readFileSync(p), type: show || safe ? a.mime : 'application/octet-stream', headers: { 'Content-Disposition': `${show ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(a.file_name || 'file')}`, 'X-Content-Type-Options': 'nosniff', ...(show ? { 'Content-Security-Policy': "default-src 'none'" } : {}) } };
   }
   route('GET', '/api/assets/:id/file', ({ user, params, query }) => sendFile(loadAsset(user, params.id), query && query.get('inline') === '1'));
 
@@ -222,7 +225,10 @@ module.exports = (ctx) => {
   }
   const clientSees = (t, s) => !!(s.client && ctx.portalTaskVisible && ctx.portalTaskVisible(t, ctx.clientSettings(s.client)));
   function saveTaskFile(t, f, user, s, { auto = false } = {}) {
-    const exists = db.prepare('SELECT * FROM assets WHERE source_file_id = ?').get(f.id);
+    // everything below stays inside this client's (or project's) assets: a task moved to another client
+    // starts new rows there and never touches the first client's
+    const [w, v] = scopeSql(s);
+    const exists = db.prepare(`SELECT * FROM assets WHERE source_file_id = ? AND ${w}`).get(f.id, v);
     if (exists) return exists;
     const src = path.join(taskDir, f.file);
     if (!fs.existsSync(src)) return null;
@@ -230,7 +236,7 @@ module.exports = (ctx) => {
     fs.copyFileSync(src, path.join(dir, file));
     // a later version of work saved before joins the same chain
     const chainSrc = f.chain_id || f.id;
-    const prev = db.prepare('SELECT * FROM assets WHERE source_chain_id = ? ORDER BY version DESC LIMIT 1').get(chainSrc);
+    const prev = db.prepare(`SELECT * FROM assets WHERE source_chain_id = ? AND ${w} ORDER BY version DESC LIMIT 1`).get(chainSrc, v);
     const label = f.label || String(f.name).replace(/\.[a-z0-9]{1,5}$/i, '');
     return insert(s, user, {
       kind: 'file', section: 'files', title: (prev ? prev.title : label).slice(0, 120), file, file_name: f.name, mime: f.mime, size: f.size,
@@ -256,9 +262,12 @@ module.exports = (ctx) => {
       return saved;
     } catch { return []; }
   };
-  ctx.assetsForTask = (t) => {
+  // only for someone who can see these assets anyway (a person taken off the project keeps their tasks,
+  // not the client's links and files)
+  const seesScope = (user, s) => (s.client_id ? canSeeClient(user, s.client_id) : projectVisible(user, getProject(s.project_id)));
+  ctx.assetsForTask = (t, user) => {
     const s = taskScope(t);
-    if (!s) return null;
+    if (!s || (user && !seesScope(user, s))) return null;
     const [w, v] = scopeSql(s);
     const files = new Set(db.prepare(`SELECT source_file_id FROM assets WHERE ${w} AND source_file_id IS NOT NULL`).all(v).map((r) => r.source_file_id));
     const urls = new Set(db.prepare(`SELECT url FROM assets WHERE ${w} AND kind = 'link'`).all(v).map((r) => r.url));
@@ -269,6 +278,7 @@ module.exports = (ctx) => {
     const t = ctx.loadTaskVisible(user, params.id);
     const s = taskScope(t);
     need(s, 400, 'Only tasks in a project have assets to save to');
+    need(seesScope(user, s), 404, 'Task not found');
     if (body.file_id != null) {
       const f = db.prepare('SELECT * FROM task_files WHERE id = ? AND task_id = ?').get(Number(body.file_id), t.id);
       need(f, 404, 'File not found');

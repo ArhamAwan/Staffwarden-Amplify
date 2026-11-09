@@ -42,7 +42,7 @@ export const devHome = {
     const cells = [
       { ic: 'server', label: 'Server', value: html`<span class="dv-dot good"></span>Running`, foot: `Up ${upFor(h.uptime_s)}, website ${String(h.build).slice(0, 7)}` },
       { ic: 'db', label: 'Database', value: h.db_bytes ? bytes(h.db_bytes) : 'In memory', foot: `Schema ${h.schema}, ${plural(h.people.active, 'person', 'people')}` },
-      { ic: 'shield', label: 'Backups', value: !b.found ? 'Not here' : last ? html`<span class="dv-dot ${bAge < 30 * 3600e3 ? 'good' : 'bad'}"></span>${backupAge(bAge)}` : 'None yet',
+      b.shared ? { ic: 'shield', label: 'Backups', value: 'Handled for you', foot: 'Staffwarden backs up every company each night' } : { ic: 'shield', label: 'Backups', value: !b.found ? 'Not here' : last ? html`<span class="dv-dot ${bAge < 30 * 3600e3 ? 'good' : 'bad'}"></span>${backupAge(bAge)}` : 'None yet',
         foot: !b.found ? 'This server keeps none' : `${last ? `${when(last.at)}. ` : ''}${b.offsite ? (b.offsite.ok ? 'Off-site copy made' : 'Off-site copy failed') : 'No off-site copy'}, ${b.count} kept`, tone: !b.found || !last || bAge > 30 * 3600e3 ? 'warn' : '' },
       { ic: 'pulse', label: 'Live right now', value: String(h.live.staff + h.live.clients), foot: `${plural(h.live.staff, 'staff screen')}, ${plural(h.live.clients, 'client')}; ${h.people.working} working` },
     ];
@@ -52,16 +52,16 @@ export const devHome = {
         <span class="dv-r2">${g.people_count ? plural(g.people_count, 'person', 'people') : 'No one signed in'}</span><span class="dv-r3">${plural(g.count, 'time')}, last ${when(g.last_at)}</span>${errTag(g)}</a></li>`)}</ul>`
         : html`<div class="body">${empty('Nothing needs a look', 'When something goes wrong in the apps, the website or the server, it shows up here.')}</div>`}</section>`;
     const pct = (a, b2) => (b2 ? Math.round((a / b2) * 100) : 0);
-    const used = h.disk ? h.disk.total - h.disk.free : 0, memUsed = h.memory.total - h.memory.free;
-    const loadPct = Math.min(100, Math.round((h.load[0] / Math.max(1, h.cpus)) * 100));
+    const used = h.disk ? h.disk.total - h.disk.free : 0, memUsed = h.memory ? h.memory.total - h.memory.free : 0;
+    const loadPct = h.load ? Math.min(100, Math.round((h.load[0] / Math.max(1, h.cpus)) * 100)) : 0;
     const bar = (label, right, p) => html`<div class="dv-bar"><div><b>${label}</b><span>${right}</span></div><span class="meter ${p > 90 ? 'bad' : p > 75 ? 'warn' : ''}"><i style="width:${Math.max(2, p)}%"></i></span></div>`;
-    const server = html`<section class="panel dv-srv"><header><h2>The server</h2></header><div class="body">
+    const server = !h.memory ? html`<section class="panel dv-srv"><header><h2>The server</h2></header><div class="body"><p class="muted">Staffwarden runs and watches the server that your company is on. Running for ${upFor(h.uptime_s)}.</p></div></section>` : html`<section class="panel dv-srv"><header><h2>The server</h2></header><div class="body">
       ${h.disk ? bar('Disk', `${bytes(used)} of ${bytes(h.disk.total)}`, pct(used, h.disk.total)) : ''}
       ${bar('Memory', `${bytes(memUsed)} of ${bytes(h.memory.total)}`, pct(memUsed, h.memory.total))}
       ${bar('Load', loadPct < 30 ? 'Quiet' : loadPct < 70 ? 'Busy' : 'Very busy', loadPct)}
       <p class="small muted">Staffwarden itself uses ${bytes(h.memory.process)}. The machine has been on for ${upFor(h.host_uptime_s)}; Node ${h.node}.</p></div></section>`;
     return html`${head('dev', 'Developer', `Run and fix Staffwarden. Only ${ownerName()} can give this access, and everyone can see who has it.`)}${kpis(cells)}
-      <div class="cols dv-cols">${look}${server}</div>${bannerPanel(h.banner)}${backupPanel(b)}`;
+      <div class="cols dv-cols">${look}${server}</div>${bannerPanel(h.banner)}${b.shared ? '' : backupPanel(b)}`;
   },
   after(view) { wireBanner(view); },
 };
@@ -158,21 +158,28 @@ function kindsLine(cur, top) {
   return `${list(at)}${other.length ? `. ${other.map((d) => `${KINDN[d.kind]} stays on ${d.version}`).join(', ')}` : ''}`;
 }
 function releasePanel(r) {
+  if (!r.can_publish) {
+    return html`<section class="panel dv-rel"><header><h2>Releases</h2></header><div class="body">
+      ${r.version ? html`<div class="dv-live"><div><b>Staffwarden ${r.version}</b>${tag('working', 'Live')}</div><p>${kindsLine(r.current, r.version)}. Out since ${when(r.current[0].updated_at)}. ${r.on_current ? `${plural(r.on_current, 'person', 'people')} here on it.` : 'No one here on it yet.'}</p></div>` : html`<div class="dv-live none"><b>No installers yet</b></div>`}
+      <p class="small muted">Staffwarden publishes new versions of the desktop app for every company. Everyone’s app offers each one within the hour.</p></div></section>`;
+  }
   const files = upload ? upload.files : [];
   const ver = files.length ? (/(\d+\.\d+\.\d+)/.exec(files[0].name) || [])[1] : null;
   const busy = upload && upload.busy;
+  // with a release key in place, every installer needs its signature before it can go out
+  const unsigned = r.signed && upload ? files.filter((f) => !upload.sigs[f.name]) : [];
   return html`<section class="panel dv-rel"><header><h2>Releases</h2></header><div class="body">
     ${r.version ? html`<div class="dv-live"><div><b>Staffwarden ${r.version}</b>${tag('working', 'Live')}</div>
-      <p>${kindsLine(r.current, r.version)}. Out since ${when(r.current[0].updated_at)}. ${plural(r.on_current, 'person', 'people')} on it.</p>
+      <p>${kindsLine(r.current, r.version)}. Out since ${when(r.current[0].updated_at)}. ${r.on_current ? `${plural(r.on_current, 'person', 'people')} on it.` : 'No one on it yet.'}</p>
       ${r.notes ? html`<p class="dv-notes">${r.notes}</p>` : ''}</div>` : html`<div class="dv-live none"><b>No installers yet</b><p>Upload the first version below.</p></div>`}
     <div class="dv-drop ${files.length ? 'has' : ''}" id="dropzone" tabindex="-1">
-      ${files.length ? html`<ul class="dv-files">${files.map((fl, i) => { const pct = upload.progress ? upload.progress[i] : 0; return html`<li><span class="dv-fic">${icon('file')}</span><span><b>${fl.name}</b><span>${bytes(fl.size)}${upload.sums[i] ? ' · checked' : ' · checking…'}</span>${busy ? html`<span class="meter"><i style="width:${pct}%"></i></span>` : ''}</span>${busy ? '' : html`<button class="btn icon sm" type="button" data-act="dv-rmfile" data-i="${i}" aria-label="Remove ${fl.name}">${icon('x')}</button>`}</li>`; })}</ul>`
-        : html`<span class="dv-up">${icon('upload')}</span><b>Drop the new installers here</b><p>The two Mac zips and the Windows setup, with the version in their names. Each is fingerprinted, and checked again on the server before anyone gets it.</p>`}
-      <label class="btn ${busy ? 'disabled' : ''}"><input type="file" id="relfiles" multiple accept=".zip,.exe" hidden ${raw(busy ? 'disabled' : '')}>${files.length ? 'Choose different files' : 'Choose files'}</label>
+      ${files.length ? html`<ul class="dv-files">${files.map((fl, i) => { const pct = upload.progress ? upload.progress[i] : 0; return html`<li><span class="dv-fic">${icon('file')}</span><span><b>${fl.name}</b><span>${bytes(fl.size)}${upload.sums[i] ? ' · checked' : ' · checking…'}${r.signed ? (upload.sigs[fl.name] ? ' · signed' : ' · no .sig file') : ''}</span>${busy ? html`<span class="meter"><i style="width:${pct}%"></i></span>` : ''}</span>${busy ? '' : html`<button class="btn icon sm" type="button" data-act="dv-rmfile" data-i="${i}" aria-label="Remove ${fl.name}">${icon('x')}</button>`}</li>`; })}</ul>`
+        : html`<span class="dv-up">${icon('upload')}</span><b>Drop the new installers here</b><p>The two Mac zips and the Windows setup, with the version in their names, and the .sig file tools/sign-release.js made for each. Apps only install releases signed with the release key.</p>`}
+      <label class="btn ${busy ? 'disabled' : ''}"><input type="file" id="relfiles" multiple accept=".zip,.exe,.sig" hidden ${raw(busy ? 'disabled' : '')}>${files.length ? 'Choose different files' : 'Choose files'}</label>
     </div>
     <div class="field"><label class="f" for="rel-notes">What’s new</label><textarea id="rel-notes" rows="3" maxlength="1500" placeholder="One line per change, in plain words">${upload ? upload.notes || '' : ''}</textarea></div>
-    <button class="btn primary dv-pub" type="button" data-act="dv-publish" ${raw(!files.length || busy || (upload && upload.sums.some((s) => !s)) ? 'disabled' : '')}>${busy ? 'Uploading…' : ver ? `Publish ${ver}` : 'Publish'}</button>
-    <p class="small muted">Everyone’s app offers it within the hour.${r.version ? ` You can go back to ${r.version} from here.` : ''}</p>
+    <button class="btn primary dv-pub" type="button" data-act="dv-publish" ${raw(!files.length || busy || unsigned.length || (upload && upload.sums.some((s) => !s)) ? 'disabled' : '')}>${busy ? 'Uploading…' : ver ? `Publish ${ver}` : 'Publish'}</button>
+    <p class="small muted">${unsigned.length ? `Add the .sig file for ${unsigned.length === 1 ? unsigned[0].name : `${unsigned.length} installers`}. Make it with tools/sign-release.js on your computer.` : `Everyone’s app offers it within the hour.${r.version ? ` You can go back to ${r.version} from here.` : ''}`}</p>
     ${r.archive.length ? html`<h3 class="dv-h3">Earlier versions</h3><ul class="dv-arch">${r.archive.map((a) => html`<li><span><b>${a.version}</b><span>${plural(a.files.length, 'installer')}, replaced ${when(a.at)}${a.on ? `, ${plural(a.on, 'person', 'people')} still on it` : ''}</span></span><button class="btn sm" data-act="dv-rollback" data-v="${a.version}">Go back to ${a.version}</button></li>`)}</ul>` : ''}
   </div></section>`;
 }
@@ -180,10 +187,13 @@ async function sha256(file) {
   const h = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
   return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
-function pickFiles(list) {
-  const files = [...list].filter((f) => /\.(zip|exe)$/i.test(f.name)).slice(0, 6);
-  if (!files.length) { toast('Choose the .zip and .exe installers', true); return; }
-  upload = { files, sums: files.map(() => null), progress: files.map(() => 0), busy: false, notes: document.getElementById('rel-notes') ? document.getElementById('rel-notes').value : '' };
+async function pickFiles(list) {
+  const all = [...list];
+  const files = all.filter((f) => /\.(zip|exe)$/i.test(f.name)).slice(0, 6);
+  if (!files.length) { toast('Choose the .zip and .exe installers, with their .sig files', true); return; }
+  const sigs = {};
+  for (const f of all.filter((x) => /\.(zip|exe)\.sig$/i.test(x.name) && x.size < 2000)) { try { sigs[f.name.replace(/\.sig$/i, '')] = (await f.text()).trim(); } catch { /* unreadable */ } }
+  upload = { files, sigs, sums: files.map(() => null), progress: files.map(() => 0), busy: false, notes: document.getElementById('rel-notes') ? document.getElementById('rel-notes').value : '' };
   S.refresh();
   files.forEach(async (f, i) => { try { upload.sums[i] = await sha256(f); } catch { toast(`Couldn’t read ${f.name}`, true); } if (upload && upload.files === files) S.refresh(); });
 }
@@ -219,7 +229,7 @@ actions['dv-publish'] = async (btn) => {
         const bar = document.querySelectorAll('.dv-files .meter i')[i]; if (bar) bar.style.width = `${upload.progress[i]}%`;
       }
     }
-    const out = await post(`/api/dev/releases/${st.id}/publish`, { notes });
+    const out = await post(`/api/dev/releases/${st.id}/publish`, { notes, signatures: upload.sigs });
     upload = null;
     toast(`Staffwarden ${out.version} is live${out.previous ? `. ${out.previous} is kept for going back.` : ''}`);
   } catch (e) {

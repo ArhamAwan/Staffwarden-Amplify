@@ -1,7 +1,7 @@
 // The client portal: what someone at a client sees when they sign in. Their own projects only, and only
 // what the agency shares: progress, tasks, the people on them, approvals, requests, calls, hours and a
 // live chat with the team. Never screenshots, activity, attendance or anything about other clients.
-import { get, post, patch, put, del, startLive, fileUrl, fileBase64, download, setToken, liveFresh, setViewAs, getViewAs, getToken } from '../api.js';
+import { get, post, patch, put, del, startLive, fileUrl, blobShows, fileBase64, download, setToken, liveFresh, setViewAs, getViewAs, getToken } from '../api.js';
 import { html, raw, esc, icon, initials, avColor, relTime, plural, dateY, dayMD, dayLong, HELM, monthLabel, addMonths, addDays, nowMs, copyText } from '../util.js';
 import { toast, errMsg, openModal, confirmBox, trap } from '../ui.js';
 import { morph } from '../morph.js';
@@ -977,7 +977,9 @@ async function openFile(url, name) {
   try {
     const u = P.urls.get(url) || await fileUrl(url);
     P.urls.set(url, u);
-    if (w) w.location = u; else { const a = document.createElement('a'); a.href = u; a.download = name; a.click(); }
+    const shows = blobShows.get(u) !== false;
+    // a file that can be shown opens in the new tab; anything else is saved under its own name
+    if (w && shows) w.location = u; else { if (w) w.close(); const a = document.createElement('a'); a.href = u; a.download = name || 'file'; a.click(); }
   } catch (e) { if (w) w.close(); toast(errMsg(e), true); }
 }
 // a comment pinned to the spot tapped on a picture

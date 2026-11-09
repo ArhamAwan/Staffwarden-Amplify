@@ -22,8 +22,13 @@ function decode(buf) {
     if (type === 'IDAT') idat.push(data); else if (type === 'PLTE') pal = data; else if (type === 'tRNS') trns = data; else if (type === 'IEND') break;
     o += 12 + len;
   }
-  const raw = zlib.inflateSync(Buffer.concat(idat));
   const ch = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[hd.color], stride = hd.w * ch, { w, h } = hd;
+  // the picture needs exactly this many bytes once unpacked: a file that unpacks to more (a "zip bomb")
+  // is refused before it can fill the memory
+  const need = (stride + 1) * h;
+  if (!w || !h || need > 128 * 1024 * 1024) throw new Error('Unsupported PNG');
+  let raw;
+  try { raw = zlib.inflateSync(Buffer.concat(idat), { maxOutputLength: need }); } catch { throw new Error('Unsupported PNG'); }
   const px = Buffer.alloc(stride * h);
   // undo the per-row filters
   for (let y = 0, i = 0; y < h; y++) {

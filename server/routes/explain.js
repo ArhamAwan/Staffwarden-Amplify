@@ -116,7 +116,7 @@ module.exports = (ctx) => {
     needManager(user);
     const r = db.prepare('SELECT * FROM time_requests WHERE id = ?').get(Number(params.id));
     need(r && canSee(user, r.user_id), 404, 'Request not found');
-    need(r.user_id !== user.id || user.role === 'owner', 403, 'Another manager has to decide your own request');
+    need(r.user_id !== user.id || ctx.isRealOwner(user), 403, 'Another manager has to decide your own request');
     need(r.status === 'pending', 409, 'That request has already been decided');
     need(typeof body.approve === 'boolean', 400, 'approve must be true or false');
     const note = optStr(body.note, 'note', 500);

@@ -56,7 +56,7 @@ fi
 
 echo "==> App files"
 id workhelm >/dev/null 2>&1 || useradd --system --home "$APP" --shell /usr/sbin/nologin workhelm
-mkdir -p "$APP" "$DATA" "$BK"
+mkdir -p "$APP" "$DATA"; install -d -m 700 "$BK"
 rsync -a --delete --exclude data --exclude node_modules --exclude desktop --exclude _to_delete --exclude .git "$SRC/" "$APP/"
 chown -R root:root "$APP"; chown -R workhelm:workhelm "$DATA"; chmod 750 "$DATA"
 
@@ -116,7 +116,9 @@ fi
 cat > /etc/caddy/Caddyfile <<EOF
 $SITE {
   encode gzip
-  reverse_proxy 127.0.0.1:3000
+  reverse_proxy 127.0.0.1:3000 {
+    header_up X-Forwarded-For {client_ip}
+  }
 }
 EOF
 systemctl reload caddy || systemctl restart caddy
@@ -129,9 +131,6 @@ echo "==> Nightly database backup (kept 14 days) at $BK"
 cat > /etc/cron.daily/workhelm-backup <<EOF
 #!/bin/sh
 bash /opt/workhelm/deploy/backup.sh
-EOF
-#!/bin/sh
-sqlite3 $DATA/tracker.db ".backup '$BK/tracker-\$(date +%F).db'" && find $BK -name 'tracker-*.db' -mtime +14 -delete
 EOF
 chmod 755 /etc/cron.daily/workhelm-backup
 

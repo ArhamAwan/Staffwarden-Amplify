@@ -86,7 +86,8 @@ migrateFromOldName();
 
 // The company server: set "workhelm.server" in package.json before building installers, so staff never type it.
 let BUILT_IN_SERVER = '', PREVIOUS_SERVERS = [];
-try { const w = require('./package.json').workhelm || {}; BUILT_IN_SERVER = w.server || ''; PREVIOUS_SERVERS = w.previousServers || []; } catch { /* none */ }
+let UPDATE_KEY = null;   // the public half of the Staffwarden release key: only installers it signed are installed
+try { const w = require('./package.json').workhelm || {}; BUILT_IN_SERVER = w.server || ''; PREVIOUS_SERVERS = w.previousServers || []; UPDATE_KEY = w.updateKey || null; } catch { /* none */ }
 const sameUrl = (a, b) => String(a || '').replace(/\/+$/, '') === String(b || '').replace(/\/+$/, '');
 const DEFAULT_SERVER = process.env.WORKHELM_SERVER || process.env.AMPLIFY_SERVER || BUILT_IN_SERVER || 'http://localhost:3000';
 // With a server built in (or given by WORKHELM_SERVER), that is always the server: staff never type it
@@ -121,13 +122,14 @@ function loadConfig() {
     config.outboxKey = typeof raw.outboxKey === 'string' ? raw.outboxKey : null;
     config.openAtLogin = raw.openAtLogin === true;
     config.otherDevice = raw.otherDevice === true;
+    config.owner = typeof raw.owner === 'string' && raw.token ? raw.owner : null;
     if (raw.token) config.token = raw.enc && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(raw.token, 'base64')) : (raw.enc ? null : raw.token);
   } catch { /* first run */ }
 }
 function saveConfig() {
   const enc = !!config.token && safeStorage.isEncryptionAvailable();
   const token = config.token ? (enc ? safeStorage.encryptString(config.token).toString('base64') : config.token) : null;
-  fs.writeFileSync(cfgFile(), JSON.stringify({ serverUrl: config.serverUrl, token, enc, notifSeen: config.notifSeen || {}, dayTzMin: config.dayTzMin, shift: config.shift, outboxKey: config.outboxKey, openAtLogin: !!config.openAtLogin, otherDevice: !!config.otherDevice }));
+  fs.writeFileSync(cfgFile(), JSON.stringify({ serverUrl: config.serverUrl, token, enc, notifSeen: config.notifSeen || {}, dayTzMin: config.dayTzMin, shift: config.shift, outboxKey: config.outboxKey, openAtLogin: !!config.openAtLogin, otherDevice: !!config.otherDevice, owner: config.token ? config.owner || null : null }));
 }
 
 // ---------- screen capture & permission ----------
@@ -258,8 +260,10 @@ function outboxKey() {
 
 function build() {
   queue = new OfflineQueue(path.join(app.getPath('userData'), 'outbox'), { log: (m) => console.warn('[queue]', m), key: outboxKey() });
+  // whose work is queued: kept with the sign-in, so even an offline start tags new work correctly
+  if (config.token && config.owner) queue.setOwner(config.owner);
   client = makeClient();
-  updater = new Updater({ baseUrl: config.serverUrl, version: app.getVersion(), dir: updDir(), onChange: onUpdateChange, fetchImpl: netFetch });
+  updater = new Updater({ baseUrl: config.serverUrl, version: app.getVersion(), dir: updDir(), onChange: onUpdateChange, fetchImpl: netFetch, updateKey: UPDATE_KEY });
   tracker = new Tracker({
     client, queue, capture: captureScreens, idleSecs: () => powerMonitor.getSystemIdleTime(), endOnWake: (a, b) => endOnWake(a, b),
     store: new FileStore(path.join(app.getPath('userData'), 'tracker-state.json')),
@@ -703,6 +707,7 @@ async function loadSettings() {
 }
 function applyUser(u) {
   user = u;
+  if (u && u.id) { config.owner = `${String(config.serverUrl || '').replace(/\/+$/, '')}|${u.id}`; if (queue) queue.setOwner(config.owner); }
   // the work day: for a shift past midnight it starts later than midnight, so the whole shift is one day
   if (u && u.tz_offset_min != null) {
     const dayTz = u.tz_offset_min - (u.day_start_min || 0);
@@ -732,7 +737,7 @@ function keepAwake() {
 handle('state', async () => {
   if (!config.token) return { loggedIn: false, serverUrl: config.serverUrl, fixedServer: FIXED_SERVER };
   try { applyUser(await client.me()); } catch (e) {
-    if (e instanceof ApiError && e.status === 401) { config.token = null; saveConfig(); return { loggedIn: false, serverUrl: config.serverUrl, fixedServer: FIXED_SERVER }; }
+    if (e instanceof ApiError && e.status === 401) { config.token = null; config.owner = null; if (queue) queue.setOwner(null); saveConfig(); return { loggedIn: false, serverUrl: config.serverUrl, fixedServer: FIXED_SERVER }; }
     return { loggedIn: true, offline: true, user, serverUrl: config.serverUrl, fixedServer: FIXED_SERVER, settings, status: status() };
   }
   await loadSettings();
@@ -745,6 +750,7 @@ handle('login', async ({ serverUrl, email, password }) => {
   let url = (FIXED_SERVER ? allowedServer(serverUrl) : (serverUrl || DEFAULT_SERVER)).trim().replace(/\/+$/, '');
   if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
   config.serverUrl = url;
+  if (queue) queue.setOwner(null);            // nothing is sent until we know who signed in
   client = makeClient();
   tracker.client = client;
   updater.baseUrl = config.serverUrl;
@@ -768,7 +774,7 @@ handle('open-forgot', ({ serverUrl } = {}) => { const u = allowedServer(serverUr
 handle('logout', async () => {
   if (tracker.status().active) return { error: 'Stop the timer before signing out.' };
   try { await client.req('POST', '/api/auth/logout'); } catch { /* offline: token is discarded locally anyway */ }
-  config.token = null; user = null; saveConfig(); live.reconnect();
+  config.token = null; config.owner = null; user = null; if (queue) queue.setOwner(null); saveConfig(); live.reconnect();
   return { ok: true };
 });
 

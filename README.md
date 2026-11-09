@@ -236,6 +236,8 @@ sudo bash deploy/domain.sh staffwarden.com --cloudflare        # behind Cloudfla
 sudo bash deploy/update.sh                                     # every update after that
 ```
 
+In production, company sign-up needs a mail server (`SMTP_*` in `/etc/workhelm.env`): without one, sign-up stays closed rather than showing the email code on screen.
+
 `setup.sh` installs Node and Caddy (automatic HTTPS), runs Staffwarden as a service that restarts itself, opens only SSH, HTTP and HTTPS, and backs the database up every night (14 days kept, with an optional off-site copy). Data lives in `/var/lib/workhelm`, settings in `/etc/workhelm.env`, logs with `journalctl -u workhelm -f`.
 
 To sell it to other companies, each at its own address with sign-up, plans and Stripe billing, see [docs/service.md](docs/service.md) (`sudo bash deploy/service.sh …`).
@@ -252,9 +254,19 @@ npx electron-builder --mac zip --x64 --arm64 --publish never
 npx electron-builder --win nsis --x64 --publish never
 ```
 
-Name the files `Staffwarden-<version>-mac-Intel.zip`, `Staffwarden-<version>-mac-AppleSilicon.zip` and `Staffwarden-Setup-<version>.exe`, then upload them on **Developer → Desktop apps** and write what's new. Every app offers the update within the hour; the timer can only be started from the newest version. The previous five versions are kept for rolling back.
+Name the files `Staffwarden-<version>-mac-Intel.zip`, `Staffwarden-<version>-mac-AppleSilicon.zip` and `Staffwarden-Setup-<version>.exe`, then sign them with the release key:
 
-> The signing key never goes in this repository or on the server.
+```bash
+node tools/sign-release.js ~/path/to/staffwarden-release-key.pem dist/Staffwarden-*
+```
+
+That writes a `.sig` file next to each installer. Upload the installers **and** their `.sig` files on **Developer → Desktop apps** and write what's new. The server refuses an installer without a valid signature, and the desktop app checks the signature again before installing, so a release can't be swapped even by someone with access to the server. Every app offers the update within the hour; the timer can only be started from the newest version. The previous five versions are kept for rolling back.
+
+Only the operator's own company (the platform's default address) can publish or roll back releases. Developers at customer companies see which version is live, but not the upload panel or the server's health details.
+
+The public half of the release key is in `keys/update-key.pub` and in `desktop/package.json` (`workhelm.updateKey`). Apps from before signing install the next update the old way; once on it, they check the signature of every update after that.
+
+> Neither the code-signing key nor the release key ever goes in this repository or on the server. Keep both on your own computer, with a backup somewhere safe: losing the release key means shipping a new app by hand to replace the key.
 
 ---
 

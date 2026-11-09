@@ -11,7 +11,8 @@
     "previousServers": [
       "https://workhelm.long-tooth-2e6b.workers.dev",
       "http://185.205.244.24"
-    ]
+    ],
+    "updateKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAGwepj7JdgCEz5EVCz9sIcZA1462CWmuo89moq2lr0ZQ=\n-----END PUBLIC KEY-----"
   },
   "scripts": {
     "start": "electron .",

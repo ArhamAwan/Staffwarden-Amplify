@@ -47,9 +47,13 @@ read -rsp "Secret access key: " SECRET; echo
 read -rp  "Also copy screenshots? They take the most space (yes/no) [no]: " SHOTS
 SHOTS=${SHOTS:-no}
 
-rclone config create "$REMOTE" s3 provider Other endpoint "$ENDPOINT" access_key_id "$KEY" secret_access_key "$SECRET" acl private >/dev/null
-chmod 600 /root/.config/rclone/rclone.conf
+# written straight into rclone's config (never on a command line, where other users could see the secret)
 umask 077
+mkdir -p /root/.config/rclone
+RC=/root/.config/rclone/rclone.conf
+touch "$RC"; chmod 600 "$RC"
+sed -i "/^\[$REMOTE\]$/,/^\[/{/^\[$REMOTE\]$/d;/^\[/!d}" "$RC"
+printf '[%s]\ntype = s3\nprovider = Other\nendpoint = %s\naccess_key_id = %s\nsecret_access_key = %s\nacl = private\n\n' "$REMOTE" "$ENDPOINT" "$KEY" "$SECRET" >> "$RC"
 cat > "$CONF" <<EOF
 BUCKET=$BUCKET
 SCREENSHOTS=$SHOTS

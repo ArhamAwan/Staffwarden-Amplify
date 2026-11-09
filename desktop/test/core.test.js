@@ -114,6 +114,24 @@ test('OfflineQueue: keeps data when offline / 5xx / logged out, drops permanent 
   assert.equal(calls, 2);
 });
 
+test('OfflineQueue: work saved while one person was signed in is never sent as someone else', async () => {
+  const dir = tmp(); const q = new OfflineQueue(dir);
+  q.setOwner(7);
+  q.add({ type: 'activity', payload: { n: 1, slot_start: 'a' } });
+  // someone else signs in on this computer
+  q.setOwner(9);
+  q.add({ type: 'activity', payload: { n: 2, slot_start: 'b' } });
+  const sent = [];
+  await q.flush({ postActivity: async (p) => { sent.push(p.n); } });
+  assert.deepEqual(sent, [2], 'only the new person\'s own work goes up');
+  assert.equal(q.size, 1, 'the first person\'s work waits for them');
+  // after a restart it still knows whose it is
+  const q2 = new OfflineQueue(dir); q2.setOwner(7);
+  await q2.flush({ postActivity: async (p) => { sent.push(p.n); } });
+  assert.deepEqual(sent, [2, 1]);
+  assert.equal(q2.size, 0);
+});
+
 test('OfflineQueue: size cap sheds oldest screenshots first, keeps activity data', () => {
   const dir = tmp(); const q = new OfflineQueue(dir, { maxItems: 3 });
   q.add({ type: 'activity', payload: { n: 1 } });

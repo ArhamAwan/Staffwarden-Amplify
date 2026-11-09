@@ -30,7 +30,10 @@ module.exports = (ctx) => {
     const c = db.prepare('SELECT * FROM clients WHERE id = ?').get(p.client_id);
     need(c, 404, 'Project not found');
     const s = ctx.clientSettings(c);
-    if (user.kind === 'client') { need(user.client_id === p.client_id, 404, 'Project not found'); return { p, c, s, client: true, manage: false }; }
+    if (user.kind === 'client') {
+      need(user.client_id === p.client_id && (!user.preview_projects || user.preview_projects.includes(p.id)), 404, 'Project not found');
+      return { p, c, s, client: true, manage: false };
+    }
     need(ctx.projectVisible(user, p), 403, 'Not allowed');
     return { p, c, s, client: false, manage: ctx.canManageProject(user, p) };
   }
@@ -109,6 +112,7 @@ module.exports = (ctx) => {
     need(user.kind === 'client', 403, 'For clients');
     const c = db.prepare('SELECT * FROM clients WHERE id = ?').get(user.client_id);
     const projects = db.prepare("SELECT * FROM projects WHERE client_id = ? AND status != 'archived' ORDER BY (status = 'active') DESC, name").all(user.client_id)
+      .filter((p) => !user.preview_projects || user.preview_projects.includes(p.id))
       .map((p) => { const a = { p, c, s: ctx.clientSettings(c), client: true }; return { id: p.id, name: p.name, key: p.key, color: p.color, status: p.status, unread: unreadFor(user, p.id), waiting: waitingOf(a).length }; });
     return { me: ctx.publicClient(user), client: { id: c.id, name: c.name, city: c.city, tz_name: c.tz_name }, org_name: cfg.orgName, company: ctx.companyPublic(), settings: ctx.clientSettings(c), projects };
   }, C);
@@ -251,6 +255,7 @@ module.exports = (ctx) => {
   ctx.portalReqOut = (r) => reqOut(r);
   route('GET', '/api/portal/projects/:id/requests', ({ user, params }) => {
     const a = access(user, params.id);
+    if (a.client) need(a.s.requests, 403, 'Requests are switched off for this project');
     // the first time someone who can answer opens the list, the client sees their request was seen
     if (a.manage) {
       const n = db.prepare("UPDATE client_requests SET seen_at = ?, seen_by = ? WHERE project_id = ? AND seen_at IS NULL").run(nowIso(), user.id, a.p.id).changes;
@@ -261,7 +266,8 @@ module.exports = (ctx) => {
   route('GET', '/api/portal/request-files/:id', ({ user, params }) => {
     const r = db.prepare('SELECT * FROM client_requests WHERE id = ?').get(Number(params.id));
     need(r && r.file, 404, 'File not found');
-    access(user, r.project_id);
+    const a = access(user, r.project_id);
+    if (a.client) need(a.s.requests, 403, 'Requests are switched off for this project');
     return sendFile(r.file, r.file_type, r.file_name);
   }, C);
   route('POST', '/api/portal/projects/:id/requests', ({ user, params, body }) => {

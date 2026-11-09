@@ -219,6 +219,8 @@ module.exports = (ctx) => {
     const uid = int(body.user_id, 'user_id', 1, 1e9);
     const t = db.prepare('SELECT * FROM users WHERE id = ?').get(uid);
     need(t && ctx.canSee(user, uid), 404, 'User not found');
+    // time added to your own day is decided by someone else (Time requests), unless you are the owner
+    need(uid !== user.id || ctx.isRealOwner(user), 403, 'Ask another manager to add time to your own day (send a time request)');
     const start = Date.parse(isoDate(body.start, 'start')), end = Date.parse(isoDate(body.end, 'end'));
     need(end > start, 400, 'The end must be after the start');
     need(end - start <= 16 * 3600000, 400, 'A manual entry can be at most 16 hours');
@@ -228,7 +230,7 @@ module.exports = (ctx) => {
     const clash = db.prepare('SELECT 1 FROM time_entries WHERE user_id = ? AND started_at < ? AND COALESCE(ended_at, ?) > ?').get(uid, T.iso(end), T.iso(clockNow()), T.iso(start));
     need(!clash, 409, 'That overlaps time already tracked');
     let projectId = null;
-    if (body.project_id != null) { projectId = int(body.project_id, 'project_id', 1, 1e9); need(db.prepare('SELECT 1 FROM projects WHERE id = ?').get(projectId), 404, 'Project not found'); }
+    if (body.project_id != null) { projectId = int(body.project_id, 'project_id', 1, 1e9); const pr = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId); need(pr && (!ctx.projectVisible || ctx.projectVisible(user, pr)), 404, 'Project not found'); }
     const id = Number(db.prepare("INSERT INTO time_entries (user_id, project_id, started_at, ended_at, note, source, stop_reason, created_by) VALUES (?,?,?,?,?,'manual','manual',?)")
       .run(uid, projectId, T.iso(start), T.iso(end), note, user.id).lastInsertRowid);
     audit(user, 'time.manual_added', uid, `${T.iso(start)} to ${T.iso(end)}: ${note}`);

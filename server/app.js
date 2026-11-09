@@ -139,6 +139,9 @@ function createApp(opts = {}) {
     const rows = db.prepare('SELECT team_id FROM manager_teams WHERE user_id = ?').all(user.id);
     return rows.length ? rows.map((r) => r.team_id) : null;
   }
+  // the company's real owner: a developer is shown everything the owner sees, but never stands in for the
+  // owner where the owner's own judgement is the control (approving their own claims, pay rules, mailbox)
+  const isRealOwner = (u) => !!u && u.kind !== 'client' && u.role === 'owner' && !u.dev_owner;
   function canSee(viewer, targetId) {
     if (viewer.id === targetId) return true;
     if (!isManager(viewer)) return false;
@@ -315,10 +318,11 @@ function createApp(opts = {}) {
   function viewAs(u, cid) {
     need(Number.isInteger(cid) && cid > 0, 400, 'Choose who to see it as');
     const c = db.prepare('SELECT cu.*, cl.name AS client_name, cl.archived AS client_archived FROM client_users cu JOIN clients cl ON cl.id = cu.client_id WHERE cu.id = ?').get(cid);
-    need(c && !c.client_archived, 404, 'Person not found');
-    const mine = isManager(u) || db.prepare('SELECT id FROM projects WHERE client_id = ?').all(c.client_id).some((p) => ctx.canManageProject && ctx.canManageProject(u, ctx.getProject(p.id)));
-    need(mine, 403, 'Only the project lead or a manager can see the portal as the client');
-    return { kind: 'client', role: 'client', preview: true, viewer_id: u.id, viewer_name: u.name, viewer_role: u.role, id: c.id, client_id: c.client_id, client_name: c.client_name, email: c.email, name: c.name, title: c.title, can_approve: !!c.can_approve, pw_salt: '', pw_hash: '' };
+    need(c && !c.client_archived && c.active, 404, 'Person not found');
+    // a manager previews the whole client; a project lead only the projects they run
+    const runs = isManager(u) ? null : db.prepare('SELECT id FROM projects WHERE client_id = ?').all(c.client_id).map((p) => p.id).filter((id) => ctx.canManageProject && ctx.canManageProject(u, ctx.getProject(id)));
+    need(runs === null || runs.length, 403, 'Only the project lead or a manager can see the portal as the client');
+    return { kind: 'client', role: 'client', preview: true, preview_projects: runs, viewer_id: u.id, viewer_name: u.name, viewer_role: u.role, id: c.id, client_id: c.client_id, client_name: c.client_name, email: c.email, name: c.name, title: c.title, can_approve: !!c.can_approve, pw_salt: '', pw_hash: '' };
   }
 
   // A client's session. Clients are never in `users`: they come back as { kind: 'client' } and can only
@@ -479,8 +483,9 @@ function createApp(opts = {}) {
   const viaHttps = (req) => !!req && (req.socket.encrypted || (clientIp(req) !== req.socket.remoteAddress && (req.headers['x-forwarded-proto'] === 'https' || viaProxy(req))));
 
   const ctx = {
+    isRealOwner,
     backupDir: opts.backupDir || null, offsiteLog: opts.offsiteLog || null,
-    POLICY_VERSION, db, cfg, route, clientIp, tokenHash, verifyNobody, passwordProblem, now: clockNow, nowIso, emit, emitTo, emitUsers, emitPortal, emitClientUser, onlineNow, publicUrl: opts.publicUrl || null, pushFetch: opts.pushFetch || null, gifFetch: opts.gifFetch || null, smtpOptions: opts.smtpOptions || null, publicClient, managersOf, sweepNotify, audit, publicUser, shotPolicy, shotDir, hashPassword, verifyPassword, newToken, PAUSE_REASONS,
+    POLICY_VERSION, db, cfg, route, clientIp, tokenHash, verifyNobody, passwordProblem, now: clockNow, nowIso, emit, emitTo, emitUsers, emitPortal, emitClientUser, onlineNow, publicUrl: opts.publicUrl || null, pushFetch: opts.pushFetch || null, gifFetch: opts.gifFetch || null, releaseKey: opts.releaseKey, smtpOptions: opts.smtpOptions || null, publicClient, managersOf, sweepNotify, audit, publicUser, shotPolicy, shotDir, hashPassword, verifyPassword, newToken, PAUSE_REASONS,
     isManager, isHR, needHR, hrDir, needConsent, needConsentNow, needManager, cmpVersion, POLICY_CHANGES, needOwner, canSee, visibleUsers, targetUser, managedTeamIds, touch, removeShots, purgeOld, sweepStale,
     saveSetting, defaults, T, MAX_BODY, clockNow, listDownloads: () => listDownloads(), latestApp: (p, a) => latestApp(p, a),
     // set when this company runs on the shared Staffwarden service (one app per company): its account and
@@ -528,7 +533,7 @@ function createApp(opts = {}) {
   })();
   const HSTS = { 'Strict-Transport-Security': 'max-age=31536000' };   // only sent over HTTPS: browsers then never use plain HTTP for this site
   const SEC_HEADERS = { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' };
-  const PAGE_CSP = "default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+  const PAGE_CSP = "default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
   // Static files are revalidated on every load (ETag), so a browser can never keep running an old copy of the app.
   function serveStatic(req, res, pathname) {
@@ -561,7 +566,7 @@ function createApp(opts = {}) {
   ctx.liveCounts = () => { let staff = 0, clients = 0; for (const c of sseClients) { if (c.kind === 'client') clients++; else staff++; } return { staff, clients }; };
   // to every open staff screen and portal (the notice at the top, feature switches)
   ctx.emitAll = (type) => { const msg = `data: ${JSON.stringify({ type, at: nowIso() })}\n\n`; for (const c of sseClients) { try { c.res.write(msg); } catch { sseClients.delete(c); } } };
-  const KIND = (f) => (/\.exe$/i.test(f) ? 'windows' : /mac.*(arm|apple)/i.test(f) ? 'mac-arm' : /mac.*(intel|x64)/i.test(f) || /\.(dmg|zip)$/i.test(f) ? 'mac-intel' : null);
+  const KIND = (f) => (/\.sig$/i.test(f) ? null : /\.exe$/i.test(f) ? 'windows' : /mac.*(arm|apple)/i.test(f) ? 'mac-arm' : /mac.*(intel|x64)/i.test(f) || /\.(dmg|zip)$/i.test(f) ? 'mac-intel' : null);
   const VERSION = (f) => { const m = /(\d{1,4})\.(\d{1,4})\.(\d{1,4})/.exec(f); return m ? `${+m[1]}.${+m[2]}.${+m[3]}` : null; };
   function listDownloads() {
     let files = [];
@@ -587,7 +592,10 @@ function createApp(opts = {}) {
     // With a public address set (the Cloudflare Worker), downloads always go through it, so even apps that
     // still talk to the old address fetch the big installer over the fast route.
     const base = /^https:\/\//.test(String(opts.publicUrl || '')) ? String(opts.publicUrl).replace(/\/+$/, '') : '';
-    return { version: f.version, file: f.file, url: base + '/downloads/' + encodeURIComponent(f.file), size: f.size, sha256: sha256Of(path.join(dlDir, f.file)), notes };
+    // the publisher's signature over the file (made offline with the release key): the app checks it before installing
+    let sig = null;
+    try { sig = fs.readFileSync(path.join(dlDir, `${f.file}.sig`), 'utf8').trim().slice(0, 400) || null; } catch { /* unsigned */ }
+    return { version: f.version, file: f.file, url: base + '/downloads/' + encodeURIComponent(f.file), size: f.size, sha256: sha256Of(path.join(dlDir, f.file)), sig, notes };
   }
   function serveDownload(req, res, pathname) {
     let name; try { name = path.basename(decodeURIComponent(pathname.slice('/downloads/'.length))); } catch { name = ''; }

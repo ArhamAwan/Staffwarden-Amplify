@@ -327,7 +327,7 @@ function pick(email, list) {
   show({ right: '<a class="btn sm" href="/signup" style="color:var(--ink)">Start a free trial</a>', story: moonArt, cardClass: 'narrow', foot: trustLine },
     list.length ? `<div><h2>Which company?</h2><p class="sub">This email is in ${list.length === 2 ? 'two' : list.length} companies. Each has its own password.</p></div>
       <div class="fake"><span>${esc(email)}</span><button type="button" id="chg">Change</button></div>
-      <ul class="cos">${list.map((c, i) => `<li><a href="${esc(c.url)}/#signin?email=${encodeURIComponent(email)}"${i === 0 ? ' autofocus' : ''}><span class="lg" style="background:${colorOf(c.slug)}">${esc((c.name.trim()[0] || '?').toUpperCase())}</span><span class="t"><b>${esc(c.name)}</b><span class="s">${esc(c.address)} · ${c.kind === 'client' ? 'client portal' : esc(when(c.last_used_at))}</span></span>${CHEV}</a></li>`).join('')}</ul>
+      <ul class="cos">${list.map((c, i) => `<li><a href="${esc(c.url)}/#signin?email=${encodeURIComponent(email)}"${i === 0 ? ' autofocus' : ''}><span class="lg" style="background:${colorOf(c.slug)}">${esc((c.name.trim()[0] || '?').toUpperCase())}</span><span class="t"><b>${esc(c.name)}</b><span class="s">${esc(c.address)} · ${c.kind === 'client' ? 'client portal' : 'team'}</span></span>${CHEV}</a></li>`).join('')}</ul>
       <p class="faint" style="margin:0;font-size:13px;line-height:1.5">Missing one? Its owner may have removed you, or invited a different email.</p>`
       : `<div><h2>No company found</h2><p class="sub">We couldn’t find a company with this email.</p></div>
       <div class="fake"><span>${esc(email)}</span><button type="button" id="chg">Change</button></div>

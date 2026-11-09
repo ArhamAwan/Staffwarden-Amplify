@@ -65,7 +65,8 @@ module.exports = (ctx) => {
     if (isTeam(th)) return { th, a: teamAccess(user, th) };
     need(th.project_id != null, 404, 'Chat not found');
     const a = ctx.portalAccess(user, th.project_id);
-    if (th.kind === 'direct') need(a.client ? th.client_user_id === user.id : th.staff_id === user.id, 404, 'Chat not found');
+    // a staff preview of the portal never opens the client's one-to-one chats with other people
+    if (th.kind === 'direct') need(!user.preview && (a.client ? th.client_user_id === user.id : th.staff_id === user.id), 404, 'Chat not found');
     else if (a.client) need(a.s.messages, 403, 'Messages are switched off for this project');
     if (a.client && th.kind === 'direct') need(a.s.direct, 403, 'Direct messages are switched off for this project');
     return { th, a };
@@ -193,7 +194,7 @@ module.exports = (ctx) => {
           file: last.file ? (last.voice_secs != null ? 'Voice message' : last.file_name) : null, at: last.created_at } : null };
     };
     if (!a.client || a.s.messages) list.push(summary(groupThread(a.p.id), { name: 'Everyone', members: readers(groupThread(a.p.id), a).map((r) => person(r.kind, r.id)) }));
-    if (a.client && a.s.direct) {
+    if (a.client && a.s.direct && !user.preview) {
       for (const m of db.prepare('SELECT u.id FROM project_members pm JOIN users u ON u.id = pm.user_id WHERE pm.project_id = ? AND u.active = 1 ORDER BY (u.id = ?) DESC, u.name').all(a.p.id, a.p.lead_id || 0)) {
         const th = db.prepare("SELECT * FROM chat_threads WHERE project_id = ? AND kind = 'direct' AND staff_id = ? AND client_user_id = ?").get(a.p.id, m.id, user.id);
         const p = person('staff', m.id);
@@ -235,7 +236,7 @@ module.exports = (ctx) => {
       need(root && !(a.client && root.team_only), 404, 'Message not found');
       rows = [root, ...db.prepare(`SELECT * FROM chat_messages WHERE parent_id = ? ${a.client ? 'AND team_only = 0' : ''} ORDER BY id LIMIT 300`).all(root.id)];
     } else rows = db.prepare(`SELECT * FROM chat_messages WHERE thread_id = ? AND id < ? AND parent_id IS NULL ${a.client ? 'AND team_only = 0' : ''} ORDER BY id DESC LIMIT 80`).all(th.id, before).reverse();
-    markDelivered(me, [th]);
+    if (!user.preview) markDelivered(me, [th]);      // a preview changes nothing
     const reads = db.prepare('SELECT * FROM chat_reads WHERE thread_id = ?').all(th.id);
     if (a.team) {
       const members = teamMemberIds(th).map((id) => person('staff', id));

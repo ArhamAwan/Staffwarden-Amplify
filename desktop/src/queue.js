@@ -30,7 +30,15 @@ class OfflineQueue {
     fs.mkdirSync(this.shotDir, { recursive: true });
     this.items = this.load();
     this.running = null;
+    // whose work this is: "<server>|<user id>". Items are tagged with it and only sent with that same
+    // account's sign-in, so after a switch nothing one person captured is ever uploaded as someone else.
+    this.owner = null;
   }
+
+  setOwner(owner) { this.owner = owner || null; }
+  // An item tagged with an account is only ever sent with that account; untagged items (made before
+  // anyone was known, or by versions before owners existed) go with whoever is signed in.
+  mine(item) { return item.owner == null || item.owner === this.owner; }
 
   load() {
     try { return JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch { return []; }
@@ -55,9 +63,10 @@ class OfflineQueue {
     // A newer activity total for the same slot replaces the older one that has not been sent yet.
     if (item.type === 'activity') {
       // (never the one being uploaded right now: its upload already started with the older numbers)
-      const same = this.items.find((x) => x !== this.sending && x.type === 'activity' && x.payload.slot_start === item.payload.slot_start && x.payload.entry_id === item.payload.entry_id);
+      const same = this.items.find((x) => x !== this.sending && x.type === 'activity' && x.owner === (item.owner === undefined ? this.owner : item.owner) && x.payload.slot_start === item.payload.slot_start && x.payload.entry_id === item.payload.entry_id);
       if (same) { same.payload = item.payload; this.save(); return; }
     }
+    if (item.owner === undefined) item.owner = this.owner;
     this.items.push(item);
     while (this.items.length > this.maxItems) {
       const i = this.items.findIndex((x) => x.type === 'screenshot'); // shed oldest screenshots first
@@ -124,8 +133,10 @@ class OfflineQueue {
 
   async run(client) {
     let sent = 0, blocked = null;
-    while (this.items.length) {
-      const item = this.items[0];
+    for (;;) {
+      // the next thing this account made (another account's waits for that account's sign-in)
+      const item = this.items.find((x) => this.mine(x));
+      if (!item) break;
       this.sending = item;
       try {
         await this.send(client, item);
@@ -140,7 +151,7 @@ class OfflineQueue {
       this.discard(item);
       this.save();
     }
-    return { sent, remaining: this.items.length, blocked };
+    return { sent, remaining: this.items.filter((x) => this.mine(x)).length, blocked };
   }
 }
 

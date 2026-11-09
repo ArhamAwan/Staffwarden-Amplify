@@ -125,7 +125,13 @@ test('the report can be emailed: settings stay with the owner, the password is n
     assert.match(m.got.auth, /reports@example\.com\0right-pass$/);
     assert.match(m.got.data, /Subject: \[Test\] Shift report/);
     assert.match(m.got.data, /Content-Type: application\/pdf; name="shift-report-\d{4}-\d\d-\d\d\.pdf"/);
-    // saving again without a password keeps the stored one
+    // saving again without a password keeps the stored one (same server and username, even on another port)
+    const back = JSON.parse(smtpEnv.app.db.prepare("SELECT value FROM settings WHERE key = 'report_mail'").get().value);
+    back.host = 'mail.example.com';
+    smtpEnv.app.db.prepare("UPDATE settings SET value = ? WHERE key = 'report_mail'").run(JSON.stringify(back));
+    // pointing the saved password at another server needs it typed again, so it can't be sent somewhere new
+    assert.equal((await api('PUT', '/api/shift-reports/email', { token: tokens.owner, body: { on: true, to: ['arham@example.com'], host: 'mail.attacker.example', port: 587, user: 'reports@example.com' } })).status, 400);
+    assert.equal((await api('PUT', '/api/shift-reports/email', { token: tokens.owner, body: { on: true, to: ['arham@example.com'], host: 'mail.example.com', port: 587, user: 'someone-else@example.com' } })).status, 400);
     const again = await ok('PUT', '/api/shift-reports/email', { token: tokens.owner, body: { on: true, to: ['arham@example.com'], host: 'mail.example.com', port: 465, user: 'reports@example.com' } });
     assert.equal(again.has_pass, true);
     // a wrong password comes back as a plain message

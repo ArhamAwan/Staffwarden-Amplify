@@ -60,17 +60,27 @@ function decrypt(buf, uaPrivate, uaPublic, auth) {
   return plain.subarray(0, plain.lastIndexOf(2)).toString();
 }
 
+// The browsers' push services. A subscription may only point at one of them, so the server never sends
+// requests anywhere else (an internal address, a cloud metadata service).
+const PUSH_HOSTS = /(^|\.)(fcm\.googleapis\.com|push\.services\.mozilla\.com|notify\.windows\.com|push\.apple\.com)$/i;
+function pushAddressOk(endpoint) {
+  let u; try { u = new URL(String(endpoint)); } catch { return false; }
+  return u.protocol === 'https:' && !u.port && !u.username && !u.password && PUSH_HOSTS.test(u.hostname);
+}
+
 // sends one message; resolves to the HTTP status (0 when the push service could not be reached)
 async function send(sub, payload, keys, subject, { ttl = 86400, urgency = 'normal', fetchImpl = fetch } = {}) {
+  if (!pushAddressOk(sub.endpoint)) return 410;       // not a push service: drop the subscription
   const body = encrypt(JSON.stringify(payload), sub.p256dh, sub.auth);
   try {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 10000);
-    const res = await fetchImpl(sub.endpoint, { method: 'POST', body, signal: ctl.signal,
+    const res = await fetchImpl(sub.endpoint, { method: 'POST', redirect: 'manual', body, signal: ctl.signal,
       headers: { 'Content-Type': 'application/octet-stream', 'Content-Encoding': 'aes128gcm', TTL: String(ttl), Urgency: urgency, Authorization: vapidHeader(sub.endpoint, keys, subject) } });
     clearTimeout(t);
-    return res.status;
+    // push services answer directly; a redirect is never followed (and counts as a failure)
+    return res.status >= 300 && res.status < 400 ? 0 : res.status;
   } catch { return 0; }
 }
 
-module.exports = { makeVapidKeys, vapidHeader, encrypt, decrypt, send, b64u, unb64u };
+module.exports = { pushAddressOk, PUSH_HOSTS, makeVapidKeys, vapidHeader, encrypt, decrypt, send, b64u, unb64u };

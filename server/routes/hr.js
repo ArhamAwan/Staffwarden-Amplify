@@ -414,7 +414,7 @@ module.exports = (ctx) => {
   });
   route('POST', '/api/expenses/:id/decide', ({ user, params, body }) => {
     const e = db.prepare('SELECT * FROM expenses WHERE id = ?').get(Number(params.id)); need(e, 404, 'Claim not found');
-    need(e.user_id !== user.id || user.role === 'owner', 403, 'Someone else approves your own claims');
+    need(e.user_id !== user.id || ctx.isRealOwner(user), 403, 'Someone else approves your own claims');
     const approve = !!body.approve;
     const reason = approve ? null : str(body.reason, 'reason', 300);
     if (isHR(user)) {
@@ -467,7 +467,7 @@ module.exports = (ctx) => {
     needHR(user);
     const a = db.prepare('SELECT * FROM advances WHERE id = ?').get(Number(params.id)); need(a, 404, 'Advance not found');
     need(a.status === 'pending', 409, 'Already decided');
-    need(a.user_id !== user.id || user.role === 'owner', 403, 'Someone else decides your own advance');
+    need(a.user_id !== user.id || ctx.isRealOwner(user), 403, 'Someone else decides your own advance');
     const approve = !!body.approve;
     const note = approve ? optStr(body.note, 'note', 300) : str(body.note, 'note', 300);
     db.prepare('UPDATE advances SET status = ?, decided_by = ?, decided_at = ?, decision_note = ? WHERE id = ?').run(approve ? 'approved' : 'declined', user.id, nowIso(), note, a.id);

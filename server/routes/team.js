@@ -116,6 +116,9 @@ module.exports = (ctx) => {
     const th = db.prepare('SELECT * FROM chat_threads WHERE id = ?').get(Number(tid));
     need(th && ctx.isTeamThread(th), 404, 'Chat not found');
     const mem = db.prepare('SELECT * FROM team_members WHERE thread_id = ? AND user_id = ?').get(th.id, user.id);
+    // the same rule as reading it: the company chat, a chat you're in, or a public channel. Private
+    // channels, groups and direct messages are invisible to everyone else, managers included.
+    need(th.kind === 'company' || mem || (th.kind === 'channel' && !th.private), 404, 'Chat not found');
     return { th, mem, admin: isManager(user) || (mem && mem.role === 'admin') };
   }
   route('POST', '/api/team/threads/:id/join', ({ user, params }) => {
@@ -164,8 +167,10 @@ module.exports = (ctx) => {
   // mute: 'none' | 'mentions' | 'all'; for: minutes (until then), or forever
   route('PUT', '/api/team/threads/:id/mute', ({ user, params, body }) => {
     staffOnly(user);
-    const { th } = teamThread(user, params.id);
+    const { th, mem } = teamThread(user, params.id);
     need(th.dm_key !== 'announcements', 400, 'Announcements can’t be muted');
+    // muting is a setting on your own place in a chat, never a way in
+    need(mem || th.kind === 'company', 403, 'Join the chat first');
     const mode = ['none', 'mentions', 'all'].includes(body.mode) ? body.mode : 'all';
     const until = body.minutes ? new Date(clockNow() + Math.min(60 * 24 * 30, Math.max(5, Number(body.minutes))) * 60000).toISOString() : null;
     db.prepare("INSERT INTO team_members (thread_id, user_id, mute, muted_until, joined_at) VALUES (?,?,?,?,?) ON CONFLICT(thread_id, user_id) DO UPDATE SET mute = excluded.mute, muted_until = excluded.muted_until")
@@ -211,7 +216,8 @@ module.exports = (ctx) => {
       ...(body.client_visible != null ? { client_visible: !!body.client_visible } : {}),
     }, { source_message_id: m.id, ...(body.client_visible != null ? { client_visible: body.client_visible ? 1 : 0 } : {}) });
     db.prepare('UPDATE chat_messages SET task_id = ? WHERE id = ?').run(task.id, m.id);
-    if (body.announce !== false && a.team) {
+    // the note in the chat is a post like any other: only where this person may post
+    if (body.announce !== false && a.team && a.canPost) {
       const who = task.assignee_id ? (db.prepare('SELECT name FROM users WHERE id = ?').get(task.assignee_id) || {}).name : null;
       ctx.teamPost(th, user, { body: `Made it a task${task.key ? `, ${task.key}` : ''}: ${task.title}${who ? `, for ${who}` : ''}${task.due_day ? `, due ${task.due_day}` : ''}`, kind: 'system', meta: { task_id: task.id, from: m.id } });
     }

@@ -173,7 +173,8 @@ module.exports = (ctx) => {
   const dayOf = (params) => { need(T.isDay(params.day), 400, 'day must look like 2026-10-24'); need(params.day <= calc().companyToday(), 400, 'That day hasn’t happened yet'); return params.day; };
 
   // the email settings (registered before /:day so "email" isn't read as a day)
-  const needOwnerHere = (user) => need(user.role === 'owner', 403, 'Only the owner can do this');
+  // the owner's own mailbox: only the owner (not a developer) decides where its password is sent
+  const needOwnerHere = (user) => need(ctx.isRealOwner(user), 403, 'Only the owner can do this');
   route('GET', '/api/shift-reports/email', ({ user }) => { needOwnerHere(user); const c = mailCfg(); const o = ownerUser(); return { ...publicMail(c), owner_email: o ? o.email : null }; });
   route('PUT', '/api/shift-reports/email', ({ user, body }) => {
     needOwnerHere(user);
@@ -189,7 +190,10 @@ module.exports = (ctx) => {
     const from = String(body.from || '').trim();
     need(!from || smtp.validAddr(from), 400, 'The "send from" address doesn’t look like an email address');
     const on = !!body.on;
-    const pass = body.pass != null && String(body.pass) !== '' ? String(body.pass).slice(0, 300) : c.pass;
+    // a saved password only ever goes to the server and username it was typed for: change either and it
+    // has to be typed again
+    const same = host === (c.host || '') && userName === (c.user || '');
+    const pass = body.pass != null && String(body.pass) !== '' ? String(body.pass).slice(0, 300) : (same ? c.pass : '');
     if (on) { need(to.length, 400, 'Add who gets the report'); need(host && userName && pass, 400, 'Fill in the mail server, username and password to switch it on'); }
     const next = { ...c, on, to, host, port, user: userName, from, pass };
     saveMail(next);

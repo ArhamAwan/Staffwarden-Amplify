@@ -412,7 +412,7 @@ module.exports = (ctx) => {
       can_set_review: user.role === 'owner' || leads(user, t), can_edit: canEditTask(user, t),
       can_change: manages(user, t) || (t.created_by === user.id && (t.assignee_id === user.id || t.assignee_id == null)),
       checks: checksOf(t.id), links: linksOf(t.id), live: liveOf(t, user),
-      assets: ctx.assetsForTask ? ctx.assetsForTask(t) : null,
+      assets: ctx.assetsForTask ? ctx.assetsForTask(t, user) : null,
     };
   });
 
@@ -606,7 +606,9 @@ module.exports = (ctx) => {
     need(fs.existsSync(p), 404, 'File missing');
     // pictures can be shown on the page; anything else (SVG and HTML included) only downloads, so nothing uploaded can run here
     const inline = query && query.get('inline') === '1' && /^image\/(png|jpeg|webp|gif)$/.test(f.mime || '');
-    return { raw: fs.readFileSync(p), type: inline ? f.mime : f.mime || 'application/octet-stream', headers: { 'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(f.name)}`, 'X-Content-Type-Options': 'nosniff', ...(inline ? { 'Content-Security-Policy': "default-src 'none'" } : {}) } };
+    // the type sent is the declared one only for kinds that can't carry a page (pictures, PDF, sound, video)
+    const safe = /^(image\/(png|jpeg|webp|gif)|application\/pdf|audio\/[\w.+-]+|video\/(mp4|webm|quicktime))$/.test(f.mime || '');
+    return { raw: fs.readFileSync(p), type: inline || safe ? f.mime : 'application/octet-stream', headers: { 'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(f.name)}`, 'X-Content-Type-Options': 'nosniff', ...(inline ? { 'Content-Security-Policy': "default-src 'none'" } : {}) } };
   });
   route('DELETE', '/api/tasks/:id/files/:fid', ({ user, params }) => {
     const t = loadVisible(user, params.id);

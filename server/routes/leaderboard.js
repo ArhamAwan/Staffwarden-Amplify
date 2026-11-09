@@ -10,6 +10,14 @@ const DEFAULTS = { rank_by: 'hours', columns: ['hours', 'activity'], audience: '
 // activity is only ranked once someone has worked this long in the period (a short session can read 100%)
 const MIN_ACTIVITY_SECS = 2 * 3600;
 const POINTS = { approved: 10, on_time: 5, checkin: 4, boost: 2 };
+// the measures behind each column: a column the owner turned off is not sent to people who can't change
+// the board (their own row excepted), so hiding activity really hides it
+const FIELDS = { hours: ['hours_secs', 'days_worked'], activity: ['activity_pct'], tasks: ['tasks_done', 'on_time'], points: ['points', 'parts', 'checkins', 'boosts'] };
+const project = (r, cols) => {
+  const o = { id: r.id, name: r.name, title: r.title, team: r.team, team_id: r.team_id, place: r.place, move: r.move, new_entry: r.new_entry };
+  for (const c of cols) for (const f of FIELDS[c] || []) o[f] = r[f];
+  return o;
+};
 
 module.exports = (ctx) => {
   const { db, route, calc, audit, T, isManager } = ctx;
@@ -102,7 +110,7 @@ module.exports = (ctx) => {
       if (cache.size > 30) cache.delete(cache.keys().next().value);
     }
     const notTracked = canChange(user) ? db.prepare("SELECT name FROM users WHERE active = 1 AND tracks_time = 0 AND role != 'owner' ORDER BY name").all().map((r) => r.name) : [];
-    return { not_tracked: notTracked, settings: s, can_change: canChange(user), period, label: p.label, from: p.from, to: p.to, ends: p.ends || null, today, rows: hit.rows, teams: hit.teams, me: user.id, min_activity_secs: MIN_ACTIVITY_SECS, points: POINTS };
+    return { not_tracked: notTracked, settings: s, can_change: canChange(user), period, label: p.label, from: p.from, to: p.to, ends: p.ends || null, today, rows: canChange(user) ? hit.rows : hit.rows.map((r) => (r.id === user.id ? r : project(r, s.columns))), teams: hit.teams, me: user.id, min_activity_secs: MIN_ACTIVITY_SECS, points: POINTS };
   });
 
   route('PUT', '/api/leaderboard/settings', ({ user, body }) => {

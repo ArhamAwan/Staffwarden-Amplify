@@ -356,3 +356,35 @@ test('a company outside Pakistan: its own money, no Pakistani tax, ID numbers an
   assert.equal(r.record.cnic, 'QQ 12 34 56 C');
   assert.equal(r.record.iban, '12345678');
 });
+
+test('a customer company’s developer can’t ship desktop updates or read the host’s health', async () => {
+  const o = await signUp({ name: 'Kai Rowe', email: 'kai@kestrel.test', company: 'Kestrel Labs', slug: 'kestrel' });
+  const d = await ok(at('kestrel'), 'POST', '/api/users', { token: o.token, body: { email: 'devon@kestrel.test', name: 'Devon', password: 'devon-pass-123', role: 'employee' } });
+  await ok(at('kestrel'), 'PATCH', `/api/users/${d.id}`, { token: o.token, body: { is_dev: true } });
+  const t = (await ok(at('kestrel'), 'POST', '/api/auth/login', { body: { email: 'devon@kestrel.test', password: 'devon-pass-123' } })).token;
+  await ok(at('kestrel'), 'POST', '/api/me/consent', { token: t });
+  const sha = 'a'.repeat(64);
+  assert.equal((await req(at('kestrel'), 'POST', '/api/dev/releases/start', { token: t, body: { files: [{ name: 'Staffwarden-99.0.0-mac-AppleSilicon.zip', size: 4, sha256: sha }] } })).status, 403);
+  assert.equal((await req(at('kestrel'), 'POST', '/api/dev/releases/rollback', { token: t, body: { version: '0.0.1' } })).status, 403);
+  assert.equal((await ok(at('kestrel'), 'GET', '/api/dev/releases', { token: t })).can_publish, false);
+  const h = await ok(at('kestrel'), 'GET', '/api/dev/health', { token: t });
+  assert.equal(JSON.stringify(h).includes(os.hostname()), false, 'no host details');
+  // nor can a developer make themselves HR
+  assert.equal((await req(at('kestrel'), 'PATCH', `/api/users/${d.id}`, { token: t, body: { hr: true } })).status, 403);
+});
+
+test('in production, sign-up waits for a mail server and never shows the code', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sw-prod-'));
+  const Q = createPlatform({ dataDir: dir, baseDomain: apex, scheme: 'http', now: () => clock.t, mailer, showCodes: false, webDir: path.join(__dirname, '..', '..', 'web'), log: { error() {} } });
+  await new Promise((r) => Q.server.listen(0, r));
+  const p2 = Q.server.address().port;
+  try {
+    const r = await new Promise((resolve, reject) => {
+      const data = JSON.stringify({ name: 'Eve', email: 'eve@x.test', password: 'a-long-pass-123' });
+      const q = http.request({ host: '127.0.0.1', port: p2, method: 'POST', path: '/api/platform/signup/start', headers: { Host: apex, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } }, (res) => { const c = []; res.on('data', (x) => c.push(x)); res.on('end', () => resolve({ status: res.statusCode, text: Buffer.concat(c).toString() })); });
+      q.on('error', reject); q.end(data);
+    });
+    assert.equal(r.status, 503);
+    assert.doesNotMatch(r.text, /dev_code/);
+  } finally { await new Promise((r) => Q.server.close(r)); fs.rmSync(dir, { recursive: true, force: true }); }
+});

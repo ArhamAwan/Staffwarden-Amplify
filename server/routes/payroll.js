@@ -268,7 +268,7 @@ module.exports = (ctx) => {
     return runDetail(r.id, user);
   });
   route('POST', '/api/payroll/runs/:id/reopen', ({ user, params, body }) => {
-    need(user.role === 'owner', 403, 'Only the owner can reopen an approved month');
+    need(ctx.isRealOwner(user), 403, 'Only the owner can reopen an approved month');
     const r = runOf(params.id);
     need(r.status === 'approved', 409, r.status === 'paid' ? 'A paid month stays as it was. Use a correction on the next month.' : 'It is not approved');
     const reason = str(body.reason, 'reason', 300);
@@ -286,7 +286,7 @@ module.exports = (ctx) => {
   });
 
   // ---- downloads ----
-  const csv = (rows) => rows.map((r) => r.map((v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }).join(',')).join('\r\n') + '\r\n';
+  const csv = require('../lib/csv').rows;
   route('GET', '/api/payroll/runs/:id/bank.csv', ({ user, params }) => {
     needHR(user);
     const r = runOf(params.id);
@@ -589,7 +589,7 @@ module.exports = (ctx) => {
     if (body.eobi) next.eobi = { on: !!body.eobi.on, min_wage: int(body.eobi.min_wage ?? cur.eobi.min_wage, 'eobi.min_wage', 0, 10000000), er: Number(body.eobi.er ?? cur.eobi.er), ee: Number(body.eobi.ee ?? cur.eobi.ee) };
     if (body.expense_limits) next.expense_limits = Object.fromEntries(Object.entries(body.expense_limits).filter(([k]) => /^[a-z]{2,20}$/.test(k)).map(([k, v]) => [k, int(v, 'limit', 0, 10000000)]));
     // these decide who controls HR, so only the owner changes them
-    for (const k of ['owner_approves', 'hr_own_pay', 'managers_first']) if (k in body) { need(user.role === 'owner', 403, 'Only the owner can change who approves'); next[k] = !!body[k]; }
+    for (const k of ['owner_approves', 'hr_own_pay', 'managers_first']) if (k in body) { need(ctx.isRealOwner(user), 403, 'Only the owner can change who approves'); next[k] = !!body[k]; }
     saveSetting('payroll', next);
     audit(user, 'payroll.rules', null, `${Object.keys(body).join(', ')}${cur.tax.on !== next.tax.on ? `; income tax ${next.tax.on === false ? 'off' : 'on'}` : ''}`);
     // a month not approved yet follows the new rules straight away

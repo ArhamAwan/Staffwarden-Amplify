@@ -54,7 +54,7 @@ test('everyone is in the company chat; direct messages and channels work like Wh
   // a private group: invite only
   const g = await ok('POST', '/api/team/channels', { token: tokens.hira, body: { kind: 'group', name: 'Closers', members: [sara.id] } });
   assert.equal((await api('GET', `/api/chat/threads/${g.id}/messages`, { token: tokens.waseem })).status, 404);
-  assert.equal((await api('POST', `/api/team/threads/${g.id}/join`, { token: tokens.waseem })).status, 403);
+  assert.equal((await api('POST', `/api/team/threads/${g.id}/join`, { token: tokens.waseem })).status, 404, 'a private group is not even visible to outsiders');
 });
 
 test('ticks: one when sent, two when it reaches their app, blue when read; in a group only when everyone has', async () => {
@@ -159,8 +159,8 @@ test('notifications: each person picks devices per kind; quiet outside the shift
   assert.equal(q.categories.find((c) => c.key === 'announce').channels.phone, true, 'announcements stay on');
   assert.equal(q.quiet, false);
   // a phone and a browser
-  await ok('POST', '/api/push/subscribe', { token: tokens.sara, body: { endpoint: 'https://push.example.com/p1', keys: subKeys(), device: 'iPhone · Safari' } });
-  await ok('POST', '/api/push/subscribe', { token: tokens.sara, body: { endpoint: 'https://push.example.com/b1', keys: subKeys(), device: 'Mac · Chrome' } });
+  await ok('POST', '/api/push/subscribe', { token: tokens.sara, body: { endpoint: 'https://fcm.googleapis.com/fcm/send/p1', keys: subKeys(), device: 'iPhone · Safari' } });
+  await ok('POST', '/api/push/subscribe', { token: tokens.sara, body: { endpoint: 'https://fcm.googleapis.com/fcm/send/b1', keys: subKeys(), device: 'Mac · Chrome' } });
   const dev = await ok('GET', '/api/me/notify-prefs', { token: tokens.sara });
   assert.deepEqual(dev.devices.map((d) => d.kind).sort(), ['browser', 'phone']);
   // tasks go to the phone, not the browser (the defaults)
@@ -168,7 +168,7 @@ test('notifications: each person picks devices per kind; quiet outside the shift
   env.app.db.prepare("UPDATE users SET notify_prefs = json_set(notify_prefs, '$.quiet', json('false')) WHERE id = ?").run(sara.id);
   await ok('POST', '/api/tasks', { token: tokens.owner, body: { title: 'Call back the voicemails', assignee_id: sara.id } });
   await new Promise((r) => setTimeout(r, 50));
-  assert.deepEqual(pushed.map((x) => x.url), ['https://push.example.com/p1']);
+  assert.deepEqual(pushed.map((x) => x.url), ['https://fcm.googleapis.com/fcm/send/p1']);
   pushed.length = 0;
   await ok('POST', '/api/me/notify-test', { token: tokens.sara });
   await new Promise((r) => setTimeout(r, 50));

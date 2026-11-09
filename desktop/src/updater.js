@@ -1,7 +1,8 @@
 'use strict';
 // In-app updates. The app asks the company server for the newest installer for this computer
 // (GET /api/app/latest), tells the person when one is out, and on "Update" downloads it, checks its
-// size and SHA-256 against what the server reported, and installs it:
+// size and SHA-256 against what the server reported, checks the publisher's signature (made offline with the
+// Staffwarden release key, whose public half is built into the app), and installs it:
 //   Windows: runs the installer silently (it replaces the app and starts it again).
 //   macOS:   unpacks the new Workhelm.app next to the download, then a small script waits for this
 //            app to quit, swaps the new app in place of the old one and opens it.
@@ -19,9 +20,20 @@ function cmpVersion(a, b) {
   return 0;
 }
 
+// What a release signature covers: the installer's file name (and so its version) and its SHA-256.
+const releaseMessage = (file, sha256) => Buffer.from(`staffwarden-release\n${file}\n${String(sha256).toLowerCase()}`);
+const versionIn = (f) => { const m = /(\d{1,4})\.(\d{1,4})\.(\d{1,4})/.exec(String(f || '')); return m ? `${+m[1]}.${+m[2]}.${+m[3]}` : null; };
+function signedBy(key, file, sha256, sig) {
+  if (!key || typeof sig !== 'string' || !/^[A-Za-z0-9+/=]{40,400}$/.test(sig.trim())) return false;
+  try { return crypto.verify(null, releaseMessage(file, sha256), key, Buffer.from(sig.trim(), 'base64')); } catch { return false; }
+}
+
 class Updater {
-  constructor({ baseUrl, version, platform = process.platform, arch = process.arch, dir, fetchImpl = globalThis.fetch, onChange = () => {} }) {
+  constructor({ baseUrl, version, platform = process.platform, arch = process.arch, dir, fetchImpl = globalThis.fetch, onChange = () => {}, updateKey = null }) {
     Object.assign(this, { baseUrl: String(baseUrl || '').replace(/\/+$/, ''), version, platform, arch, dir, fetch: fetchImpl, onChange });
+    // With a release key built in, only installers signed with it are offered or installed.
+    this.key = null;
+    if (updateKey) { try { this.key = crypto.createPublicKey(updateKey); } catch { this.key = null; } }
     this.state = { status: 'idle', current: version, latest: null, notes: '', progress: 0, error: null, checkedAt: null };
     this.info = null; this.file = null; this.busy = null;
   }
@@ -42,7 +54,12 @@ class Updater {
       this.set({ checkedAt: Date.now(), reached: false, error: this.state.status === 'error' ? this.state.error : null });
       return this.state;
     }
-    const newer = info && info.version && info.url && /^[0-9a-f]{64}$/.test(String(info.sha256 || '')) && cmpVersion(info.version, this.version) > 0;
+    let newer = info && info.version && info.url && /^[0-9a-f]{64}$/.test(String(info.sha256 || '')) && cmpVersion(info.version, this.version) > 0;
+    // a release the key didn't sign (or whose file name doesn't carry the version it claims) is not offered
+    if (newer && this.key) {
+      const file = String(info.file || '');
+      if (versionIn(file) !== info.version || !signedBy(this.key, file, info.sha256, info.sig)) { this.log(`ignored ${info.version}: not signed with the release key`); newer = false; }
+    }
     if (!newer) { this.info = null; this.set({ status: 'current', latest: info && info.version || null, notes: '', checkedAt: Date.now(), reached: true, error: null }); return this.state; }
     const same = this.info && this.info.version === info.version && this.info.sha256 === info.sha256;
     this.info = info;
@@ -121,7 +138,9 @@ class Updater {
         if (pct !== shown || Date.now() - shownAt > 1000) { shown = pct; shownAt = Date.now(); this.set({ progress: pct, got, total }); }
       }
       if (info.size && got !== Number(info.size)) throw new Error(`the download was incomplete (${got} of ${info.size} bytes)`);
-      if (hash.digest('hex') !== String(info.sha256).toLowerCase()) throw new Error('the download did not match the server\'s checksum');
+      const got256 = hash.digest('hex');
+      if (got256 !== String(info.sha256).toLowerCase()) throw new Error('the download did not match the server\'s checksum');
+      if (this.key && !signedBy(this.key, String(info.file || ''), got256, info.sig)) throw new Error('the download is not signed by Staffwarden');
     } catch (e) {
       if (stalled) throw new Error(`the download stopped (nothing arrived for ${Math.round(STALL_MS / 1000)} seconds)`);
       throw e;
@@ -238,4 +257,4 @@ function cleanupLeftovers({ platform = process.platform, execPath = process.exec
   return gone;
 }
 
-module.exports = { Updater, cmpVersion, macBundleOf, macSwapScript, macTarget, prepareInstall, cleanupLeftovers };
+module.exports = { releaseMessage, signedBy, Updater, cmpVersion, macBundleOf, macSwapScript, macTarget, prepareInstall, cleanupLeftovers };

@@ -24,12 +24,19 @@ const NOTIFY_TESTS = {
   urgent: { title: 'Test: an urgent notice', body: 'Urgent notices come through even in quiet hours.', link: '#/', urgent: true },
 };
 
+const ReleaseKey = require('../lib/release-key');
+
 module.exports = (ctx) => {
   const { db, cfg, route, audit } = ctx;
   const startedAt = Date.now();
   // only people the owner switched it on for (the owner too, only if he switches it on for himself)
   const isDev = (u) => !!u && u.kind !== 'client' && !u.preview && !!u.is_dev;
   const needDev = (u) => need(isDev(u), 403, 'Only people with developer access can do this');
+  // Installers and the server itself are shared by every company on a Staffwarden service, so publishing,
+  // rolling back and the host's health belong to the operator's own company only.
+  const operator = () => !ctx.tenant || !!(ctx.tenant.releases && ctx.tenant.releases());
+  const needRelease = (u) => { needDev(u); need(operator(), 403, 'Desktop releases are managed by Staffwarden'); };
+  const releaseKey = () => (ctx.releaseKey !== undefined ? ctx.releaseKey : ReleaseKey.loadKey());
   ctx.isDev = isDev;
   const backupDir = ctx.backupDir || process.env.WORKHELM_BACKUP_DIR || '/var/backups/workhelm';
   const offsiteLog = ctx.offsiteLog || process.env.WORKHELM_OFFSITE_LOG || '/var/log/workhelm-offsite.log';
@@ -139,16 +146,17 @@ module.exports = (ctx) => {
     const live = ctx.liveCounts ? ctx.liveCounts() : { staff: 0, clients: 0 };
     const dbBytes = cfg.dbFile === ':memory:' ? 0 : fileSize(cfg.dbFile) + fileSize(`${cfg.dbFile}-wal`);
     const d = new Date(ctx.now() - 86400000).toISOString();
+    const host = operator();
     return {
-      build: ctx.BUILD, node: process.version, started_at: new Date(startedAt).toISOString(), uptime_s: Math.round((Date.now() - startedAt) / 1000),
-      host_uptime_s: Math.round(os.uptime()),
+      build: ctx.BUILD, node: host ? process.version : null, started_at: new Date(startedAt).toISOString(), uptime_s: Math.round((Date.now() - startedAt) / 1000),
+      host_uptime_s: host ? Math.round(os.uptime()) : null,
       schema: db.prepare('PRAGMA user_version').get().user_version,
       db_bytes: dbBytes,
-      disk, memory: { total: os.totalmem(), free: os.freemem(), process: process.memoryUsage().rss }, load: os.loadavg().map((x) => Math.round(x * 100) / 100), cpus: os.cpus().length,
+      disk: host ? disk : null, memory: host ? { total: os.totalmem(), free: os.freemem(), process: process.memoryUsage().rss } : null, load: host ? os.loadavg().map((x) => Math.round(x * 100) / 100) : null, cpus: host ? os.cpus().length : null,
       live,
       people: { active: db.prepare("SELECT COUNT(*) n FROM users WHERE active = 1").get().n, working: db.prepare('SELECT COUNT(*) n FROM time_entries WHERE ended_at IS NULL').get().n },
       errors: { open: db.prepare("SELECT COUNT(*) n FROM error_groups WHERE status = 'open'").get().n, today: db.prepare("SELECT COALESCE(SUM(count),0) n FROM error_groups WHERE last_at > ?").get(d).n },
-      backups: backups(),
+      backups: host ? backups() : { found: false, shared: true, files: [] },
       banner: activeBanner(true),
     };
   });
@@ -212,7 +220,7 @@ module.exports = (ctx) => {
   // The files arrive in pieces (a whole Mac app is over 100 MB, more than one request can carry), are
   // checked against their SHA-256, and only then replace the current ones. The current ones are kept in
   // archive/<version>, so going back is one click.
-  const KIND = (f) => (/\.exe$/i.test(f) ? 'windows' : /mac.*(arm|apple)/i.test(f) ? 'mac-arm' : /mac.*(intel|x64)/i.test(f) || /\.(dmg|zip)$/i.test(f) ? 'mac-intel' : null);
+  const KIND = (f) => (/\.sig$/i.test(f) ? null : /\.exe$/i.test(f) ? 'windows' : /mac.*(arm|apple)/i.test(f) ? 'mac-arm' : /mac.*(intel|x64)/i.test(f) || /\.(dmg|zip)$/i.test(f) ? 'mac-intel' : null);
   const VERSION = (f) => { const m = /(\d{1,4})\.(\d{1,4})\.(\d{1,4})/.exec(f); return m ? `${+m[1]}.${+m[2]}.${+m[3]}` : null; };
   const SAFE = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,120}$/;
   const uploads = new Map();       // id -> { files: [{name,size,sha256,got}], dir, by, at }
@@ -233,10 +241,10 @@ module.exports = (ctx) => {
     const cur = ctx.listDownloads();
     const fleet = db.prepare('SELECT app_version v, app_platform p FROM users WHERE active = 1 AND app_version IS NOT NULL').all();
     const on = (v) => fleet.filter((x) => x.v === v).length;
-    return { current: cur, notes: readNotes(dlDir()), version: cur[0] ? cur[0].version : null, on_current: cur[0] ? on(cur[0].version) : 0, with_app: fleet.length, archive: archived().map((a) => ({ ...a, on: on(a.version) })) };
+    return { current: cur, notes: readNotes(dlDir()), version: cur[0] ? cur[0].version : null, on_current: cur[0] ? on(cur[0].version) : 0, with_app: fleet.length, can_publish: operator(), signed: !!releaseKey(), archive: archived().map((a) => ({ ...a, on: on(a.version) })) };
   });
   route('POST', '/api/dev/releases/start', ({ user, body }) => {
-    needDev(user);
+    needRelease(user);
     need(Array.isArray(body.files) && body.files.length >= 1 && body.files.length <= 6, 400, 'Choose between 1 and 6 files');
     const files = body.files.map((f) => {
       need(f && typeof f.name === 'string' && SAFE.test(f.name), 400, 'File names can only use letters, numbers, spaces, dots and dashes');
@@ -259,7 +267,7 @@ module.exports = (ctx) => {
     return { id, version: [...vs][0], chunk: 4 * 1024 * 1024 };
   });
   route('POST', '/api/dev/releases/:id/chunk', ({ user, params, body }) => {
-    needDev(user);
+    needRelease(user);
     const u = uploads.get(params.id);
     need(u && u.by === user.id, 404, 'Upload not found. Start again.');
     const f = u.files.find((x) => x.name === body.name);
@@ -285,8 +293,11 @@ module.exports = (ctx) => {
     const dir = path.join(archiveDir(), v);
     fs.mkdirSync(dir, { recursive: true });
     for (const f of cur) {
-      if (replacing.has(KIND(f))) moveInto(path.join(dlDir(), f), path.join(dir, f));
-      else fs.copyFileSync(path.join(dlDir(), f), path.join(dir, f));
+      for (const g of [f, `${f}.sig`]) {
+        if (!fs.existsSync(path.join(dlDir(), g))) continue;
+        if (replacing.has(KIND(f))) moveInto(path.join(dlDir(), g), path.join(dir, g));
+        else fs.copyFileSync(path.join(dlDir(), g), path.join(dir, g));
+      }
     }
     const n = path.join(dlDir(), 'release-notes.txt');
     if (fs.existsSync(n)) moveInto(n, path.join(dir, 'release-notes.txt'));
@@ -295,7 +306,7 @@ module.exports = (ctx) => {
     return v;
   }
   route('POST', '/api/dev/releases/:id/publish', ({ user, params, body }) => {
-    needDev(user);
+    needRelease(user);
     const u = uploads.get(params.id);
     need(u && u.by === user.id, 404, 'Upload not found. Start again.');
     for (const f of u.files) {
@@ -303,12 +314,24 @@ module.exports = (ctx) => {
       const sha = crypto.createHash('sha256').update(fs.readFileSync(path.join(u.dir, f.name))).digest('hex');
       need(sha === f.sha256, 400, `${f.name} didn't arrive intact (its SHA-256 doesn't match). Upload it again.`);
     }
+    // each installer must carry the release key's signature, or the new apps refuse it
+    const key = releaseKey();
+    const sigs = body.signatures && typeof body.signatures === 'object' ? body.signatures : {};
+    for (const f of u.files) {
+      const sig = typeof sigs[f.name] === 'string' ? sigs[f.name].trim() : '';
+      if (key) need(ReleaseKey.verify(key, f.name, f.sha256, sig), 400, `${f.name} isn't signed with the Staffwarden release key. Sign it with tools/sign-release.js and add its .sig file.`);
+      f.sig = sig || null;
+    }
     const notes = optStr(body.notes, 'notes', 1500) || '';
     const cur = ctx.listDownloads()[0];
     need(!cur || !cur.version || ctx.cmpVersion(u.version, cur.version) > 0 || body.replace === true, 400, `${u.version} isn't newer than ${cur && cur.version}. Apps only update to a newer version.`);
     fs.mkdirSync(dlDir(), { recursive: true });
     const prev = archiveCurrent(new Set(u.files.map((f) => KIND(f.name))));
-    for (const f of u.files) moveInto(path.join(u.dir, f.name), path.join(dlDir(), f.name));
+    for (const f of u.files) {
+      moveInto(path.join(u.dir, f.name), path.join(dlDir(), f.name));
+      if (f.sig) fs.writeFileSync(path.join(dlDir(), `${f.name}.sig`), f.sig + '\n');
+      else fs.rmSync(path.join(dlDir(), `${f.name}.sig`), { force: true });
+    }
     if (notes) fs.writeFileSync(path.join(dlDir(), 'release-notes.txt'), notes + '\n');
     fs.rmSync(u.dir, { recursive: true, force: true });
     uploads.delete(params.id);
@@ -316,7 +339,7 @@ module.exports = (ctx) => {
     return { version: u.version, previous: prev };
   });
   route('POST', '/api/dev/releases/rollback', ({ user, body }) => {
-    needDev(user);
+    needRelease(user);
     const v = String(body.version || '');
     const dir = path.join(archiveDir(), v);
     need(/^\d+\.\d+\.\d+$/.test(v) && fs.existsSync(dir), 404, 'That version isn\'t kept on the server');

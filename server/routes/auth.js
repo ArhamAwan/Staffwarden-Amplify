@@ -16,14 +16,16 @@ module.exports = (ctx) => {
   route('POST', '/api/auth/login', ({ req, body }) => {
     const email = str(body.email, 'email', 200).trim().toLowerCase();
     const ip = clientIp(req);
-    need(count(`ip|${ip}`) < 30 && count(`pair|${ip}|${email}`) < 10, 429, 'Too many failed attempts. Try again in 15 minutes.');
+    // per address, per address and account, and per account whatever the address (so guessing spread
+    // over many addresses still stops)
+    need(count(`ip|${ip}`) < 30 && count(`pair|${ip}|${email}`) < 10 && count(`acct|${email}`) < 50, 429, 'Too many failed attempts. Try again in 15 minutes.');
     const password = str(body.password, 'password', 200);
     const u = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
     // not a member of staff: maybe someone from a client, signing in to their portal
     const cu = u ? null : db.prepare('SELECT cu.*, cl.name AS client_name, cl.archived AS client_archived FROM client_users cu JOIN clients cl ON cl.id = cu.client_id WHERE cu.email = ?').get(email);
     if (cu) {
       if (!verifyPassword(password, cu.pw_salt, cu.pw_hash)) {
-        bump(`ip|${ip}`); bump(`pair|${ip}|${email}`);
+        bump(`ip|${ip}`); bump(`pair|${ip}|${email}`); bump(`acct|${email}`);
         audit(null, 'client.login_failed', null, `${email} from ${ip}`);
         throw new HttpError(401, 'Invalid email or password');
       }
@@ -38,7 +40,7 @@ module.exports = (ctx) => {
     }
     const good = u ? verifyPassword(password, u.pw_salt, u.pw_hash) : verifyNobody(password);
     if (!good) {
-      bump(`ip|${ip}`); bump(`pair|${ip}|${email}`);
+      bump(`ip|${ip}`); bump(`pair|${ip}|${email}`); bump(`acct|${email}`);
       audit(null, 'login.failed', u ? u.id : null, `${email} from ${ip}`);
       throw new HttpError(401, 'Invalid email or password');
     }

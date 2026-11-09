@@ -89,7 +89,8 @@ module.exports = (ctx) => {
       need(note && note.trim().length >= 8, 400, 'Tell us what the emergency is, in a few words');
     }
     // Only the owner approves. The owner's own time off, or time off the owner records, needs no approval.
-    const auto = user.role === 'owner';
+    // (a developer can record it for others, but their own goes to the owner like anyone's)
+    const auto = user.role === 'owner' && (target.id !== user.id || ctx.isRealOwner(user));
     const id = Number(db.prepare(`INSERT INTO leave_requests (user_id, kind, start_day, end_day, note, status, decided_by, decided_at, created_at, emergency, sandwich)
       VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(target.id, w.kind, body.start_day, body.end_day, note, auto ? 'approved' : 'pending', auto ? user.id : null, auto ? nowIso() : null, nowIso(), emergency ? 1 : 0, w.sandwich_days.length ? w.sandwich_days.join(',') : null).lastInsertRowid);
     audit(user, auto ? 'timeoff.recorded' : 'timeoff.requested', target.id, `${w.kind} ${body.start_day} to ${body.end_day}${emergency ? ' (emergency)' : ''}`);
@@ -106,6 +107,7 @@ module.exports = (ctx) => {
     const r = db.prepare('SELECT * FROM leave_requests WHERE id = ?').get(Number(params.id));
     need(r, 404, 'Request not found');
     need(r.status === 'pending', 409, 'That request has already been decided');
+    need(r.user_id !== user.id || ctx.isRealOwner(user), 403, 'Someone else approves your own time off');
     const approve = !!body.approve;
     if (approve && r.kind !== 'unpaid') {
       const w = weigh(db.prepare('SELECT * FROM users WHERE id = ?').get(r.user_id), { start_day: r.start_day, end_day: r.end_day, kind: r.kind }, r.id);
@@ -128,7 +130,7 @@ module.exports = (ctx) => {
     const own = r.user_id === user.id, ceo = user.role === 'owner';
     need(own || ceo, 403, `Only ${(owners()[0] || {}).name || 'the CEO'} can cancel someone else’s time off`);
     const target = db.prepare('SELECT * FROM users WHERE id = ?').get(r.user_id);
-    if (own && !ceo) need(r.status === 'pending' || r.start_day > T.localDay(clockNow(), calc.dayTz(target)), 403, `This time off has already started. Ask ${(owners()[0] || {}).name || 'the CEO'} to change it`);
+    if (own && !ctx.isRealOwner(user)) need(r.status === 'pending' || r.start_day > T.localDay(clockNow(), calc.dayTz(target)), 403, `This time off has already started. Ask ${(owners()[0] || {}).name || 'the CEO'} to change it`);
     const reason = optStr(query.get('reason'), 'reason', 500);
     if (!own) need(reason && reason.trim().length >= 3, 400, 'Give a reason; they see it');
     db.prepare("UPDATE leave_requests SET status = 'cancelled', cancelled_by = ?, cancelled_at = ?, cancel_note = ? WHERE id = ?").run(user.id, nowIso(), reason, r.id);

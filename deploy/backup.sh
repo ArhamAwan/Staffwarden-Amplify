@@ -7,7 +7,10 @@
 set -euo pipefail
 DATA=/var/lib/workhelm; BK=/var/backups/workhelm
 KIND="${1:-tracker}"; DAY="$(date +%F)"; [[ "$KIND" == before-update ]] && DAY="$(date +%F-%H%M)"
-mkdir -p "$BK"
+# the copies hold every company's data: readable by root alone, whatever umask cron or sudo starts with
+umask 077
+install -d -m 700 "$BK"
+chmod 700 "$BK"; find "$BK" -maxdepth 1 -name '*.db' -exec chmod 600 {} + 2>/dev/null || true
 [[ -f "$DATA/tracker.db" ]] && sqlite3 "$DATA/tracker.db" ".backup '$BK/$KIND-$DAY.db'"
 if [[ -f "$DATA/platform/platform.db" ]]; then sqlite3 "$DATA/platform/platform.db" ".backup '$BK/$KIND-platform-$DAY.db'"; fi
 if [[ -d "$DATA/companies" ]]; then

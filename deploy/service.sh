@@ -29,8 +29,11 @@ RANGES="$( (curl -fsS https://www.cloudflare.com/ips-v4; echo; curl -fsS https:/
 [[ "$RANGES" == *"/"* ]] || { echo "Couldn't fetch Cloudflare's address list. Nothing was changed."; exit 1; }
 IP="$(curl -fsS4 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')"
 SSLIP="${IP//./-}.sslip.io"
+# Caddy works out the visitor's real address (from Cloudflare's header, only when the request really comes
+# from Cloudflare) and passes exactly that on: whatever X-Forwarded-For a visitor sends is replaced.
 PROXY='  encode gzip
   reverse_proxy 127.0.0.1:3000 {
+    header_up X-Forwarded-For {client_ip}
     flush_interval -1
   }'
 {
@@ -53,9 +56,18 @@ www.$DOMAIN {
   redir https://$DOMAIN{uri} 308
 }
 
-# The old plain address (desktop apps from before the domain, until they update)
+# The old plain address: desktop apps from before the domain may only find and download the update
+# (which moves them to https://$DOMAIN). Nothing else travels unencrypted: no sign-ins, no data.
 http://$IP {
-$PROXY
+  @update path /api/app/latest /downloads/*
+  handle @update {
+    reverse_proxy 127.0.0.1:3000 {
+      header_up X-Forwarded-For {client_ip}
+    }
+  }
+  handle {
+    redir https://$DOMAIN{uri} 308
+  }
 }
 EOF
   if grep -q '^WORKHELM_PROXY_SECRET=' "$ENVF" 2>/dev/null; then printf '\n# The Cloudflare Worker (apps from 0.9.10)\n%s {\n%s\n}\n' "$SSLIP" "$PROXY"; fi

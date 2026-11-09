@@ -53,6 +53,7 @@ SSLIP="${IP//./-}.sslip.io"
   echo "$DOMAIN {"
   echo "  encode gzip"
   echo "  reverse_proxy 127.0.0.1:3000 {"
+  echo "    header_up X-Forwarded-For {client_ip}"
   echo "    flush_interval -1"
   echo "  }"
   echo "}"
@@ -69,6 +70,7 @@ SSLIP="${IP//./-}.sslip.io"
 $SSLIP {
   encode gzip
   reverse_proxy 127.0.0.1:3000 {
+    header_up X-Forwarded-For {client_ip}
     flush_interval -1
   }
 }
@@ -76,11 +78,17 @@ EOF
   fi
   cat <<EOF
 
-# The old plain address (the oldest apps, until they update)
+# The old plain address: the oldest apps may only find and download the update (which moves them to
+# https://$DOMAIN). Nothing else travels unencrypted: no sign-ins, no data.
 http://$IP {
-  encode gzip
-  reverse_proxy 127.0.0.1:3000 {
-    flush_interval -1
+  @update path /api/app/latest /downloads/*
+  handle @update {
+    reverse_proxy 127.0.0.1:3000 {
+      header_up X-Forwarded-For {client_ip}
+    }
+  }
+  handle {
+    redir https://$DOMAIN{uri} 308
   }
 }
 EOF

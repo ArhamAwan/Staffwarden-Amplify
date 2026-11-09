@@ -20,13 +20,16 @@ cat > /etc/caddy/Caddyfile <<CADDY
 # Old address, unchanged (apps not yet updated, and the IP in a browser)
 :80 {
   encode gzip
-  reverse_proxy 127.0.0.1:3000
+  reverse_proxy 127.0.0.1:3000 {
+    header_up X-Forwarded-For {client_ip}
+  }
 }
 
 # HTTPS address the Cloudflare Worker fetches from
 $HOST {
   encode gzip
   reverse_proxy 127.0.0.1:3000 {
+    header_up X-Forwarded-For {client_ip}
     flush_interval -1
   }
 }

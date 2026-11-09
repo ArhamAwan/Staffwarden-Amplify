@@ -6,6 +6,8 @@ let token = null;
 try { token = localStorage.getItem('at_token'); } catch { /* storage blocked */ }
 export const getToken = () => token;
 export function setToken(t) {
+  // a different sign-in (or none) never inherits what the last one left waiting to send
+  if (t !== token) { try { for (const k of Object.keys(localStorage)) if (k.startsWith('wh-outbox-')) localStorage.removeItem(k); } catch { /* storage blocked */ } }
   token = t;
   try { if (t) localStorage.setItem('at_token', t); else localStorage.removeItem('at_token'); } catch { /* storage blocked */ }
 }
@@ -82,8 +84,15 @@ export async function download(path, filename) {
 export async function fileUrl(path) {
   const res = await fetch(path, { headers: auth(), cache: 'no-store' });
   if (!res.ok) { const d = await res.json().catch(() => ({})); throw new ApiError(res.status, d.error || 'Could not open the file'); }
-  return URL.createObjectURL(await res.blob());
+  // only kinds that can't hold a page open as themselves; anything else (HTML, SVG, scripts) is plain bytes
+  const b = await res.blob();
+  const safe = /^(image\/(png|jpeg|webp|gif)|application\/pdf|audio\/|video\/|text\/plain|text\/csv)/i.test(b.type || '');
+  const u = URL.createObjectURL(safe ? b : new Blob([b], { type: 'application/octet-stream' }));
+  blobShows.set(u, safe);
+  return u;
 }
+// whether a file from fileUrl() can be opened in a tab (true) or should be saved (false)
+export const blobShows = new Map();
 // a file behind sign-in, as bytes (a PDF to draw a preview of)
 export async function fileBytes(path) {
   const res = await fetch(path, { headers: auth(), cache: 'no-store' });

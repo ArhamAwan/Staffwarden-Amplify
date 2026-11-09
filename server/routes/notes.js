@@ -39,30 +39,65 @@ function cleanAttrs(tag, raw) {
   if ((tag === 'td' || tag === 'th') && /^[1-9]$/.test(a.colspan || '')) out.push(`colspan="${a.colspan}"`);
   return out.join(' ');
 }
+// Comments out: one pass, no backtracking (an unclosed "<!--" drops the rest, as a browser would).
+function stripComments(s) {
+  let out = '', i = 0, p;
+  while ((p = s.indexOf('<!--', i)) !== -1) {
+    out += s.slice(i, p);
+    const e = s.indexOf('-->', p + 4);
+    if (e === -1) return out;
+    i = e + 3;
+  }
+  return out + s.slice(i);
+}
+// One left-to-right pass: every character is looked at a fixed number of times, so a note of any shape
+// cleans in time proportional to its length (a regex here could be made to take minutes).
 function cleanHtml(html) {
-  let out = '', i = 0, drop = null;
-  const s = String(html || '').replace(/<!--[\s\S]*?-->/g, '').replace(/\u0000/g, '');
-  const re = /<\/?([a-zA-Z][a-zA-Z0-9-]*)((?:\s+[^>]*?)?)\s*\/?>/g;
-  let m;
-  while ((m = re.exec(s))) {
-    const text = s.slice(i, m.index);
-    if (!drop) out += text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    i = re.lastIndex;
-    const tag = m[1].toLowerCase(), closing = m[0][1] === '/';
+  const s = stripComments(String(html || '').replace(/\u0000/g, ''));
+  const esc = (t) => t.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const head = /<(\/?)([a-zA-Z][a-zA-Z0-9-]*)/y;
+  let out = '', i = 0, p = 0, end = -1, drop = null;
+  while ((p = s.indexOf('<', p)) !== -1) {
+    if (end < p) end = s.indexOf('>', p);
+    if (end === -1) break;                          // nothing closes it: the rest is text
+    head.lastIndex = p;
+    const h = head.exec(s);
+    const k = h ? head.lastIndex : -1;
+    // a tag is "<name" then the end, a space, or "/>"
+    if (!h || !(k === end || /\s/.test(s[k]) || (s[k] === '/' && k + 1 === end))) { p += 1; continue; }
+    let raw = s.slice(k, end).trimEnd();
+    const selfClose = raw.endsWith('/');
+    if (selfClose) raw = raw.slice(0, -1);
+    if (!drop) out += esc(s.slice(i, p));
+    i = p = end + 1;
+    const tag = h[2].toLowerCase(), closing = h[1] === '/';
     if (drop) { if (closing && tag === drop) drop = null; continue; }
-    if (DROP_WITH_CONTENT.has(tag)) { if (!closing && !/\/>$/.test(m[0])) drop = tag; continue; }
+    if (DROP_WITH_CONTENT.has(tag)) { if (!closing && !selfClose) drop = tag; continue; }
     if (!TAGS.has(tag)) continue;
     if (closing) { if (!VOID.has(tag)) out += `</${tag}>`; continue; }
-    const attrs = cleanAttrs(tag, m[2] || '');
+    const attrs = cleanAttrs(tag, raw);
     if (attrs === null) continue;
     out += `<${tag}${attrs ? ` ${attrs}` : ''}>`;
   }
-  if (!drop) out += s.slice(i).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  if (!drop) out += esc(s.slice(i));
   return out;
 }
 const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", nbsp: ' ', apos: "'" };
-const textOf = (html) => String(html).replace(/<(br|\/p|\/div|\/li|\/h2|\/h3|\/tr)[^>]*>/gi, '\n').replace(/<[^>]+>/g, '')
-  .replace(/&(#?\w+);/g, (x, e) => (ENT[e] ?? (/^#\d+$/.test(e) ? String.fromCodePoint(Number(e.slice(1))) : x))).replace(/[ \t]+/g, ' ').replace(/\n{2,}/g, '\n').trim();
+const BREAK = /^<(br|\/p|\/div|\/li|\/h2|\/h3|\/tr)\b/i;
+// the plain text of cleaned note HTML (for search and previews), also in one linear pass
+function textOf(html) {
+  const s = String(html);
+  let out = '', i = 0, p;
+  while ((p = s.indexOf('<', i)) !== -1) {
+    const e = s.indexOf('>', p);
+    if (e === -1) break;
+    out += s.slice(i, p) + (BREAK.test(s.slice(p, Math.min(e + 1, p + 8))) ? '\n' : '');
+    i = e + 1;
+  }
+  out += s.slice(i);
+  const cp = (n) => (n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : '');
+  return out.replace(/&(#?\w{1,10});/g, (x, e) => (ENT[e] ?? (/^#\d+$/.test(e) ? cp(Number(e.slice(1))) : x))).replace(/[ \t]+/g, ' ').replace(/\n{2,}/g, '\n').trim();
+}
 
 module.exports = (ctx) => {
   const { db, cfg, route, nowIso, clockNow, emitUsers, audit } = ctx;

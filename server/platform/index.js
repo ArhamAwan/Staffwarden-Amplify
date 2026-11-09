@@ -86,11 +86,13 @@ function createPlatform(opts) {
       row: () => row(slug),
       allows: (feature) => allows(row(slug), feature),
       paused: () => paused(row(slug)),
+      // installers are shared by every company on the server: only the operator's own company publishes them
+      releases: () => !!defaultSlug && slug === defaultSlug,
       gate(pathname, method, user) {
         const r = row(slug);
         if (!r) return { status: 404, message: 'This company is no longer on Staffwarden' };
         // a closed account: only the owner can still sign in, to look and take the data away
-        if (r.status === 'closed' && user && !(user.role === 'owner' && user.kind !== 'client')) return { status: 403, message: `${r.name}’s Staffwarden account is closed.`, extra: { closed: true, company: r.name } };
+        if (r.status === 'closed' && user && !(user.role === 'owner' && !user.dev_owner && user.kind !== 'client')) return { status: 403, message: `${r.name}’s Staffwarden account is closed.`, extra: { closed: true, company: r.name } };
         if (method === 'POST' && TRACK_WRITE.some((re) => re.test(pathname)) && paused(r)) {
           return { status: 403, message: r.status === 'closed' ? `${r.name}’s Staffwarden account is closed, so tracking is off.` : `Tracking is paused at ${r.name}. The account needs attention, and the owner already knows.`, extra: { paused: true } };
         }
@@ -201,9 +203,16 @@ function createPlatform(opts) {
     need(a.n <= max * (opts.limitScale || 1), 429, 'Too many tries. Wait a few minutes and try again.');
   }
   setInterval(() => { const t = now(); for (const [k, a] of hits) if (a.reset < t) hits.delete(k); for (const [k, h] of handoffs) if (h.exp < t) handoffs.delete(k); }, 10 * 60000).unref();
+  // the visitor's address, by the same rules as a company's app: the Worker's address only with its
+  // secret, otherwise what Caddy passes on (Caddy sets X-Forwarded-For itself, see deploy/service.sh)
+  const PROXY_SECRET = String(opts.proxySecret || (opts.appOpts && opts.appOpts.proxySecret) || '');
   function ipOf(req) {
     const direct = req.socket.remoteAddress || '';
     const local = direct === '127.0.0.1' || direct === '::1' || direct === '::ffff:127.0.0.1';
+    if (local && PROXY_SECRET.length >= 24) {
+      const got = Buffer.from(String(req.headers['x-workhelm-proxy'] || '')), want = Buffer.from(PROXY_SECRET);
+      if (got.length === want.length && require('node:crypto').timingSafeEqual(got, want)) { const ip = String(req.headers['x-workhelm-client-ip'] || '').trim(); if (/^[0-9a-f.:]{3,45}$/i.test(ip)) return ip; }
+    }
     return (local ? String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() : '') || direct;
   }
 
@@ -214,13 +223,15 @@ function createPlatform(opts) {
     for (const r of store.prepare("SELECT slug, name, status FROM companies WHERE status NOT IN ('deleted') ORDER BY name").all()) {
       const app = tenantApp(r.slug);
       if (!app) continue;
-      const staff = app.db.prepare('SELECT 1 FROM users WHERE email = ? AND active = 1').get(e);
+      // only places the person actually joined: an invite someone else sent doesn't list (or reset) anything
+      const staff = app.db.prepare('SELECT 1 FROM users WHERE email = ? AND active = 1 AND NOT (invited_at IS NOT NULL AND joined_at IS NULL)').get(e);
       const client = !staff && app.db.prepare('SELECT 1 FROM client_users cu JOIN clients c ON c.id = cu.client_id WHERE cu.email = ? AND cu.active = 1 AND c.archived = 0').get(e);
       if (!staff && !client) continue;
       const last = staff ? (app.db.prepare('SELECT MAX(s.last_used_at) AS t FROM sessions s JOIN users u ON u.id = s.user_id WHERE u.email = ?').get(e) || {}).t : null;
-      out.push({ slug: r.slug, name: r.name, address: hostOf(r.slug), url: urlOf(r.slug), kind: staff ? 'staff' : 'client', last_used_at: last || null });
+      out.push({ slug: r.slug, name: r.name, address: hostOf(r.slug), url: urlOf(r.slug), kind: staff ? 'staff' : 'client', _t: last || '' });
     }
-    return out;
+    // the one used most recently first; when someone last signed in stays private
+    return out.sort((a, b) => (a._t < b._t ? 1 : a._t > b._t ? -1 : 0)).map(({ _t, ...c }) => c);
   }
 
   // ---------------- sign-up ----------------
@@ -459,9 +470,19 @@ function createPlatform(opts) {
     if (s.cancel_at_period_end && end) setRow(slug, { delete_after: iso(end * 1000 + P.KEEP_DAYS * DAY) });
     return { slug, s };
   }
+  // An event counts as handled only once everything it changes is done: if anything fails, Stripe is
+  // answered with an error and sends it again, and the retry does the work instead of being skipped.
+  const inFlight = new Set();
   async function onStripeEvent(ev) {
-    if (store.prepare('SELECT 1 FROM stripe_events WHERE id = ?').get(ev.id)) return { duplicate: true };
-    store.prepare('INSERT INTO stripe_events (id, type, at) VALUES (?,?,?)').run(ev.id, ev.type, iso());
+    if (store.prepare('SELECT 1 FROM stripe_events WHERE id = ?').get(ev.id) || inFlight.has(ev.id)) return { duplicate: true };
+    inFlight.add(ev.id);
+    try {
+      const out = await handleStripeEvent(ev);
+      store.prepare('INSERT OR IGNORE INTO stripe_events (id, type, at) VALUES (?,?,?)').run(ev.id, ev.type, iso());
+      return out;
+    } finally { inFlight.delete(ev.id); }
+  }
+  async function handleStripeEvent(ev) {
     const o = ev.data && ev.data.object;
     if (!o) return {};
     if (ev.type === 'checkout.session.completed' && o.subscription) {
@@ -486,6 +507,9 @@ function createPlatform(opts) {
       const desc = line ? String(line.description || '').slice(0, 200) : `${P.PLANS[r.plan].name}`;
       const paid = ev.type === 'invoice.paid';
       if (paid && !o.amount_paid && o.billing_reason === 'subscription_create') { if (o.subscription) await syncSubscription(o.subscription); return {}; } // the free part of a trial: nothing was charged
+      // Stripe's events can arrive out of order: a failure for an invoice already recorded as paid is old news
+      const before = store.prepare('SELECT status FROM payments WHERE stripe_invoice = ?').get(o.id);
+      if (!paid && before && before.status === 'paid') return { ok: true, stale: true };
       store.prepare(`INSERT INTO payments (slug, at, amount_cents, currency, status, description, seats, period_start, period_end, stripe_invoice, receipt_url, pdf_url, next_try_at, failure)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(stripe_invoice) DO UPDATE SET status = excluded.status, at = excluded.at, next_try_at = excluded.next_try_at, failure = excluded.failure, receipt_url = excluded.receipt_url, pdf_url = excluded.pdf_url`)
         .run(slug, iso((o.status_transitions && o.status_transitions.paid_at ? o.status_transitions.paid_at * 1000 : now())), paid ? o.amount_paid : o.amount_due, o.currency || 'usd', paid ? 'paid' : 'failed', desc, line ? line.quantity : null,
@@ -494,7 +518,12 @@ function createPlatform(opts) {
       if (o.subscription) await syncSubscription(o.subscription);
       const card = row(slug).card_last4 ? `${(row(slug).card_brand || 'card').replace(/^\w/, (c) => c.toUpperCase())} ending ${row(slug).card_last4}` : null;
       if (paid) {
-        markActive(slug, 'Payment received');
+        // a paid invoice turns the account back on only while there is a live subscription to keep paying
+        // for it (or none at all: billed by hand), and never reopens an account the owner closed
+        const now2 = row(slug);
+        const live = !now2.stripe_subscription || ['active', 'trialing', 'past_due'].includes(now2.stripe_status);
+        if (live && !now2.closed_at && now2.status !== 'closed') markActive(slug, 'Payment received');
+        else event(slug, 'payment', 'Paid an invoice of a subscription that has ended: the account stays as it is');
         await mailer.send('receipt', r.owner_email, { company: r.name, amount: o.amount_paid, currency: o.currency || 'usd', description: desc, card, pdf: o.invoice_pdf || o.hosted_invoice_url || null, url: urlOf(slug) }, slug);
       } else {
         const fresh = row(slug);
@@ -596,8 +625,14 @@ function createPlatform(opts) {
   on('GET', '/api/platform/config', () => ({ base_domain: base, apex: apexUrl, trial_days: P.TRIAL_DAYS, countries: COUNTRIES.map((c) => ({ code: c.code, name: c.name, tz: c.tz, money: c.money, currency: c.currency, holidays: !!c.holidays })), plans: P.ORDER.map((k) => ({ id: k, name: P.PLANS[k].name, blurb: P.PLANS[k].blurb, year_cents: P.seatCents(k, 'year'), month_cents: P.seatCents(k, 'month') })), mail: mailer.configured, payments: stripe.ready }));
   on('GET', '/api/platform/legacy', () => ({ url: defaultSlug ? urlOf(defaultSlug) : null }));
 
+  // Without a mail server the code is shown on screen, for trying Staffwarden out on a laptop. On a live
+  // server (NODE_ENV=production) sign-up waits until mail works: the code proves the email is yours.
+  const showCodes = opts.showCodes ?? process.env.NODE_ENV !== 'production';
+  const needMail = () => need(mailer.configured || showCodes, 503, 'Sign-up opens once this server can send email');
+  const codeOut = (sent) => (mailer.configured || !showCodes ? {} : { dev_code: sent.code });
   on('POST', '/api/platform/signup/start', async ({ req, body }) => {
     limit(`su:${ipOf(req)}`, 8, 3600000);
+    needMail();
     const name = str(body.name, 'name', 100).trim();
     need(name.length >= 2, 400, 'Type your name');
     const email = str(body.email, 'email', 200).trim().toLowerCase();
@@ -610,15 +645,16 @@ function createPlatform(opts) {
     const token = newToken();
     const id = Number(store.prepare('INSERT INTO signups (token, email, name, pw_salt, pw_hash, created_at) VALUES (?,?,?,?,?,?)').run(sha(token), email, name, salt, hash, iso()).lastInsertRowid);
     const sent = await sendCode({ id, email }, name);
-    return { token, email, ...(mailer.configured ? {} : { dev_code: sent.code }) };
+    return { token, email, ...codeOut(sent) };
   });
   on('POST', '/api/platform/signup/resend', async ({ req, body }) => {
     limit(`sur:${ipOf(req)}`, 10, 3600000);
     const s = signupOf(body.token);
     need(s && !s.slug, 404, 'Start again: that sign-up ran out');
     need(!s.code_sent_at || now() - Date.parse(s.code_sent_at) > 45000, 429, 'Wait a moment before asking for another code');
+    needMail();
     const sent = await sendCode(s, s.name);
-    return { ok: true, ...(mailer.configured ? {} : { dev_code: sent.code }) };
+    return { ok: true, ...codeOut(sent) };
   });
   on('POST', '/api/platform/signup/verify', ({ body }) => {
     const s = signupOf(body.token);
