@@ -28,7 +28,7 @@ export default {
     const link = (v, label, n) => html`<a class="pfilter" href="#/people${qs({ team: teamF || null, show: v === 'all' ? null : v })}" ${show === v ? raw('aria-current="true"') : ''} data-k="f${v}">${label}<b class="num">${n}</b></a>`;
     return html`
       <div class="page-h"><div><h1>People</h1><p class="sub">${plural(active.length, 'person', 'people')}${counts.working ? ` · ${counts.working} working now` : ''}</p></div>
-        <div class="tools">${owner ? html`<button class="btn" data-act="new-team">New team</button>` : ''}<button class="btn primary" data-act="edit-user" data-id="">${raw('+')} Add person</button></div></div>
+        <div class="tools">${owner ? html`<button class="btn" data-act="new-team">New team</button>` : ''}<button class="btn" data-act="edit-user" data-id="">${raw('+')} Add person</button><button class="btn primary" data-act="invite-many">${icon('mail')} Invite people</button></div></div>
 
       <section class="panel pdefaults"><div class="body">
         <div class="pd-h"><b>Company schedule</b><span class="muted small">Everyone follows this unless their row says otherwise</span>${owner ? html`<a class="small" href="#/settings">Change</a>` : ''}</div>
@@ -399,4 +399,40 @@ actions['invite-again'] = async (el) => {
     if (r.link) showInviteLink(el.dataset.name, r.link); else toast(`A new invite is on its way to ${el.dataset.name.split(' ')[0]}`);
   } catch (e) { toast(errMsg(e), true); }
   el.disabled = false;
+};
+
+// invite many at once: paste their emails, each gets an email to join (or a link to pass on)
+const nameFrom = (email) => email.split('@')[0].split(/[._-]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(' ').slice(0, 100) || email;
+actions['invite-many'] = () => {
+  const m = openModal({
+    title: 'Invite people', submit: 'Send invites', wide: true, sub: 'Each person gets an email to join. They set their own password and see what is tracked before they start.',
+    body: html`<div class="field"><label class="f" for="iv-em">Their work emails</label><textarea id="iv-em" name="emails" rows="5" placeholder="liam@company.com, olivia@company.com" required></textarea>
+        <p class="hint" id="iv-h">Paste a list from a spreadsheet, or type them separated by commas or new lines.</p></div>
+      <div class="field" style="max-width:260px"><label class="f" for="iv-tm">Team</label><select id="iv-tm" name="team_id"><option value="">No team</option>${cache.teams.map((t) => html`<option value="${t.id}">${t.name}</option>`)}</select></div>
+      <div id="iv-out"></div>`,
+    onSubmit: async (fd, form) => {
+      const list = [...new Set(String(fd.get('emails') || '').split(/[\s,;<>"()]+/).map((x) => x.trim().toLowerCase()).filter(Boolean))];
+      const bad = list.filter((e) => !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(e));
+      if (!list.length) throw new Error('Type at least one email');
+      if (bad.length) throw new Error(`${bad.join(', ')} ${bad.length === 1 ? 'doesn’t' : 'don’t'} look complete. Check the part after the @.`);
+      const team_id = fd.get('team_id') ? Number(fd.get('team_id')) : null;
+      const links = [], failed = [];
+      let sent = 0;
+      for (const email of list) {
+        try { const r = await post('/api/users', { email, name: nameFrom(email), role: 'employee', team_id, invite: true }); if (r.invite_link) links.push([email, r.invite_link]); else sent++; }
+        catch (e) { failed.push(`${email}: ${errMsg(e)}`); }
+      }
+      S.refresh();
+      const out = form.querySelector('#iv-out');
+      out.innerHTML = html`${sent ? html`<p class="banner info" style="margin:0 0 10px"><span>${sent === 1 ? '1 invite sent' : `${sent} invites sent`}.</span></p>` : ''}
+        ${links.length ? html`<p class="hint">Email isn’t set up on this server, so send each person their link yourself. Each works once, for 7 days.</p><ul class="iv-links">${links.map(([e, l], i) => html`<li><span>${e}</span><button type="button" class="btn sm" data-iv-copy="${i}">Copy link</button></li>`)}</ul>` : ''}
+        ${failed.length ? html`<p class="err">${failed.join(' ')}</p>` : ''}`.toString();
+      out.querySelectorAll('[data-iv-copy]').forEach((b) => b.addEventListener('click', async () => { try { await navigator.clipboard.writeText(links[Number(b.dataset.ivCopy)][1]); b.textContent = 'Copied'; } catch { b.textContent = 'Copy failed'; } }));
+      form.querySelector('#iv-em').value = failed.map((f) => f.split(':')[0]).join(', ');
+      const btn = form.querySelector('button[type=submit]'); if (!failed.length) btn.style.display = 'none';
+      form.querySelector('[data-close]').textContent = 'Done';
+      return false;
+    },
+  });
+  setTimeout(() => m.form.querySelector('#iv-em').focus(), 30);
 };

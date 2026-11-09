@@ -186,6 +186,7 @@ export const ICON = {
 ICON.wallet = '<path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18v3"/><path d="M4 7.5V17a2 2 0 0 0 2 2h13a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1H6.5A2.5 2.5 0 0 1 4 7.5z"/><circle cx="16" cy="13.5" r="1.2"/>';
 ICON.bank = '<path d="M3 10l9-5 9 5M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/>';
 ICON.client = '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M3 13h18"/>';
+ICON.mail = '<path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/>';
 ICON.file = '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/>';
 ICON.printer = '<path d="M7 9V4h10v5M7 17H5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2"/><rect x="7" y="14" width="10" height="6"/>';
 ICON.download = '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>';
