@@ -127,11 +127,9 @@ function createPayroll(ctx) {
     }
     // unused leave, when someone leaves this month
     if (leaving && leaving >= from && leaving <= to && R.leave_payout) {
-      const year = leaving.slice(0, 4), start = joined && joined > `${year}-01-01` ? joined : `${year}-01-01`;
-      const months = Math.max(0, (Number(leaving.slice(5, 7)) - Number(start.slice(5, 7))) + 1);
-      const accrued = Math.floor((cfg.leaveDaysPerYear * months) / 12), taken = c.approvedLeaveDays(u, year);
-      const left = Math.max(0, accrued - taken);
-      if (left) add({ key: 'leave_payout', label: 'Unused leave paid out', amount: Math.round(dayRate * left), source: `${plural(left, 'day')} earned this year and not taken`, kind: 'leaving' });
+      // paid days don't carry over from month to month, so only the leaving month's unused paid days are owed
+      const left = Math.max(0, Number(cfg.paidLeavePerMonth ?? 1) - c.paidLeaveUsed(u, leaving.slice(0, 7)));
+      if (left) add({ key: 'leave_payout', label: 'Unused leave paid out', amount: Math.round(dayRate * left), source: `${plural(left, 'paid day')} for this month, not taken`, kind: 'leaving' });
     }
     // their first, part month, carried into this one: its base and what attendance took off it
     // (not if that month was already run and paid with them on it)

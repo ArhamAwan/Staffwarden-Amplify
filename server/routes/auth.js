@@ -100,6 +100,8 @@ module.exports = (ctx) => {
     work_days: cfg.workDays,
     weekly_target_min: cfg.weeklyTargetMin,
     leave_days_per_year: cfg.leaveDaysPerYear,
+    paid_leave_per_month: cfg.paidLeavePerMonth,
+    no_sandwich_leave: cfg.noSandwichLeave !== false,
     no_signal_min: cfg.noSignalMin,
     stale_min: cfg.staleMin,
     employees_can_delete_shots: !!cfg.employeesCanDeleteShots,

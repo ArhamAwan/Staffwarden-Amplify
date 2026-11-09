@@ -261,7 +261,7 @@ export const mePage = {
       { label: 'On-time streak', value: String(k.on_time_streak), unit: k.on_time_streak === 1 ? 'day' : 'days', foot: `${pctText(k.punctuality_30)} on time in 30 days` },
       { label: 'Attendance', value: pctText(k.attendance_30), tone: toneFor(k.attendance_30, 70, 90), foot: 'Last 30 days' },
       { label: 'Task accuracy', value: pctText(k.tasks.accuracy_pct), tone: toneFor(k.tasks.accuracy_pct, 60, 85), foot: `Approved first time, 30 days · ${k.tasks.done_30} done` },
-      { label: 'Time off left', value: String(k.leave_left), unit: 'days', foot: `${k.leave_taken} of ${k.leave_allowance} used this year` },
+      { label: 'Paid time off', value: String(k.leave_left), unit: k.leave_left === 1 ? 'day left' : 'days left', foot: `${k.leave_taken} of ${k.leave_allowance} used this month · unpaid any time` },
     ];
     const god = fun && isToday;
     return html`

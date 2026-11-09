@@ -99,15 +99,16 @@ test('people can switch categories off; managers see team alerts in their settin
   assert.equal((await env.api('PUT', '/api/me/notify-prefs', { token: T('eve'), body: { categories: { nope: true } } })).status, 400);
 });
 
-test('time off: managers hear about requests, the person hears the decision', async () => {
+test('time off: the owner hears about requests (not managers), the person hears the decision', async () => {
   const { ok } = env;
-  const r = await ok('POST', '/api/timeoff', { token: T('dan'), body: { kind: 'vacation', start_day: '2026-11-10', end_day: '2026-11-12', note: 'Family wedding' } });
-  const m = (await inbox('mona')).items[0];
+  const r = await ok('POST', '/api/timeoff', { token: T('dan'), body: { kind: 'paid', start_day: '2026-11-11', end_day: '2026-11-11', note: 'Family wedding' } });
+  const m = (await inbox('owner')).items[0];
   assert.equal(m.kind, 'timeoff_request');
-  assert.match(m.body, /Vacation, Tue, Nov 10 to Thu, Nov 12: Family wedding/);
-  await ok('POST', `/api/timeoff/${r.id}/decision`, { token: T('mona'), body: { approve: false, note: 'Release week, can we move it?' } });
+  assert.match(m.body, /Paid, Wed, Nov 11: Family wedding/);
+  assert.ok(!(await kinds('mona')).includes('timeoff_request'), 'managers are not asked: only the owner decides');
+  await ok('POST', `/api/timeoff/${r.id}/decision`, { token: T('owner'), body: { approve: false, note: 'Release week, can we move it?' } });
   const d = (await inbox('dan')).items[0];
-  assert.equal(d.title, 'Mona declined your time off');
+  assert.equal(d.title, 'Owner declined your time off');
   assert.match(d.body, /Release week/);
 });
 

@@ -423,6 +423,7 @@ function createCalc(ctx) {
     }
     const year = day.slice(0, 4);
     const leaveTaken = approvedLeaveDays(u, year);
+    const paidMonth = paidLeaveUsed(u, day.slice(0, 7));
     const pending = db.prepare("SELECT COUNT(*) n FROM leave_requests WHERE user_id = ? AND status = 'pending'").get(u.id).n;
     const dailyTarget = dailyTargetMin(u, day) * 60;
 
@@ -437,7 +438,7 @@ function createCalc(ctx) {
         attendance_30: pct(present, expected), punctuality_30: pct(present - late, present), on_time_streak: streak,
         avg_worked_day_secs: workedDays ? Math.round(totalWorked / workedDays) : 0,
         tasks: taskKpis([u], day),
-        leave_taken: leaveTaken, leave_allowance: cfg.leaveDaysPerYear, leave_left: Math.max(0, cfg.leaveDaysPerYear - leaveTaken), pending_timeoff: pending,
+        leave_taken: paidMonth, leave_allowance: cfg.paidLeavePerMonth ?? 1, leave_left: Math.max(0, (cfg.paidLeavePerMonth ?? 1) - paidMonth), leave_period: 'month', leave_taken_year: leaveTaken, pending_timeoff: pending,
       },
       trend, today: { segs: m.segs, breaks: m.breaks, first_start: m.first_start, last_end: m.last_end, tz_offset_min: tzOn(u, day), day_start_min: dayStart(u) },
     };
@@ -463,6 +464,33 @@ function createCalc(ctx) {
       }
     }
     return n;
+  }
+
+  // ---------- time off as the company runs it ----------
+  // the days someone would actually be off: their working days, not company holidays
+  function leaveWorkDays(u, from, to) {
+    const wd = workDaySet(u);
+    const hol = new Set(db.prepare('SELECT day FROM holidays WHERE day >= ? AND day <= ?').all(from, to).map((h) => h.day));
+    return T.eachDay(from, to).filter((d) => wd.has(T.dow(d)) && !hol.has(d));
+  }
+  // a day off next to a weekend or a holiday (a Friday or a Monday, the day before Eid): only in an emergency
+  function sandwichDays(u, from, to) {
+    const wd = workDaySet(u);
+    const lo = T.addDays(from, -1), hi = T.addDays(to, 1);
+    const hol = new Set(db.prepare('SELECT day FROM holidays WHERE day >= ? AND day <= ?').all(lo, hi).map((h) => h.day));
+    const off = (d) => !wd.has(T.dow(d)) || hol.has(d);
+    return T.eachDay(from, to).filter((d) => !off(d) && (off(T.addDays(d, -1)) || off(T.addDays(d, 1))));
+  }
+  // paid days used in a month (YYYY-MM): approved, and if asked, waiting too. Every kind but unpaid is paid.
+  function paidLeaveUsed(u, month, { pending = false, except = null } = {}) {
+    const first = `${month}-01`, end = `${month}-${String(new Date(Date.UTC(+month.slice(0, 4), +month.slice(5, 7), 0)).getUTCDate()).padStart(2, '0')}`;
+    const rows = db.prepare(`SELECT id, start_day, end_day FROM leave_requests WHERE user_id = ? AND kind != 'unpaid' AND status IN (${pending ? "'approved','pending'" : "'approved'"}) AND end_day >= ? AND start_day <= ?`).all(u.id, first, end);
+    const seen = new Set();
+    for (const r of rows) {
+      if (except && r.id === except) continue;
+      for (const d of leaveWorkDays(u, r.start_day < first ? first : r.start_day, r.end_day > end ? end : r.end_day)) seen.add(d);
+    }
+    return seen.size;
   }
 
   // ---------- timesheets / attendance grid / reports ----------
@@ -524,7 +552,7 @@ function createCalc(ctx) {
     })).sort((a, b) => (group === 'day' ? a.key.localeCompare(b.key) : b.worked_secs - a.worked_secs));
   }
 
-  return { userTz, zoneOf, tzOn, companyTz, companyDayTz, companyToday, dayTz, dayStart, relMin, breakOf, dayHours, hoursOn, shiftLenMin, shiftStartMin, shiftEndMin, workDaySet, weeklyTargetMin, dailyTargetMin, todayOf, computeDay, attendanceFor, loadCalendar, liveStates, makeRange, teamDashboard, myDashboard, grid, report, approvedLeaveDays, taskMetrics };
+  return { userTz, zoneOf, tzOn, companyTz, companyDayTz, companyToday, dayTz, dayStart, relMin, breakOf, dayHours, hoursOn, shiftLenMin, shiftStartMin, shiftEndMin, workDaySet, weeklyTargetMin, dailyTargetMin, todayOf, computeDay, attendanceFor, loadCalendar, liveStates, makeRange, teamDashboard, myDashboard, grid, report, approvedLeaveDays, leaveWorkDays, sandwichDays, paidLeaveUsed, taskMetrics };
 }
 
 module.exports = { createCalc };

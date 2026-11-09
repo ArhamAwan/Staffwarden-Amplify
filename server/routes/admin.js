@@ -27,6 +27,8 @@ module.exports = (ctx) => {
     work_days: ['workDays', (v) => { need(typeof v === 'string' && /^[0-6](,[0-6])*$/.test(v), 400, 'work_days must look like 1,2,3,4,5'); return v; }],
     weekly_target_min: ['weeklyTargetMin', (v) => int(v, 'weekly_target_min', 0, 6000)],
     leave_days_per_year: ['leaveDaysPerYear', (v) => int(v, 'leave_days_per_year', 0, 365)],
+    paid_leave_per_month: ['paidLeavePerMonth', (v) => int(v, 'paid_leave_per_month', 0, 31)],
+    no_sandwich_leave: ['noSandwichLeave', (v) => B(v, 'no_sandwich_leave')],
     no_signal_min: ['noSignalMin', (v) => int(v, 'no_signal_min', 1, 60)],
     stale_min: ['staleMin', (v) => int(v, 'stale_min', 5, 240)],
     employees_can_delete_shots: ['employeesCanDeleteShots', (v) => B(v, 'employees_can_delete_shots')],

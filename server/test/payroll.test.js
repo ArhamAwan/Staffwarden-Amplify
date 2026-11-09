@@ -210,10 +210,11 @@ test('documents, joining steps and time off for HR', async () => {
   assert.ok(p.join_steps.find((s) => s.key === 'bank').done);
   const st = await ok('PUT', `/api/hr/people/${sara.id}/steps`, { token: tokens.fatima, body: { flow: 'join', step: 'checkin', done: true } });
   assert.ok(st.find((s) => s.key === 'checkin').done);
-  // HR decides anyone's time off
-  const tr = await ok('POST', '/api/timeoff', { token: tokens.hamza, body: { kind: 'vacation', start_day: '2026-11-24', end_day: '2026-11-26' } });
+  // HR sees everyone's time off; only the owner decides it
+  const tr = await ok('POST', '/api/timeoff', { token: tokens.hamza, body: { kind: 'unpaid', start_day: '2026-11-24', end_day: '2026-11-26' } });
   assert.ok((await ok('GET', '/api/timeoff?status=pending', { token: tokens.fatima })).some((r) => r.id === tr.id));
-  await ok('POST', `/api/timeoff/${tr.id}/decision`, { token: tokens.fatima, body: { approve: true } });
+  assert.equal((await api('POST', `/api/timeoff/${tr.id}/decision`, { token: tokens.fatima, body: { approve: true } })).status, 403);
+  await ok('POST', `/api/timeoff/${tr.id}/decision`, { token: tokens.owner, body: { approve: true } });
   // viewing someone's record is in the audit log
   assert.ok((await ok('GET', '/api/audit?limit=50', { token: tokens.owner })).some((a) => a.action === 'hr.viewed' && a.actor_name === 'Fatima Aziz'));
 });

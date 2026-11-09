@@ -3,7 +3,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 // Schema v2. Fresh installs and v1 databases go through the same path: the v1 tables are created
 // if missing, then migrate() adds everything v2 needs without touching existing rows.
-const SCHEMA_VERSION = 34;
+const SCHEMA_VERSION = 35;
 
 function hasColumn(db, table, col) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
@@ -83,6 +83,7 @@ function openDb(file = ':memory:') {
 function migrate(db) {
   const version = db.prepare('PRAGMA user_version').get().user_version;
   if (version >= SCHEMA_VERSION) return;
+  if (version === 34) return migrateV35(db);
   if (version === 33) return migrateV34(db);
   if (version === 32) return migrateV33(db);
   if (version === 31) return migrateV32(db);
@@ -1248,6 +1249,23 @@ function migrateV34(db) {
       id INTEGER PRIMARY KEY AUTOINCREMENT, note_id INTEGER NOT NULL REFERENCES pnotes(id) ON DELETE CASCADE,
       user_id INTEGER, name TEXT NOT NULL, mime TEXT, size INTEGER NOT NULL, file TEXT NOT NULL, created_at TEXT NOT NULL)`);
     db.exec(`CREATE TABLE IF NOT EXISTS note_mentions (note_id INTEGER NOT NULL REFERENCES pnotes(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, by_id INTEGER, created_at TEXT NOT NULL, PRIMARY KEY (note_id, user_id))`);
+    db.exec('PRAGMA user_version = 34');
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  migrateV35(db);
+}
+
+// v35: time off as the company runs it: an emergency flag (leave next to a weekend or holiday is only
+// allowed in an emergency) and which days of a request fell next to one
+function migrateV35(db) {
+  db.exec('BEGIN');
+  try {
+    const cols = db.prepare('PRAGMA table_info(leave_requests)').all().map((c) => c.name);
+    if (!cols.includes('emergency')) db.exec('ALTER TABLE leave_requests ADD COLUMN emergency INTEGER NOT NULL DEFAULT 0');
+    if (!cols.includes('sandwich')) db.exec('ALTER TABLE leave_requests ADD COLUMN sandwich TEXT');
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {

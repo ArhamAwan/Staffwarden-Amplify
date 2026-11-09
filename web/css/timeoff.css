@@ -1,0 +1,23 @@
+/* themeable: violet colours are --v-* variables */
+/* time off: the company's rules at the top, and a form that says what a request means as you fill it in */
+.lv-rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin: 0 0 18px; }
+.lv-rules > div { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255,255,255,.035); }
+.lv-rules b { font-size: 14px; color: var(--ink); }
+.lv-rules span { font-size: 13px; line-height: 1.45; color: var(--muted); }
+.lv-pay { border: 0; margin: 0 0 14px; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.lv-pay legend { padding: 0; margin-bottom: 6px; }
+.lv-opt, .lv-em { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,.035); cursor: pointer; }
+.lv-opt:has(input:checked) { border-color: rgb(var(--v-9b7bff, 155 123 255) / .75); background: rgb(var(--v-6b55d6, 107 85 214) / .2); }
+.lv-opt input, .lv-em input { margin-top: 3px; flex: none; width: 16px; height: 16px; accent-color: rgb(var(--v-7a5fe4, 122 95 228)); }
+.lv-opt span, .lv-em span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.lv-opt b, .lv-em b { font-size: 14px; color: var(--ink); }
+.lv-opt small, .lv-em small { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.lv-check { display: flex; flex-direction: column; gap: 8px; margin: 0 0 12px; }
+.lv-check:empty { display: none; }
+.lv-msg { margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 13.5px; line-height: 1.45; background: rgba(255,255,255,.05); color: var(--ink-2); }
+.lv-msg.warn { background: rgba(247,181,68,.12); color: #FFD58A; }
+.lv-msg.bad { background: rgba(255,107,91,.13); color: #FFB3A8; }
+.lv-em { margin: 0 0 12px; border-color: rgba(247,181,68,.4); }
+.lv-em:has(input:checked) { background: rgba(247,181,68,.1); }
+.lv-em[hidden] { display: none; }
+@media (max-width: 760px) { .lv-rules { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } .lv-rules > div { padding: 10px 12px; } .lv-rules span { font-size: 12px; } .lv-pay { grid-template-columns: minmax(0, 1fr); } .lv-opt, .lv-em { min-height: 44px; } }

@@ -1,7 +1,8 @@
 'use strict';
 const { need, int, optStr } = require('../lib/http');
 
-const KINDS = ['vacation', 'sick', 'personal', 'unpaid', 'other'];
+// paid or unpaid; the older kinds (vacation, sick, personal, other) still read as paid
+const KINDS = ['paid', 'unpaid', 'vacation', 'sick', 'personal', 'other'];
 
 module.exports = (ctx) => {
   const { db, route, calc, emit, audit, nowIso, canSee, isManager, isHR, needManager, needOwner, visibleUsers, targetUser, T, clockNow } = ctx;
@@ -14,7 +15,8 @@ module.exports = (ctx) => {
     const hol = new Set(db.prepare('SELECT day FROM holidays WHERE day >= ? AND day <= ?').all(r.start_day, r.end_day).map((h) => h.day));
     const days = T.eachDay(r.start_day, r.end_day).filter((d) => wd.has(T.dow(d)) && !hol.has(d)).length;
     const decider = r.decided_by ? (db.prepare('SELECT name FROM users WHERE id = ?').get(r.decided_by) || {}).name : null;
-    return { id: r.id, user_id: r.user_id, user_name: u.name, kind: r.kind, start_day: r.start_day, end_day: r.end_day, working_days: days, note: r.note, status: r.status, decided_by: decider, decided_at: r.decided_at, decision_note: r.decision_note, created_at: r.created_at };
+    return { id: r.id, user_id: r.user_id, user_name: u.name, kind: r.kind, paid: r.kind !== 'unpaid', start_day: r.start_day, end_day: r.end_day, working_days: days, note: r.note, status: r.status, decided_by: decider, decided_at: r.decided_at, decision_note: r.decision_note, created_at: r.created_at,
+      emergency: !!r.emergency, sandwich_days: r.sandwich ? r.sandwich.split(',') : [] };
   }
 
   route('GET', '/api/timeoff', ({ user, query }) => {
@@ -30,33 +32,82 @@ module.exports = (ctx) => {
     return db.prepare(`SELECT * FROM leave_requests WHERE ${where.join(' AND ')} ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, start_day DESC LIMIT 500`).all(...args).map(out);
   });
 
-  route('POST', '/api/timeoff', ({ user, body }) => {
-    const target = body.user_id != null && Number(body.user_id) !== user.id ? (isHR(user) && !isManager(user) ? (db.prepare('SELECT * FROM users WHERE id = ?').get(Number(body.user_id)) || need(false, 404, 'User not found')) : targetUser(user, body.user_id)) : user;
-    const kind = KINDS.includes(body.kind) ? body.kind : 'vacation';
+  // ---- the company's rules: paid days a month (no carrying over), unpaid as needed, and no leave next to
+  // a weekend or holiday unless it is an emergency. Only the owner (the CEO) approves. ----
+  const perMonth = () => Math.max(0, Number(ctx.cfg.paidLeavePerMonth ?? 1));
+  const owners = () => db.prepare("SELECT id, name FROM users WHERE active = 1 AND role = 'owner'").all();
+  const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const monthName = (m) => MON[Number(m.slice(5, 7)) - 1];
+  function whoFor(user, id) {
+    if (id == null || Number(id) === user.id) return user;
+    if (isHR(user) && !isManager(user)) return db.prepare('SELECT * FROM users WHERE id = ?').get(Number(id)) || need(false, 404, 'User not found');
+    return targetUser(user, id);
+  }
+  // what a request would mean, before it is sent: the days, the paid days left each month, the days next to a weekend
+  function weigh(target, body, exceptId = null) {
     need(T.isDay(body.start_day) && T.isDay(body.end_day), 400, 'Choose a start and an end date');
     need(body.start_day <= body.end_day, 400, 'The end date cannot be before the start date');
     need(T.daysBetween(body.start_day, body.end_day) < 60, 400, 'Time off can be at most 60 days at once');
+    const kind = KINDS.includes(body.kind) ? body.kind : 'paid';
+    const paid = kind !== 'unpaid';
+    const days = calc.leaveWorkDays(target, body.start_day, body.end_day);
+    const months = [...new Set(days.map((d) => d.slice(0, 7)))].map((m) => {
+      const used = calc.paidLeaveUsed(target, m, { pending: true, except: exceptId });
+      return { month: m, name: monthName(m), allowance: perMonth(), used, left: Math.max(0, perMonth() - used), asked: days.filter((d) => d.startsWith(m)).length };
+    });
+    const over = paid ? months.filter((m) => m.asked > m.left) : [];
+    const sandwich = ctx.cfg.noSandwichLeave === false ? [] : calc.sandwichDays(target, body.start_day, body.end_day);
+    return { kind, paid, days, working_days: days.length, months, over, sandwich_days: sandwich, needs_emergency: sandwich.length > 0, allowance: perMonth() };
+  }
+  const paidTooMany = (w) => {
+    const m = w.over[0];
+    if (!m.left) return `${plural(m.allowance, 'paid day')} a month, and ${m.name}’s ${m.allowance === 1 ? 'is' : 'are'} already used or asked for. Ask for these days as unpaid.`;
+    return `Only ${plural(m.left, 'paid day')} left in ${m.name}. Ask for ${m.left === 1 ? 'one day' : `${m.left} days`} as paid and the rest as unpaid.`;
+  };
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
+  route('POST', '/api/timeoff/check', ({ user, body }) => {
+    const target = whoFor(user, body.user_id);
+    const w = weigh(target, body);
+    return { ...w, problem: !w.working_days ? 'Those dates are all weekends or holidays.' : w.over.length ? paidTooMany(w) : null };
+  });
+
+  route('POST', '/api/timeoff', ({ user, body }) => {
+    const target = whoFor(user, body.user_id);
+    const w = weigh(target, body);
+    need(w.working_days > 0, 400, 'Those dates are all weekends or holidays, so there is nothing to take off');
     const clash = db.prepare("SELECT 1 FROM leave_requests WHERE user_id = ? AND status IN ('pending','approved') AND start_day <= ? AND end_day >= ?").get(target.id, body.end_day, body.start_day);
     need(!clash, 409, 'There is already a time-off request for some of those days');
-    // A manager recording time off for someone else, or the owner for themselves, needs no approval.
-    const auto = (target.id !== user.id && (isManager(user) || isHR(user))) || user.role === 'owner';
-    const id = Number(db.prepare(`INSERT INTO leave_requests (user_id, kind, start_day, end_day, note, status, decided_by, decided_at, created_at)
-      VALUES (?,?,?,?,?,?,?,?,?)`).run(target.id, kind, body.start_day, body.end_day, optStr(body.note, 'note', 500), auto ? 'approved' : 'pending', auto ? user.id : null, auto ? nowIso() : null, nowIso()).lastInsertRowid);
-    audit(user, auto ? 'timeoff.recorded' : 'timeoff.requested', target.id, `${kind} ${body.start_day} to ${body.end_day}`);
+    need(!w.over.length, 409, w.over.length ? paidTooMany(w) : '');
+    const note = optStr(body.note, 'note', 500);
+    const emergency = !!body.emergency && w.needs_emergency;
+    if (w.needs_emergency) {
+      need(!!body.emergency, 409, `Time off next to a weekend or a holiday (${w.sandwich_days.map((d) => T.human(d)).join(', ')}) isn’t allowed unless it’s an emergency. If it is, say so and tell us what happened.`);
+      need(note && note.trim().length >= 8, 400, 'Tell us what the emergency is, in a few words');
+    }
+    // Only the owner approves. The owner's own time off, or time off the owner records, needs no approval.
+    const auto = user.role === 'owner';
+    const id = Number(db.prepare(`INSERT INTO leave_requests (user_id, kind, start_day, end_day, note, status, decided_by, decided_at, created_at, emergency, sandwich)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(target.id, w.kind, body.start_day, body.end_day, note, auto ? 'approved' : 'pending', auto ? user.id : null, auto ? nowIso() : null, nowIso(), emergency ? 1 : 0, w.sandwich_days.length ? w.sandwich_days.join(',') : null).lastInsertRowid);
+    audit(user, auto ? 'timeoff.recorded' : 'timeoff.requested', target.id, `${w.kind} ${body.start_day} to ${body.end_day}${emergency ? ' (emergency)' : ''}`);
     const span = body.start_day === body.end_day ? T.human(body.start_day) : `${T.human(body.start_day)} to ${T.human(body.end_day)}`;
-    if (!auto) ctx.notify.notify(ctx.managersOf(target.id), { kind: 'timeoff_request', title: `${target.name} asked for time off`, body: `${kind[0].toUpperCase() + kind.slice(1)}, ${span}${body.note ? `: ${String(body.note).slice(0, 120)}` : ''}`, link: '#/timeoff', actor: user });
-    else if (target.id !== user.id) ctx.notify.notify(target.id, { kind: 'timeoff_decision', title: `${user.name} recorded time off for you`, body: `${kind[0].toUpperCase() + kind.slice(1)}, ${span}`, link: '#/timeoff', actor: user });
+    const what = `${w.paid ? 'Paid' : 'Unpaid'}, ${span}${emergency ? '. Emergency' : ''}${note ? `: ${String(note).slice(0, 120)}` : ''}`;
+    if (!auto) ctx.notify.notify(owners().map((o) => o.id).filter((id2) => id2 !== target.id), { kind: 'timeoff_request', title: target.id === user.id ? `${target.name} asked for time off` : `${user.name} asked for time off for ${target.name}`, body: what, link: '#/timeoff', actor: user });
+    else if (target.id !== user.id) ctx.notify.notify(target.id, { kind: 'timeoff_decision', title: `${user.name} recorded time off for you`, body: what, link: '#/timeoff', actor: user });
     emit('timeoff', target.id);
     return out(db.prepare('SELECT * FROM leave_requests WHERE id = ?').get(id));
   });
 
   route('POST', '/api/timeoff/:id/decision', ({ user, params, body }) => {
-    need(isManager(user) || isHR(user), 403, 'Not allowed');
+    need(user.role === 'owner', 403, `Only ${(owners()[0] || { name: 'the owner' }).name} approves time off`);
     const r = db.prepare('SELECT * FROM leave_requests WHERE id = ?').get(Number(params.id));
-    need(r && (canSee(user, r.user_id) || isHR(user)), 404, 'Request not found');
+    need(r, 404, 'Request not found');
     need(r.status === 'pending', 409, 'That request has already been decided');
-    need(r.user_id !== user.id || user.role === 'owner', 403, 'You cannot approve your own request');
     const approve = !!body.approve;
+    if (approve && r.kind !== 'unpaid') {
+      const w = weigh(db.prepare('SELECT * FROM users WHERE id = ?').get(r.user_id), { start_day: r.start_day, end_day: r.end_day, kind: r.kind }, r.id);
+      need(!w.over.length, 409, w.over.length ? `${w.over[0].name}’s paid ${w.allowance === 1 ? 'day is' : 'days are'} already used. Decline this one, or ask for it as unpaid.` : '');
+    }
     db.prepare('UPDATE leave_requests SET status = ?, decided_by = ?, decided_at = ?, decision_note = ? WHERE id = ?')
       .run(approve ? 'approved' : 'denied', user.id, nowIso(), optStr(body.note, 'note', 500), r.id);
     audit(user, approve ? 'timeoff.approved' : 'timeoff.denied', r.user_id, `${r.kind} ${r.start_day} to ${r.end_day}`);
@@ -76,12 +127,17 @@ module.exports = (ctx) => {
     return { ok: true };
   });
 
+  // this month's paid days for each person (they don't carry over), and the unpaid days taken
   route('GET', '/api/timeoff/balances', ({ user, query }) => {
-    const year = (query.get('year') || T.localDay(clockNow(), ctx.calc.companyTz()).slice(0, 4));
+    const month = /^\d{4}-\d\d$/.test(query.get('month') || '') ? query.get('month') : T.localDay(clockNow(), ctx.calc.companyTz()).slice(0, 7);
     const users = isHR(user) && !isManager(user) ? everyone().filter((u) => u.active && u.tracks_time) : isManager(user) ? visibleUsers(user, { tracking: true }) : [user];
+    const first = `${month}-01`, last = `${month}-${String(new Date(Date.UTC(+month.slice(0, 4), +month.slice(5, 7), 0)).getUTCDate()).padStart(2, '0')}`;
     return users.map((u) => {
-      const taken = calc.approvedLeaveDays(u, year);
-      return { user_id: u.id, name: u.name, allowance: ctx.cfg.leaveDaysPerYear, taken, left: Math.max(0, ctx.cfg.leaveDaysPerYear - taken), pending: db.prepare("SELECT COUNT(*) n FROM leave_requests WHERE user_id = ? AND status = 'pending'").get(u.id).n };
+      const used = calc.paidLeaveUsed(u, month), asked = calc.paidLeaveUsed(u, month, { pending: true }) - used;
+      const unpaid = db.prepare("SELECT start_day, end_day FROM leave_requests WHERE user_id = ? AND kind = 'unpaid' AND status = 'approved' AND end_day >= ? AND start_day <= ?").all(u.id, first, last)
+        .reduce((n, r) => n + calc.leaveWorkDays(u, r.start_day < first ? first : r.start_day, r.end_day > last ? last : r.end_day).length, 0);
+      return { user_id: u.id, name: u.name, month, allowance: perMonth(), taken: used, asked, left: Math.max(0, perMonth() - used - asked), unpaid,
+        pending: db.prepare("SELECT COUNT(*) n FROM leave_requests WHERE user_id = ? AND status = 'pending'").get(u.id).n };
     });
   });
 

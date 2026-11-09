@@ -124,7 +124,7 @@ export const avColor = (id) => AV[Math.abs(Number(id) || 0) % AV.length];
 export const REASON = { break: 'Break', dinner: 'Dinner', lunch: 'Lunch', prayer: 'Prayer', personal: 'Personal', other: 'Other', idle: 'Idle (no activity)' };
 export const reasonLabel = (r) => REASON[r] || 'Break';
 export const STOP = { manual: 'Stopped by them', idle: 'Stopped after idle time', quit: 'App was closed', lost: 'Lost contact; closed automatically' };
-export const LEAVE_KIND = { vacation: 'Vacation', sick: 'Sick leave', personal: 'Personal', unpaid: 'Unpaid', other: 'Other' };
+export const LEAVE_KIND = { paid: 'Paid', unpaid: 'Unpaid', vacation: 'Paid (vacation)', sick: 'Paid (sick)', personal: 'Paid (personal)', other: 'Paid' };
 export const ATT = { present: 'Present', late: 'Late', absent: 'Absent', leave: 'On leave', holiday: 'Holiday', off: 'Day off', before: 'Before they joined', upcoming: 'Not started yet', not_started: 'Not started' };
 
 // Staffwarden's mark: a ship's wheel. Drawn in currentColor so it can sit on any background.

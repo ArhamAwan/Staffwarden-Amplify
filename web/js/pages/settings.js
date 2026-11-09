@@ -108,7 +108,8 @@ export const settingsPage = {
             ${row('Working days', '', html`<div class="days" role="group" aria-label="Working days">${DAYS.map(([v, n]) => html`<label><input type="checkbox" name="wd" value="${v}" ${wd.has(v) ? raw('checked') : ''}><span>${n}</span></label>`)}</div>`, { wide: true })}
             ${row('Grace period', 'Starting this late still counts as on time.', num('s-gr', 'grace_min', s.grace_min, 0, 120, 'min'), { id: 's-gr' })}
             ${row('Weekly target', 'Hours each person aims for in a week.', num('s-wt', 'weekly_h', s.weekly_target_min / 60, 0, 100, 'hours', 0.5), { id: 's-wt' })}
-            ${row('Time off per year', 'Paid days off each person gets.', num('s-lv', 'leave_days_per_year', s.leave_days_per_year, 0, 365, 'days'), { id: 's-lv' })}
+            ${row('Paid time off', 'Paid days each person gets every month. Unused days don’t carry over; unpaid days are always allowed.', num('s-lv', 'paid_leave_per_month', s.paid_leave_per_month ?? 1, 0, 31, 'a month'), { id: 's-lv' })}
+            ${row('Not next to weekends', 'Time off on a day next to a weekend or a holiday (a Friday or a Monday) is only allowed in an emergency.', sw('no_sandwich_leave', s.no_sandwich_leave !== false, 's-sw'), { id: 's-sw', tog: true })}
             ${row('Time zone', 'The default for everyone. Set each remote person’s own zone on the People page.', html`<select id="s-tz" name="tz">${zoneOptions(s.tz_name || null, { fixed: s.tz_name ? null : s.tz_offset_min })}</select>`, { id: 's-tz' })}`)}
           ${sec('tasks', 'Tasks', '', row('Review before done', 'Assigned tasks go to a manager or the project manager before they count as done. Task accuracy on Performance is the share approved first time.', sw('task_review_required', s.task_review_required !== false, 's-rv'), { id: 's-rv', tog: true }))}
           </div><div class="set-col">
@@ -301,7 +302,7 @@ actions['save-settings'] = async (form) => {
   if (!fd.get('break_start') !== !fd.get('break_end')) { err.textContent = 'Give the break a start and an end, or neither.'; return; }
   const body = {
     shift_start: fd.get('shift_start'), shift_end: fd.get('shift_end'), break_start: fd.get('break_start') || null, break_end: fd.get('break_end') || null, grace_min: n('grace_min'),
-    ...(() => { const v = String(fd.get('tz') || ''); if (v.startsWith('z:')) return { tz_name: v.slice(2), tz_offset_min: zoneOffset(v.slice(2)) }; return {}; })(), weekly_target_min: Math.round(n('weekly_h') * 60), leave_days_per_year: n('leave_days_per_year'),
+    ...(() => { const v = String(fd.get('tz') || ''); if (v.startsWith('z:')) return { tz_name: v.slice(2), tz_offset_min: zoneOffset(v.slice(2)) }; return {}; })(), weekly_target_min: Math.round(n('weekly_h') * 60), paid_leave_per_month: n('paid_leave_per_month'), no_sandwich_leave: !!fd.get('no_sandwich_leave'),
     work_days: wd.join(','), shots_per_10: n('shots_per_10'), idle_limit_min: n('idle_limit_min'), retention_days: n('retention_days'),
     blackout_apps: String(fd.get('blackout_apps') || '').split(',').map((x) => x.trim()).filter(Boolean),
     employees_can_delete_shots: !!fd.get('employees_can_delete_shots'), team_visibility: ['everyone', 'team', 'off'].includes(fd.get('team_visibility')) ? fd.get('team_visibility') : 'everyone', require_latest_app: !!fd.get('require_latest_app'), capture_screens: fd.get('capture_screens') === 'all' ? 'all' : 'active', blur_shots: !!fd.get('blur_shots'), task_review_required: !!fd.get('task_review_required'), no_signal_min: n('no_signal_min'), stale_min: n('stale_min'),

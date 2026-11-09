@@ -64,6 +64,9 @@ function createApp(opts = {}) {
     workDays: opts.workDays || '1,2,3,4,5',
     weeklyTargetMin: opts.weeklyTargetMin ?? 2400,
     leaveDaysPerYear: opts.leaveDaysPerYear ?? 20,
+    // time off: paid days each month (they don't carry over), and leave next to a weekend or holiday only in an emergency
+    paidLeavePerMonth: opts.paidLeavePerMonth ?? 1,
+    noSandwichLeave: opts.noSandwichLeave ?? true,
     retentionDays: opts.retentionDays ?? 60,
     captureIntervalMin: Math.min(60, Math.max(1, Number(opts.captureIntervalMin) || 2)),
     idleLimitMin: Math.min(120, Math.max(1, Number(opts.idleLimitMin) || 10)),

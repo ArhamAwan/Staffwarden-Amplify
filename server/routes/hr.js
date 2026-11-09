@@ -74,7 +74,7 @@ module.exports = (ctx) => {
       out.join_steps = steps(u, 'join');
       out.leave_steps = rec.leaving_on ? steps(u, 'leave') : null;
       const year = calc.companyToday().slice(0, 4);
-      out.leave = { allowance: cfg.leaveDaysPerYear, taken: calc.approvedLeaveDays(u, year), unpaid: db.prepare("SELECT COUNT(*) n FROM leave_requests WHERE user_id = ? AND kind = 'unpaid' AND status = 'approved' AND start_day LIKE ?").get(u.id, `${year}-%`).n };
+      out.leave = { allowance: Number(cfg.paidLeavePerMonth ?? 1) * 12, taken: calc.approvedLeaveDays(u, year), unpaid: db.prepare("SELECT COUNT(*) n FROM leave_requests WHERE user_id = ? AND kind = 'unpaid' AND status = 'approved' AND start_day LIKE ?").get(u.id, `${year}-%`).n };
       out.slips = db.prepare("SELECT p.id, p.net, p.currency, r.period, r.status FROM payslips p JOIN pay_runs r ON r.id = p.run_id WHERE p.user_id = ? AND r.status != 'draft' ORDER BY r.period DESC LIMIT 6").all(u.id).map((s) => ({ ...s, name: P().periodName(s.period) }));
       out.advances = db.prepare('SELECT * FROM advances WHERE user_id = ? ORDER BY id DESC LIMIT 5').all(u.id);
       out.can_edit_pay = !me && ((viewer.role === 'owner' && !viewer.dev_owner) || viewer.id !== u.id || P().rules().hr_own_pay);
