@@ -10,15 +10,16 @@ const BOLD = [278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 3
 
 // text in the PDF's own encoding (WinAnsi): typographic quotes, dashes, the middle dot and bullets are
 // kept as their WinAnsi bytes; anything else outside it becomes a '?'
-const WIN = { '‘': '\x91', '’': '\x92', '“': '\x93', '”': '\x94', '•': '\x95', '–': '\x96', '—': '\x97', '…': '\x85', '·': '\xB7', '×': '\xD7', '\u00A0': ' ', '\u202F': ' ' };
-const WIN_W = { 0x91: 222, 0x92: 222, 0x93: 333, 0x94: 333, 0x95: 350, 0x96: 556, 0x97: 1000, 0x85: 1000, 0xB7: 278, 0xD7: 584 };
+const WIN = { '€': '\x80', '‘': '\x91', '’': '\x92', '“': '\x93', '”': '\x94', '•': '\x95', '–': '\x96', '—': '\x97', '…': '\x85', '·': '\xB7', '×': '\xD7', '\u00A0': ' ', '\u202F': ' ' };
+const WIN_W = { 0x80: 556, 0xA3: 556, 0x91: 222, 0x92: 222, 0x93: 333, 0x94: 333, 0x95: 350, 0x96: 556, 0x97: 1000, 0x85: 1000, 0xB7: 278, 0xD7: 584 };
 function clean(s) {
   return String(s ?? '')
     .replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, '')                       // invisible: zero-width spaces and joiners, soft hyphens
     .replace(/[\u2010-\u2012\u2212\uFE63\uFF0D]/g, '-')                       // hyphens that look like '-' (a name typed on a phone often has one)
     .replace(/[\u2002-\u200A\u202F\u205F\u3000]/g, ' ')                       // other spaces
-    .replace(/[‘’“”•–—…·×\u00A0]/g, (c) => WIN[c])
-    .replace(/[^\x20-\x7E\x85\x91-\x97\xA0-\xFF]/g, (c) => {                  // accents WinAnsi lacks: the plain letter (ā → a)
+    .replace(/[₹₱₺₦]/g, (c) => ({ '₹': 'INR', '₱': 'PHP', '₺': 'TRY', '₦': 'NGN' }[c]))  // currency signs WinAnsi lacks: their code
+    .replace(/[€‘’“”•–—…·×\u00A0]/g, (c) => WIN[c])
+    .replace(/[^\x20-\x7E\x80\x85\x91-\x97\xA0-\xFF]/g, (c) => {                  // accents WinAnsi lacks: the plain letter (ā → a)
       const base = c.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
       return /^[\x20-\x7E]+$/.test(base) ? base : '?';
     });

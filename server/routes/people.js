@@ -14,6 +14,7 @@ module.exports = (ctx) => {
       shots_per_10: u.shots_per_10 ?? null, other_device: !!u.other_device, day_hours: calc.dayHours(u),
       fun_mode: viewer && viewer.role === 'owner' && u.fun_mode && (!u.fun_until || Date.parse(u.fun_until) > ctx.now()) ? u.fun_mode : null,
       effective: { tz_offset_min: calc.userTz(u), tz_name: calc.zoneOf(u), shift_start: u.shift_start || cfg.shiftStart, shift_end: u.shift_end || cfg.shiftEnd, break_start: u.break_start || cfg.breakStart || null, break_end: u.break_end || cfg.breakEnd || null, day_start_min: calc.dayStart(u), work_days: u.work_days || cfg.workDays, weekly_target_min: calc.weeklyTargetMin(u), shots_per_10: ctx.shotPolicy(u).per_10, shots_source: ctx.shotPolicy(u).source },
+      invited: !!u.invited_at && !u.joined_at, invited_at: u.invited_at || null,
       last_seen_at: u.last_seen_at || null, created_at: u.created_at, app_version: u.app_version || null, app_platform: u.app_platform || null,
       manages: u.role === 'manager' ? db.prepare('SELECT team_id FROM manager_teams WHERE user_id = ?').all(u.id).map((r) => r.team_id) : [],
     };
@@ -62,13 +63,16 @@ module.exports = (ctx) => {
     return out;
   }
 
-  route('POST', '/api/users', ({ user, body }) => {
+  route('POST', '/api/users', async ({ user, body }) => {
     needManager(user);
     const email = str(body.email, 'email', 200).toLowerCase();
     need(/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email), 400, 'Enter a valid email address');
     const name = str(body.name, 'name', 100);
-    const password = str(body.password, 'password', 200);
-    const bad = ctx.passwordProblem(password, { email, name });
+    // invited by email: they choose their own password from the link (a random one stands in until then)
+    const invite = !!body.invite;
+    need(!invite || ctx.mail, 400, 'Email isn’t set up on this server. Give them a password instead.');
+    const password = invite ? ctx.newToken() : str(body.password, 'password', 200);
+    const bad = invite ? null : ctx.passwordProblem(password, { email, name });
     need(!bad, 400, bad);
     const role = body.role || 'employee';
     need(['employee', 'manager'].includes(role), 400, 'role must be employee or manager');
@@ -90,8 +94,10 @@ module.exports = (ctx) => {
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(email, name, role, salt, hash, teamId, optStr(body.title, 'title', 100), role === 'employee' ? 1 : (body.tracks_time && user.role === 'owner' ? 1 : 0),
       sched.tz_offset_min ?? null, sched.tz_name ?? null, sched.shift_start ?? null, sched.shift_end ?? null, sched.break_start ?? null, sched.break_end ?? null, sched.work_days ?? null, sched.weekly_target_min ?? null, ctx.nowIso()).lastInsertRowid);
     audit(user, 'user.created', id, `${name} (${role})`);
+    const sent = invite ? await ctx.sendInvite(id, user) : null;
     emit('users', id);
-    return userOut(db.prepare('SELECT * FROM users WHERE id = ?').get(id), user);
+    // when the email couldn't go out, the person who invited them gets the link to pass on themselves
+    return { ...userOut(db.prepare('SELECT * FROM users WHERE id = ?').get(id), user), ...(sent ? { invite_sent: !!sent.sent, ...(sent.sent ? {} : { invite_link: sent.link }) } : {}) };
   });
 
   route('PATCH', '/api/users/:id', ({ user, params, body }) => {

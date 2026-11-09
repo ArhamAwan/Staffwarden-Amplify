@@ -49,9 +49,9 @@
 
     // manager: everyone's state, live
     live: () => `<div class="sc sc-live"><div class="sc-panel">
-      ${row('Ali', '#B45309', [['w', 'Working'], ['b', 'Lunch'], ['w', 'Working']])}
-      ${row('Hina', '#7C3AED', [['b', 'Prayer'], ['w', 'Working'], ['w', 'Working']])}
-      ${row('Omar', '#BE185D', [['o', 'Not started'], ['w', 'Working'], ['i', 'Idle']])}
+      ${row('Liam', '#B45309', [['w', 'Working'], ['b', 'Lunch'], ['w', 'Working']])}
+      ${row('Olivia', '#7C3AED', [['b', 'Break'], ['w', 'Working'], ['w', 'Working']])}
+      ${row('Noah', '#BE185D', [['o', 'Not started'], ['w', 'Working'], ['i', 'Idle']])}
       </div><div class="sc-live-pill"><i></i>Live</div></div>`,
 
     // attendance works itself out
@@ -59,7 +59,7 @@
       <div class="sc-legend"><span><b class="p"></b>On time</span><span><b class="l"></b>Late</span><span><b class="v"></b>Time off</span></div></div>`,
 
     // set up: people, shifts, time zones
-    setup: () => `<div class="sc sc-setup">${[['Karachi', 'UTC+5', '9:00 to 6:00', '#0F766E'], ['Dubai', 'UTC+4', '10:00 to 7:00', '#B45309'], ['London', 'UTC+0', '8:00 to 5:00', '#4F46E5']].map(([c, z, h, col], i) => `<div class="sc-person" style="animation-delay:${0.2 + i * 0.2}s"><i class="sc-av" style="background:${col}"></i><b>${c}</b><span>${z}</span><em>${h}</em></div>`).join('')}</div>`,
+    setup: () => `<div class="sc sc-setup">${[['New York', 'UTC−5', '9:00 to 5:00', '#0F766E'], ['Dubai', 'UTC+4', '10:00 to 7:00', '#B45309'], ['London', 'UTC+0', '8:00 to 5:00', '#4F46E5']].map(([c, z, h, col], i) => `<div class="sc-person" style="animation-delay:${0.2 + i * 0.2}s"><i class="sc-av" style="background:${col}"></i><b>${c}</b><span>${z}</span><em>${h}</em></div>`).join('')}</div>`,
 
     // ---- projects and tasks guide ----
     // projects you are part of, each with a key that numbers its tasks

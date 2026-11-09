@@ -1,6 +1,6 @@
 // HR: people and pay (everyone's record at a glance), one person's record (details, pay, documents,
 // joining and leaving), and what is waiting on HR (shown on HR's home page).
-import { html, raw, esc, icon, money, dayShort, dayMD, dateY, relTime, plural, initials, avColor, periodLabel } from '../util.js';
+import { html, raw, esc, icon, money, curSign, currencyOptions, homeCurrency, L, dayShort, dayMD, dateY, relTime, plural, initials, avColor, periodLabel } from '../util.js';
 import { get, post, put, patch, del, qs, fileBase64, fileUrl } from '../api.js';
 import { S, actions, tag, empty, openModal, confirmBox, toast, errMsg, qAttr } from '../ui.js';
 import { companyToday } from '../parts.js';
@@ -8,7 +8,7 @@ import { ptabs } from './payroll.js';
 import { STATUS } from './pay.js';
 
 export const CONTRACT = { full_time: 'Full-time', part_time: 'Part-time', probation: 'Probation', contractor: 'Contractor', intern: 'Intern' };
-const DOC_KIND = { contract: 'Employment contract', offer: 'Offer letter', cnic: 'CNIC copy', degree: 'Degree', policy: 'Policy', letter: 'Letter', other: 'Other' };
+const DOC_KIND = { contract: 'Employment contract', offer: 'Offer letter', get cnic() { return L.idCopy; }, degree: 'Degree', policy: 'Policy', letter: 'Letter', other: 'Other' };
 const ADV_ST = { pending: ['break', 'Waiting'], approved: ['working', 'Being paid back'], repaid: ['offline', 'Paid back'], declined: ['absent', 'Declined'] };
 const DOC_STATUS = { kept: ['idle', 'Kept'], signed: ['working', 'Signed'], waiting: ['break', 'Waiting'] };
 const av = (p, size = '') => html`<span class="avatar ${size}" style="background:${avColor(p.id ?? p.user_id)}" aria-hidden="true">${initials(p.name)}</span>`;
@@ -41,7 +41,7 @@ function listView(people, q, ov) {
       <td>${pay ? html`<b class="num">${money(pay.base, pay.currency)}</b>${pay.allowances.length ? html`<div class="small muted">+ ${pay.allowances.map((a) => `${money(a.amount, pay.currency)} ${a.label.toLowerCase()}`).join(', ')}</div>` : ''}` : tag('absent', 'No pay set')}</td>
       <td>${pay ? (pay.company_tax === false ? 'Off' : pay.tax_mode === 'pk' && pay.currency === 'PKR' ? 'Pakistan' : 'None') : '–'}</td>
       <td class="num">${r.iban_masked ? html`${r.bank_name || 'Bank'} ${r.iban_masked}` : pay ? tag('absent', 'Missing') : '–'}</td>
-      <td>${p.advance_left ? html`<span class="small">Advance ${money(p.advance_left, pay ? pay.currency : 'PKR')}</span>` : html`<span class="muted">None</span>`}</td>
+      <td>${p.advance_left ? html`<span class="small">Advance ${money(p.advance_left, pay ? pay.currency : undefined)}</span>` : html`<span class="muted">None</span>`}</td>
       <td class="row-a"><button class="btn sm ghost" data-act="hr-employed" data-id="${p.id}" data-name="${p.name}" data-v="0" title="Move ${p.name} to Not employees">Not an employee</button></td></tr>`;
   });
   const otherRows = others.map((p) => html`<li data-k="o${p.id}"><a class="person" href="#/hr?id=${p.id}">${av(p)}<span><b>${p.name}</b><span>${[p.title, p.is_dev ? 'Developer access' : null, p.tracks_time === false ? 'Time not tracked' : null].filter(Boolean).join(' · ')}</span></span></a>
@@ -81,7 +81,7 @@ function overview(p) {
   const kv = (rows) => html`<dl class="kv">${rows.filter(Boolean).map(([a, b]) => html`<dt>${a}</dt><dd>${b ?? html`<span class="muted">Not set</span>`}</dd>`)}</dl>`;
   const details = html`<section class="panel"><header><h2>Details</h2><button class="btn sm" data-act="hr-edit" data-id="${p.id}">Edit</button></header><div class="body">${kv([
     ['Contract', CONTRACT[r.contract]], ['Joined', r.joined_on ? dateY(r.joined_on) : null], ['Probation ends', r.probation_end ? dateY(r.probation_end) : null], ['Notice period', r.notice_days != null ? plural(r.notice_days, 'day') : null],
-    ['Work email', html`${p.email.split('@')[0]}@<wbr>${p.email.split('@').slice(1).join('@')}`], ['Date of birth', r.dob ? dateY(r.dob) : null], ['Phone', r.phone || null], ['CNIC', r.cnic || null], ['Address', r.address || null], ['Emergency contact', r.emergency_name ? `${r.emergency_name}${r.emergency_phone ? ' · ' + r.emergency_phone : ''}` : null],
+    ['Work email', html`${p.email.split('@')[0]}@<wbr>${p.email.split('@').slice(1).join('@')}`], ['Date of birth', r.dob ? dateY(r.dob) : null], ['Phone', r.phone || null], [L.id, r.cnic || null], ['Address', r.address || null], ['Emergency contact', r.emergency_name ? `${r.emergency_name}${r.emergency_phone ? ' · ' + r.emergency_phone : ''}` : null],
     r.notes ? ['HR notes', r.notes] : null])}</div></section>`;
   const payCard = html`<section class="panel"><header><h2>Pay</h2>${p.can_edit_pay ? html`<button class="btn sm ${pay ? '' : 'primary'}" data-act="hr-pay" data-id="${p.id}">${pay ? 'Change pay' : 'Set pay'}</button>` : html`<span class="muted small">The owner changes this</span>`}</header><div class="body">
     ${pay ? kv([['Base salary', `${money(pay.base, pay.currency)} a month`], ['Income tax', pay.company_tax === false ? 'Off for the company' : pay.tax_mode === 'pk' && pay.currency === 'PKR' ? 'Pakistan brackets' : 'Not taken'], ...pay.allowances.map((a) => [a.label, `+ ${money(a.amount, pay.currency)} every month`]), ...pay.deductions.map((x) => [x.label, `− ${money(x.amount, pay.currency)} every month`]),
@@ -90,17 +90,17 @@ function overview(p) {
   const hist = html`<section class="panel hr-hist"><header><h2>Salary history</h2></header><div class="body">${p.history.length ? html`<ul class="tline">${p.history.map((h) => html`<li data-k="sh${h.id}"><i></i><div><b class="num">${money(h.base, h.currency)}</b><span>${h.note || ''}${h.by_name ? ` · ${h.by_name}` : ''}</span><span class="sh-from">Counts from ${monthOf(h.effective_from)}’s pay, paid in ${paidIn(h.effective_from)}</span></div><span class="sh-r"><span class="muted small">${dateY(h.effective_from)}</span>${p.can_edit_pay ? html`<button type="button" class="linkbtn sh-fix" data-act="hr-shfix" data-id="${p.id}" data-h="${h.id}" data-base="${h.base}" data-cur="${h.currency}" data-from="${h.effective_from}" data-only="${p.history.length === 1 ? '1' : ''}" data-name="${p.name.split(' ')[0]}">Fix</button>` : ''}</span></li>`)}</ul>` : empty('Nothing yet', `Each change to ${p.name.split(' ')[0]}’s base salary is kept here, starting when you set their pay.`)}</div></section>`;
   const leave = html`<section class="panel"><header><h2>Time off</h2><span class="muted small">This year</span></header><div class="body"><div class="mini-stats"><div><span>Annual left</span><b class="num">${Math.max(0, p.leave.allowance - p.leave.taken)}</b><small>of ${p.leave.allowance} days</small></div><div><span>Taken</span><b class="num">${p.leave.taken}</b><small>days</small></div><div><span>Unpaid</span><b class="num">${p.leave.unpaid}</b><small>${p.leave.unpaid === 1 ? 'request' : 'requests'}</small></div></div></div></section>`;
   const slips = html`<section class="panel flush"><header><h2>Payslips</h2></header><div class="body">${p.slips.length ? html`<ul class="blist">${p.slips.map((s) => html`<li class="clickable" data-act="go" data-href="#/payroll?id=${s.id}" tabindex="0"><span class="what">${s.name}</span><span class="len num">${money(s.net, s.currency)}</span><span class="when">${STATUS[s.status][1]}</span></li>`)}</ul>` : empty('None yet', `${p.name.split(' ')[0]}’s payslips show here after their first payroll.`)}</div></section>`;
-  const adv = p.advances.length ? html`<section class="panel"><header><h2>Advances</h2></header><div class="body"><ul class="adv-list">${p.advances.map((a) => { const [c, w] = ADV_ST[a.status] || ['idle', a.status]; return html`<li><div><p><b class="num">${money(a.amount, pay ? pay.currency : 'PKR')}</b> over ${plural(a.months, 'month')}</p>${a.reason ? html`<span>${a.reason}</span>` : ''}</div>${tag(c, w)}</li>`; })}</ul></div></section>` : '';
+  const adv = p.advances.length ? html`<section class="panel"><header><h2>Advances</h2></header><div class="body"><ul class="adv-list">${p.advances.map((a) => { const [c, w] = ADV_ST[a.status] || ['idle', a.status]; return html`<li><div><p><b class="num">${money(a.amount, pay ? pay.currency : undefined)}</b> over ${plural(a.months, 'month')}</p>${a.reason ? html`<span>${a.reason}</span>` : ''}</div>${tag(c, w)}</li>`; })}</ul></div></section>` : '';
   const docTiles = html`<section class="panel hr-dtiles"><header><h2>Documents</h2><a class="btn sm" href="#/hr?id=${p.id}&tab=documents">${p.docs.length ? 'All documents' : 'Upload'}</a></header><div class="body">${p.docs.length
     ? html`<div class="dtiles">${p.docs.slice(0, 3).map((d) => html`<button type="button" class="dtile" data-act="hr-doc-open" data-id="${d.id}">${icon('file')}<b>${DOC_KIND[d.kind] || d.kind}</b><span>${(DOC_STATUS[d.status] || DOC_STATUS.kept)[1]}, ${relTime(d.created_at)}</span></button>`)}</div>`
-    : html`<p class="muted">No documents yet. Upload the signed contract and the CNIC copy.</p>`}</div></section>`;
+    : html`<p class="muted">No documents yet. Upload the signed contract and the ${L.idCopy}.</p>`}</div></section>`;
   return html`<div class="hr-cols"><div class="hr-col">${details}${docTiles}${hist}</div><div class="hr-col">${payCard}${leave}${slips}${adv}</div></div>`;
 }
 function docsView(p) {
   return html`<section class="panel flush"><header><h2>Documents</h2><button class="btn sm primary" data-act="hr-doc-add" data-id="${p.id}">${icon('plus')} Upload</button></header><div class="body">
     ${p.docs.length ? html`<ul class="docs">${p.docs.map((d) => { const [c, w] = DOC_STATUS[d.status] || DOC_STATUS.kept; return html`<li data-k="d${d.id}"><span class="doc-ic">${icon('file')}</span><div><b>${d.name}</b><span>${DOC_KIND[d.kind] || d.kind} · ${Math.max(1, Math.round(d.size / 1024))} KB · added ${relTime(d.created_at)}${d.uploaded_by_name ? ` by ${d.uploaded_by_name}` : ''}${d.expires_on ? ` · expires ${dateY(d.expires_on)}` : ''}</span></div>
       ${tag(c, w)}<span class="doc-a"><button class="btn sm" data-act="hr-doc-open" data-id="${d.id}">Open</button>${d.kind === 'contract' && d.type === 'application/pdf' ? html`<a class="btn sm" href="#/hr-import?for=${p.id}&doc=${d.id}">Fill in from it</a>` : ''}${d.status === 'waiting' ? html`<button class="btn sm" data-act="hr-doc-status" data-id="${d.id}" data-status="signed">Mark signed</button>` : ''}<button class="btn sm danger" data-act="hr-doc-del" data-id="${d.id}" data-name="${d.name}">Remove</button></span></li>`; })}</ul>`
-      : empty('No documents yet', `Keep ${p.name.split(' ')[0]}’s contract, offer letter, CNIC copy and other papers here. Only HR, the owner and ${p.name.split(' ')[0]} can open them.`)}</div></section>`;
+      : empty('No documents yet', `Keep ${p.name.split(' ')[0]}’s contract, offer letter, ${L.idCopy} and other papers here. Only HR, the owner and ${p.name.split(' ')[0]} can open them.`)}</div></section>`;
 }
 function stepsView(p, flow) {
   const list = flow === 'join' ? p.join_steps : p.leave_steps;
@@ -110,7 +110,7 @@ function stepsView(p, flow) {
       ${s.auto_done ? html`<span class="muted small">Automatic</span>` : html`<button class="btn sm" data-act="hr-step" data-id="${p.id}" data-flow="${flow}" data-step="${s.key}" data-done="${s.done ? '' : '1'}">${s.done ? 'Undo' : 'Mark done'}</button>`}</li>`)}</ul></div></section>`;
 }
 
-const AUTO_WHY = { account: 'They can sign in', app: 'Agreed in the desktop app', contract: 'A contract is in their documents', bank: 'Their bank details are saved', cnic: 'A CNIC copy is in their documents', deactivate: 'Their account is deactivated' };
+const AUTO_WHY = { account: 'They can sign in', app: 'Agreed in the desktop app', contract: 'A contract is in their documents', bank: 'Their bank details are saved', get cnic() { return `A ${L.idCopy} is in their documents`; }, deactivate: 'Their account is deactivated' };
 const autoWhy = (k) => AUTO_WHY[k] || 'Done';
 
 // ---------- what is waiting on HR (HR's home) ----------
@@ -180,14 +180,14 @@ export function hrPanel(o) {
 
 // ---------- actions ----------
 // asking someone to update their own details
-export const UPD = [['name', 'Name'], ['dob', 'Date of birth'], ['phone', 'Phone'], ['address', 'Address'], ['cnic', 'CNIC'], ['emergency', 'Emergency contact'], ['bank', 'Bank details']];
-export const updList = (fields) => { const l = fields.map((f) => (UPD.find((x) => x[0] === f) || [0, f])[1].toLowerCase().replace('cnic', 'CNIC')); return l.length > 1 ? `${l.slice(0, -1).join(', ')} and ${l[l.length - 1]}` : l[0]; };
+export const UPD = [['name', 'Name'], ['dob', 'Date of birth'], ['phone', 'Phone'], ['address', 'Address'], ['cnic', 'ID number'], ['emergency', 'Emergency contact'], ['bank', 'Bank details']];
+export const updList = (fields) => { const l = fields.map((f) => (UPD.find((x) => x[0] === f) || [0, f])[1].toLowerCase().replace('id number', L.id === 'CNIC' ? 'CNIC' : 'ID number')); return l.length > 1 ? `${l.slice(0, -1).join(', ')} and ${l[l.length - 1]}` : l[0]; };
 actions['hr-askupd'] = (el) => {
   const first = el.dataset.name.split(' ')[0];
   openModal({
     title: `Ask ${first} to update their details`, submit: 'Send the request', sub: `${first} is told straight away and can change only what you tick, once. You’re told when it’s done.`,
-    body: html`<fieldset class="upd-pick"><legend class="f">What should they update?</legend>${UPD.map(([k, n]) => html`<label class="upd-c"><input type="checkbox" name="f" value="${k}" ${k === 'bank' ? raw('checked') : ''}><span>${n}</span></label>`)}</fieldset>
-      <div class="field"><label class="f" for="updn">Note for ${first} (optional)</label><input id="updn" name="note" maxlength="300" placeholder="Your bank changed, so we need the new IBAN"></div>`,
+    body: html`<fieldset class="upd-pick"><legend class="f">What should they update?</legend>${UPD.map(([k, n]) => (k === 'cnic' ? [k, L.id] : [k, n])).map(([k, n]) => html`<label class="upd-c"><input type="checkbox" name="f" value="${k}" ${k === 'bank' ? raw('checked') : ''}><span>${n}</span></label>`)}</fieldset>
+      <div class="field"><label class="f" for="updn">Note for ${first} (optional)</label><input id="updn" name="note" maxlength="300" placeholder="Your bank changed, so we need the new account details"></div>`,
     onSubmit: async (fd) => {
       const fields = fd.getAll('f');
       if (!fields.length) throw new Error('Tick at least one thing to update');
@@ -209,13 +209,13 @@ actions['hr-edit'] = async (el) => {
       <div class="field" style="max-width:220px"><label class="f" for="hn">Notice period (days)</label><input id="hn" type="number" min="0" max="365" name="notice_days" value="${r.notice_days ?? ''}"></div>
       <h3 class="mh">Personal</h3>
       <div class="field" style="max-width:220px"><label class="f" for="hdob">Date of birth</label><input id="hdob" type="date" name="dob" value="${r.dob || ''}"></div>
-      <div class="grid2"><div class="field"><label class="f" for="hph">Phone</label><input id="hph" name="phone" value="${r.phone || ''}" maxlength="40" placeholder="0301 2345678"></div>
-        <div class="field"><label class="f" for="hcn">CNIC</label><input id="hcn" name="cnic" value="${r.cnic || ''}" maxlength="15" placeholder="61101-1234567-1" autocomplete="off"></div></div>
+      <div class="grid2"><div class="field"><label class="f" for="hph">Phone</label><input id="hph" name="phone" value="${r.phone || ''}" maxlength="40" placeholder="${L.phonePh}"></div>
+        <div class="field"><label class="f" for="hcn">${L.id}</label><input id="hcn" name="cnic" value="${r.cnic || ''}" maxlength="30" placeholder="${L.idPh}" autocomplete="off"></div></div>
       <div class="field"><label class="f" for="had">Address</label><input id="had" name="address" value="${r.address || ''}" maxlength="300"></div>
       <h3 class="mh">Bank, for the transfer sheet</h3>
-      <div class="grid2"><div class="field"><label class="f" for="hb">Bank</label><input id="hb" name="bank_name" value="${r.bank_name || ''}" maxlength="80" placeholder="Meezan Bank"></div>
+      <div class="grid2"><div class="field"><label class="f" for="hb">Bank</label><input id="hb" name="bank_name" value="${r.bank_name || ''}" maxlength="80" placeholder="${L.bankPh}"></div>
         <div class="field"><label class="f" for="ht">Account title</label><input id="ht" name="account_title" value="${r.account_title || ''}" maxlength="100"></div></div>
-      <div class="field"><label class="f" for="hi">IBAN</label><input id="hi" name="iban" value="${r.iban || ''}" maxlength="40" placeholder="PK36 MEZN 0000 0011 2233 4455" autocomplete="off"><p class="hint">Only HR and the owner see it in full. ${p.name.split(' ')[0]} sees the last 4 digits.</p></div>
+      <div class="field"><label class="f" for="hi">${L.account}</label><input id="hi" name="iban" value="${r.iban || ''}" maxlength="40" placeholder="${L.accountPh}" autocomplete="off"><p class="hint">Only HR and the owner see it in full. ${p.name.split(' ')[0]} sees the last 4 digits.</p></div>
       <h3 class="mh">Emergency contact</h3>
       <div class="grid2"><div class="field"><label class="f" for="he">Name</label><input id="he" name="emergency_name" value="${r.emergency_name || ''}" maxlength="100"></div>
         <div class="field"><label class="f" for="hf">Phone</label><input id="hf" name="emergency_phone" value="${r.emergency_phone || ''}" maxlength="40"></div></div>
@@ -229,13 +229,13 @@ actions['hr-edit'] = async (el) => {
 };
 actions['hr-pay'] = async (el) => {
   let p; try { p = await get(`/api/hr/people/${el.dataset.id}`); } catch (e) { toast(errMsg(e), true); return; }
-  const pay = p.pay || { base: '', currency: 'PKR', tax_mode: 'pk', allowances: [], deductions: [] };
+  const pay = p.pay || { base: '', currency: homeCurrency(), tax_mode: homeCurrency() === 'PKR' ? 'pk' : 'none', allowances: [], deductions: [] };
   const row = (kind, x = {}) => html`<div class="pay-row" data-row="${kind}"><input name="${kind}_label" value="${x.label || ''}" placeholder="${kind === 'alw' ? 'Team lead allowance' : 'Loan repayment'}" maxlength="60" aria-label="What"><input class="num" name="${kind}_amount" type="number" min="0" value="${x.amount ?? ''}" placeholder="Amount" aria-label="Amount"><button type="button" class="btn icon sm" data-act="pay-row-del" aria-label="Remove">${icon('x')}</button></div>`;
   openModal({
     title: `${p.pay ? 'Change' : 'Set'} ${p.name}’s pay`, submit: 'Save', wide: true, sub: `${p.name.split(' ')[0]} is told when their pay changes. The change is kept in their salary history.`,
     body: html`<div class="grid3"><div class="field"><label class="f" for="pb">Base salary, a month</label><input id="pb" class="num" name="base" type="number" min="0" step="1" value="${pay.base}" required inputmode="numeric"></div>
-        <div class="field"><label class="f" for="pc">Currency</label><select id="pc" name="currency"><option value="PKR" ${pay.currency === 'PKR' ? raw('selected') : ''}>Rupees (Rs)</option><option value="USD" ${pay.currency === 'USD' ? raw('selected') : ''}>Dollars ($)</option></select></div>
-        <div class="field"><span class="f lbl" id="pt-l">Income tax</span><label class="tax-sw" for="pt"><span class="switch"><input type="checkbox" id="pt" name="tax_on" ${pay.tax_mode === 'pk' ? raw('checked') : ''} aria-labelledby="pt-l"><span></span></span><span><b>Take it off their pay</b><span>${p.pay && p.pay.company_tax === false ? 'Off for the whole company in payroll rules, so nothing is taken' : 'Pakistan brackets, rupees only. Off for contractors, or if taxed elsewhere'}</span></span></label></div></div>
+        <div class="field"><label class="f" for="pc">Currency</label><select id="pc" name="currency">${raw(currencyOptions(pay.currency))}</select></div>
+        <div class="field" id="pt-f"${pay.currency === 'PKR' ? '' : raw(' hidden')}><span class="f lbl" id="pt-l">Pakistan income tax</span><label class="tax-sw" for="pt"><span class="switch"><input type="checkbox" id="pt" name="tax_on" ${pay.tax_mode === 'pk' ? raw('checked') : ''} aria-labelledby="pt-l"><span></span></span><span><b>Take it off their pay</b><span>${p.pay && p.pay.company_tax === false ? 'Off for the whole company in payroll rules, so nothing is taken' : 'Pakistan brackets, rupees only. Off for contractors, or if taxed elsewhere'}</span></span></label></div></div>
       <div class="grid2"><div class="field"><label class="f" for="pe">From</label><input id="pe" type="date" name="effective_from" value="${companyToday()}"><p class="hint">It counts for the payroll of the month this date is in, paid the month after. A raise today is in the pay they get next month.</p></div><div class="field"><label class="f" for="pn">Reason (${p.name.split(' ')[0]} sees this)</label><input id="pn" name="note" maxlength="200" placeholder="Yearly review"></div></div>
       <div class="pay-list"><div class="pay-h"><b>Every month: allowances</b><button type="button" class="linkbtn" data-act="pay-row-add" data-kind="alw">+ Add</button></div><div data-rows="alw">${pay.allowances.map((a) => row('alw', a))}</div></div>
       <div class="pay-list"><div class="pay-h"><b>Every month: deductions</b><button type="button" class="linkbtn" data-act="pay-row-add" data-kind="ded">+ Add</button></div><div data-rows="ded">${pay.deductions.map((x) => row('ded', x))}</div></div>`,
@@ -245,6 +245,8 @@ actions['hr-pay'] = async (el) => {
       toast('Pay saved'); S.refresh();
     },
   });
+  const pc = document.getElementById('pc'), ptf = document.getElementById('pt-f');
+  if (pc && ptf) pc.addEventListener('change', () => { ptf.hidden = pc.value !== 'PKR'; if (pc.value !== 'PKR') document.getElementById('pt').checked = false; });
   actions['pay-row-add'] = (b) => { const box = b.closest('form').querySelector(`[data-rows="${b.dataset.kind}"]`); box.insertAdjacentHTML('beforeend', row(b.dataset.kind).toString()); box.lastElementChild.querySelector('input').focus(); };
 };
 actions['pay-row-del'] = (b) => b.closest('.pay-row').remove();
@@ -295,7 +297,7 @@ const monthOf = (d) => new Date(`${d.slice(0, 7)}-01T00:00:00Z`).toLocaleDateStr
 // fixing a salary entry: a typo in the amount, the wrong date, or an entry that shouldn't be there.
 // Payrolls not yet approved are worked out again straight away; approved ones never change.
 actions['hr-shfix'] = (el) => {
-  const d = el.dataset, cur = d.cur === 'USD' ? '$' : 'Rs';
+  const d = el.dataset, cur = curSign(d.cur);
   const md = openModal({
     title: 'Fix this salary entry', submit: 'Save the fix',
     sub: `For a mistake, like a wrong amount or date. ${d.name} is told it was corrected. For a raise, use Change pay instead, so the history shows both.`,

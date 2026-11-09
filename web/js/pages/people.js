@@ -206,6 +206,7 @@ function differences(u, teams, st) {
 
 function statusOf(u) {
   if (!u.active) return html`${tag('off', 'Deactivated')}`;
+  if (u.invited) return html`${tag('late', 'Invited')}<span class="ps-seen small muted">Sent ${relTime(u.invited_at)}, not joined yet</span>`;
   if (!u.tracks_time) return html`<span class="faint small">Does not track time</span>`;
   const label = { working: ['working', 'Working'], break: ['break', 'On a break'], idle: ['idle', 'Idle'], no_signal: ['no_signal', 'No signal'] }[u.state];
   const seen = u.last_seen_at ? (Date.now() - Date.parse(u.last_seen_at) < 90000 ? 'Active just now' : `Last active ${relTime(u.last_seen_at)}`) : 'No work tracked yet';
@@ -221,7 +222,7 @@ function personRow(u, teams, downloads, st) {
     <div class="pr-info">${diffs.length ? html`<ul class="pchips">${diffs.map((d) => html`<li>${d}</li>`)}</ul>` : (u.tracks_time ? html`<span class="faint small">Company schedule</span>` : '')}
       ${probs.some((p) => p.kind === 'policy') ? html`<ul class="pflags"><li class="warn">Has not accepted the policy</li></ul>` : ''}</div>
     <div class="pr-app small">${u.app_version ? html`<span class="num">${u.app_version}${kind ? ' · ' + OS_NAME[kind] : ''}</span>${latestFor(u, downloads) ? html`<span class="pupd">Update to ${latestFor(u, downloads)}</span>` : html`<span class="faint">Up to date</span>`}` : u.tracks_time ? html`<span class="faint">Not installed</span>` : ''}</div>
-    <div class="pr-act">${u.tracks_time && u.active ? html`<a class="btn sm" href="#/timeline?user=${u.id}">View day</a>` : ''}${(u.role === 'owner' && (S.me.dev_owner || S.me.role !== 'owner')) || (u.is_dev && S.me.role !== 'owner' && u.id !== S.me.id) ? '' : html`<button class="btn sm" data-act="edit-user" data-id="${u.id}">Edit</button>`}${S.me.role === 'owner' && u.active && u.role !== 'owner' ? html`<button class="btn sm${u.fun_mode ? ' gm-on-btn' : ''}" data-act="fun-edit" data-id="${u.id}" data-name="${u.name}" aria-label="Fun modes for ${u.name}" title="Fun modes">${u.fun_mode ? 'God mode' : 'Fun'}</button>` : ''}</div>
+    <div class="pr-act">${u.invited && u.active ? html`<button type="button" class="btn sm" data-act="invite-again" data-id="${u.id}" data-name="${u.name}">Invite again</button>` : ''}${u.tracks_time && u.active && !u.invited ? html`<a class="btn sm" href="#/timeline?user=${u.id}">View day</a>` : ''}${(u.role === 'owner' && (S.me.dev_owner || S.me.role !== 'owner')) || (u.is_dev && S.me.role !== 'owner' && u.id !== S.me.id) ? '' : html`<button class="btn sm" data-act="edit-user" data-id="${u.id}">Edit</button>`}${S.me.role === 'owner' && u.active && u.role !== 'owner' ? html`<button class="btn sm${u.fun_mode ? ' gm-on-btn' : ''}" data-act="fun-edit" data-id="${u.id}" data-name="${u.name}" aria-label="Fun modes for ${u.name}" title="Fun modes">${u.fun_mode ? 'God mode' : 'Fun'}</button>` : ''}</div>
   </li>`;
 }
 
@@ -279,8 +280,10 @@ actions['edit-user'] = (el) => {
       <div class="grid2"><div class="field"><label class="f" for="pn">Full name</label><input id="pn" name="name" value="${u ? u.name : ''}" required maxlength="100"></div>
         <div class="field"><label class="f" for="pt">Job title</label><input id="pt" name="title" value="${(u && u.title) || ''}" maxlength="100"></div></div>
       <div class="grid2"><div class="field"><label class="f" for="pe">Work email</label><input id="pe" name="email" type="email" value="${u ? u.email : ''}" ${u ? raw('disabled') : raw('required')} autocomplete="off"></div>
-        <div class="field"><label class="f" for="pp">${u ? 'Reset password (optional)' : 'First password'}</label><input id="pp" name="password" type="text" minlength="10" autocomplete="off" placeholder="At least 10 characters" ${u ? '' : raw('required')}>
-        ${u ? '' : html`<p class="hint">Share it with them. They can change it from their profile.</p>`}</div></div>
+        ${u ? html`<div class="field"><label class="f" for="pp">Reset password (optional)</label><input id="pp" name="password" type="text" minlength="10" autocomplete="off" placeholder="At least 10 characters"></div>`
+          : html`<div class="field"><label class="f" for="phow">How they get in</label><select id="phow" name="how"><option value="invite" selected>Email them an invite</option><option value="password">Give them a password</option></select>
+            <input id="pp" name="password" type="text" minlength="10" autocomplete="off" placeholder="First password, at least 10 characters" aria-label="First password" hidden style="margin-top:8px">
+            <p class="hint" id="phow-h">They choose their own password from the email, and see what is tracked before they join.</p></div>`}</div>
       <div class="grid3"><div class="field"><label class="f" for="ptm">Team</label><select id="ptm" name="team_id"><option value="">No team</option>${cache.teams.map((t) => html`<option value="${t.id}" ${u && u.team_id === t.id ? raw('selected') : ''}>${t.name}</option>`)}</select></div>
         <div class="field"><label class="f" for="pr">Role</label><select id="pr" name="role" ${owner && !editingOwner ? '' : raw('disabled')}><option value="employee" ${!u || u.role === 'employee' ? raw('selected') : ''}>Employee</option><option value="manager" ${u && u.role === 'manager' ? raw('selected') : ''}>Manager</option>${editingOwner ? html`<option selected>Owner</option>` : ''}</select></div>
         <div class="field"><label class="f" for="pw">Weekly target (hours)</label><input id="pw" name="weekly_h" type="number" min="0" max="100" step="0.5" value="${u && u.weekly_target_min != null ? u.weekly_target_min / 60 : ''}" placeholder="${S.settings.weekly_target_min / 60} (company)"></div></div>
@@ -320,11 +323,14 @@ actions['edit-user'] = (el) => {
       const team_id = fd.get('team_id') ? Number(fd.get('team_id')) : null;
       if (!u) {
         const { day_hours, ...firstSched } = sched;
-        const made = await post('/api/users', { email: fd.get('email'), name: fd.get('name'), password: fd.get('password'), title: fd.get('title') || null, role: fd.get('role') || 'employee', team_id, ...firstSched });
+        const invite = fd.get('how') !== 'password';
+        if (!invite && String(fd.get('password') || '').length < 10) throw new Error('Give a first password of at least 10 characters');
+        const made = await post('/api/users', { email: fd.get('email'), name: fd.get('name'), ...(invite ? { invite: true } : { password: fd.get('password') }), title: fd.get('title') || null, role: fd.get('role') || 'employee', team_id, ...firstSched });
+        if (made.invite_link) setTimeout(() => showInviteLink(fd.get('name'), made.invite_link), 50);
         const extra = { ...(owner && fd.get('hr') ? { hr: true } : {}), ...(day_hours ? { day_hours } : {}), ...(owner && fd.get('shots') ? { shots_per_10: Number(fd.get('shots')) } : {}), ...(owner && fd.get('other_device') ? { other_device: true } : {}) };
         if (Object.keys(extra).length) await patch(`/api/users/${made.id}`, extra);
         if (owner && fd.get('role') === 'manager') { /* managers are assigned teams on the next edit */ }
-        toast(`${fd.get('name')} added`);
+        toast(invite ? (made.invite_sent ? `Invite sent to ${fd.get('email')}` : `${fd.get('name')} added`) : `${fd.get('name')} added`);
       } else {
         const body = { name: fd.get('name'), title: fd.get('title') || null, team_id, ...sched, ...(owner ? { shots_per_10: fd.get('shots') === '' ? null : Number(fd.get('shots')), other_device: !!fd.get('other_device') } : {}) };
         if (fd.get('password')) body.password = fd.get('password');
@@ -366,4 +372,31 @@ actions['rename-team'] = (el) => openModal({
 actions['del-team'] = async (el) => {
   if (!(await confirmBox({ title: `Delete the ${el.dataset.name} team?`, message: 'People in it are kept, but will have no team.', confirm: 'Delete team', danger: true }))) return;
   try { await del(`/api/teams/${el.dataset.id}`); toast('Team deleted'); S.refresh(); } catch (e) { toast(errMsg(e), true); }
+};
+
+// adding someone: an emailed invite, or a first password typed here
+document.addEventListener('change', (e) => {
+  const how = e.target.closest && e.target.closest('#phow');
+  if (!how) return;
+  const f = how.closest('form'), pw = f.querySelector('#pp'), hint = f.querySelector('#phow-h');
+  pw.hidden = how.value !== 'password';
+  if (how.value === 'password') pw.focus();
+  hint.textContent = how.value === 'password' ? 'Share it with them. They can change it from their profile.' : 'They choose their own password from the email, and see what is tracked before they join.';
+});
+// email isn't set up: the link to pass on yourself
+function showInviteLink(name, link) {
+  const m = openModal({
+    title: `Send ${String(name).split(' ')[0]} their invite`, submit: 'Copy the link', cancel: 'Done',
+    body: html`<p>Email isn’t set up on this server, so send this link yourself, by chat or email. It works once, for 7 days.</p><input class="mt" readonly value="${link}" aria-label="Invite link" style="font-size:13px">`,
+    onSubmit: async () => { await navigator.clipboard.writeText(link); toast('Link copied'); },
+  });
+  const i = m.form.querySelector('input'); i.addEventListener('focus', () => i.select());
+}
+actions['invite-again'] = async (el) => {
+  el.disabled = true;
+  try {
+    const r = await post(`/api/users/${el.dataset.id}/invite`);
+    if (r.link) showInviteLink(el.dataset.name, r.link); else toast(`A new invite is on its way to ${el.dataset.name.split(' ')[0]}`);
+  } catch (e) { toast(errMsg(e), true); }
+  el.disabled = false;
 };

@@ -204,7 +204,32 @@ ICON.rocket = '<path d="M14 4c3-1 5.5-1 6-.5S20 7 19 10l-6 6-5-5z"/><path d="M8 
 ICON.timer = '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9.5 2.5h5"/>';
 ICON.receipt = '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>';
 // money in whole units: "Rs 120,000" or "$ 2,500"; signed adds − or +
-export const money = (n, cur = 'PKR', { signed = false } = {}) => `${signed ? (n < 0 ? '− ' : n > 0 ? '+ ' : '') : n < 0 ? '− ' : ''}${cur === 'USD' ? '$' : 'Rs'} ${Math.abs(Math.round(n || 0)).toLocaleString('en-US')}`;
+// the currencies people can be paid in (the same list as server/lib/money.js)
+export const CURRENCIES = [['USD', '$', 'US dollars'], ['EUR', '€', 'euros'], ['GBP', '£', 'British pounds'], ['CAD', 'CA$', 'Canadian dollars'], ['AUD', 'A$', 'Australian dollars'],
+  ['AED', 'AED', 'UAE dirhams'], ['SAR', 'SAR', 'Saudi riyals'], ['QAR', 'QAR', 'Qatari riyals'], ['INR', '₹', 'Indian rupees'], ['PKR', 'Rs', 'Pakistani rupees'],
+  ['BDT', 'Tk', 'Bangladeshi taka'], ['PHP', '₱', 'Philippine pesos'], ['MYR', 'RM', 'Malaysian ringgit'], ['SGD', 'S$', 'Singapore dollars'], ['IDR', 'Rp', 'Indonesian rupiah'],
+  ['TRY', '₺', 'Turkish lira'], ['EGP', 'E£', 'Egyptian pounds'], ['NGN', '₦', 'Nigerian naira'], ['KES', 'KSh', 'Kenyan shillings'], ['ZAR', 'R', 'South African rand']];
+const SIGN = Object.fromEntries(CURRENCIES.map(([c, s]) => [c, s]));
+export const curSign = (c) => SIGN[c] || c || '$';
+export const curName = (c) => (CURRENCIES.find((x) => x[0] === c) || [c, c, c])[2];
+// the money the company pays in, used when an amount doesn't say (set once the settings load)
+let home = 'USD';
+export const setHomeCurrency = (c) => { if (c) home = c; };
+export const homeCurrency = () => home;
+// what a company in Pakistan calls things, and what everyone else does
+export const inPK = () => home === 'PKR';
+export const L = {
+  get id() { return inPK() ? 'CNIC' : 'ID number'; },
+  get idCopy() { return inPK() ? 'CNIC copy' : 'ID copy'; },
+  get idPh() { return inPK() ? '61101-1234567-1' : ''; },
+  get account() { return inPK() ? 'IBAN' : 'Account number or IBAN'; },
+  get accountPh() { return inPK() ? 'PK36 MEZN 0000 0011 2233 4455' : ''; },
+  get bankPh() { return inPK() ? 'Meezan Bank' : 'Bank name, and routing or sort code if needed'; },
+  get phonePh() { return inPK() ? '0301 2345678' : ''; },
+};
+// options for a currency picker: the company's own money first, then dollars, then the rest
+export const currencyOptions = (sel) => { const order = [home, 'USD', ...CURRENCIES.map(([c]) => c)].filter((c, i, a) => a.indexOf(c) === i); return order.map((c) => `<option value="${c}"${c === sel ? ' selected' : ''}>${curName(c).replace(/^\w/, (x) => x.toUpperCase())} (${c})</option>`).join(''); };
+export const money = (n, cur = home, { signed = false } = {}) => `${signed ? (n < 0 ? '− ' : n > 0 ? '+ ' : '') : n < 0 ? '− ' : ''}${curSign(cur || home)} ${Math.abs(Math.round(n || 0)).toLocaleString('en-US')}`;
 export const periodLabel = (p) => monthLabel(p);
 export const icon = (name) => raw(`<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICON[name] || ''}</svg>`);
 

@@ -1,4 +1,4 @@
-import { html, raw, esc, icon, hhmmText, hoursText, tzLabel, plural, tzPlace, browserZone, zoneOffset, zoneName, owl } from '../util.js';
+import { html, raw, esc, icon, L, hhmmText, hoursText, tzLabel, plural, tzPlace, browserZone, zoneOffset, zoneName, owl } from '../util.js';
 import { get, post, put, del } from '../api.js';
 import { pushState, enablePush, isPhone as onPhone } from '../push.js';
 import { browserPopups, askBrowser } from '../notify.js';
@@ -22,9 +22,9 @@ function detailsPanel(hr) {
   const v = (x) => x || html`<span class="muted">Not given</span>`;
   return html`<section class="panel det${q ? ' asked' : ''}" id="details"><header><h2>Your details</h2><span class="muted small">What HR has on record</span></header><div class="body">
     ${q ? html`<div class="det-ask"><div><b>${q.by || 'HR'} asked you to update your ${updList(q.fields)}</b>${q.note ? html`<span>“${q.note}”</span>` : ''}</div><button type="button" class="btn primary" data-act="det-upd">Update your details</button></div>` : ''}
-    <dl class="kv two"><dt>Name</dt><dd>${hr.name}</dd><dt>Date of birth</dt><dd>${v(r.dob && fmtDay(r.dob))}</dd><dt>Phone</dt><dd>${v(r.phone)}</dd><dt>CNIC</dt><dd>${v(r.cnic)}</dd>
+    <dl class="kv two"><dt>Name</dt><dd>${hr.name}</dd><dt>Date of birth</dt><dd>${v(r.dob && fmtDay(r.dob))}</dd><dt>Phone</dt><dd>${v(r.phone)}</dd><dt>${L.id}</dt><dd>${v(r.cnic)}</dd>
       <dt>Address</dt><dd>${v(r.address)}</dd><dt>Emergency contact</dt><dd>${v(r.emergency_name && `${r.emergency_name}${r.emergency_phone ? ' · ' + r.emergency_phone : ''}`)}</dd>
-      <dt>Bank</dt><dd>${v(r.bank_name && `${r.bank_name}${r.iban ? ' · ' + r.iban : ''}`)}</dd></dl>
+      <dt>Bank</dt><dd>${v(r.bank_name && `${r.bank_name}${r.iban ? ', ' + r.iban : ''}`)}</dd></dl>
     ${q ? '' : html`<p class="hint mt">Something wrong or out of date? Tell HR. They can send you a request to update it here.</p>`}</div></section>`;
 }
 let detHr = null;
@@ -36,17 +36,17 @@ actions['det-upd'] = () => {
     title: 'Update your details', submit: 'Send to HR', sub: `Only what HR asked for. HR is told when you send it.${hr.update_request.note ? ` They said: “${hr.update_request.note}”` : ''}`,
     body: html`${f.has('name') ? fld('dn', 'Full name', 'name', hr.name, 'maxlength="100" required autocomplete="name"') : ''}
       ${f.has('dob') ? fld('dd', 'Date of birth', 'dob', r.dob, 'type="date" required') : ''}
-      ${f.has('phone') ? fld('dp', 'Phone', 'phone', r.phone, 'maxlength="40" inputmode="tel" placeholder="0301 2345678"') : ''}
-      ${f.has('cnic') ? fld('dc', 'CNIC', 'cnic', '', 'maxlength="15" inputmode="numeric" placeholder="61101-1234567-1" autocomplete="off"') : ''}
+      ${f.has('phone') ? fld('dp', 'Phone', 'phone', r.phone, 'maxlength="40" inputmode="tel" placeholder="${L.phonePh}"') : ''}
+      ${f.has('cnic') ? fld('dc', L.id, 'cnic', '', `maxlength="30"${L.idPh ? ' inputmode="numeric"' : ''} placeholder="${L.idPh}" autocomplete="off"`) : ''}
       ${f.has('address') ? fld('da', 'Address', 'address', r.address, 'maxlength="300"') : ''}
       ${f.has('emergency') ? html`<div class="grid2">${fld('den', 'Emergency contact name', 'emergency_name', r.emergency_name, 'maxlength="100"')}${fld('dep', 'Their phone', 'emergency_phone', r.emergency_phone, 'maxlength="40" inputmode="tel"')}</div>` : ''}
-      ${f.has('bank') ? html`<div class="grid2">${fld('db', 'Bank', 'bank_name', r.bank_name, 'maxlength="80" placeholder="Meezan Bank"')}${fld('dt', 'Account title', 'account_title', r.account_title, 'maxlength="100"')}</div>
-        ${fld('di', 'IBAN', 'iban', '', 'maxlength="40" placeholder="PK36 MEZN 0000 0011 2233 4455" autocomplete="off"')}<p class="hint">Your full IBAN, starting with PK. Only HR and the owner see it in full.</p>` : ''}`,
+      ${f.has('bank') ? html`<div class="grid2">${fld('db', 'Bank', 'bank_name', r.bank_name, 'maxlength="80" placeholder="${L.bankPh}"')}${fld('dt', 'Account title', 'account_title', r.account_title, 'maxlength="100"')}</div>
+        ${fld('di', L.account, 'iban', '', `maxlength="40" placeholder="${L.accountPh}" autocomplete="off"`)}<p class="hint">${L.accountPh ? 'Your full IBAN, starting with PK.' : 'The full number your pay goes to.'} Only HR and the owner see it in full.</p>` : ''}`,
     onSubmit: async (fd) => {
       const b = {};
       for (const [k, val] of fd.entries()) b[k] = String(val).trim() === '' ? null : String(val).trim();
-      if (f.has('bank') && !b.iban) throw new Error('Type your IBAN');
-      if (f.has('cnic') && !b.cnic) throw new Error('Type your CNIC');
+      if (f.has('bank') && !b.iban) throw new Error(`Type your ${L.account}`);
+      if (f.has('cnic') && !b.cnic) throw new Error(`Type your ${L.id}`);
       await put('/api/me/details', b); toast('Sent. HR has been told.'); S.refresh(); import('../v4.js').then((m) => m.refreshAnnBar()).catch(() => {});
     },
   });

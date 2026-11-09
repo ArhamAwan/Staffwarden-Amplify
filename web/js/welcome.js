@@ -119,3 +119,25 @@
     else { const loop = (t) => { if (!document.hidden) drawStars(t); requestAnimationFrame(loop); }; requestAnimationFrame(loop); }
   }
 })();
+
+// the price calculator: people on the team, monthly or yearly, a total for each plan
+(() => {
+  const range = document.getElementById('ppl'), out = document.getElementById('ppl-n');
+  if (!range) return;
+  let yearly = true;
+  const fmt = (v) => `$${v.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: Number.isInteger(v) ? 0 : 2 })}`;
+  const draw = () => {
+    const n = Number(range.value);
+    out.textContent = n;
+    for (const p of document.querySelectorAll('.plan[data-year]')) {
+      const y = Number(p.dataset.year), each = yearly ? y : Math.round(y * 1.2 * 100) / 100;
+      p.querySelector('[data-each]').textContent = fmt(each);
+      p.querySelector('[data-ppl]').textContent = `${n} people`;
+      p.querySelector('[data-total]').textContent = fmt(Math.round((yearly ? y * 12 * n : each * n) * 100) / 100);
+      p.querySelector('[data-per]').textContent = yearly ? 'a year' : 'a month';
+    }
+  };
+  range.addEventListener('input', draw);
+  for (const b of document.querySelectorAll('.pl-tog [data-iv]')) b.addEventListener('click', () => { yearly = b.dataset.iv === 'year'; document.querySelectorAll('.pl-tog [data-iv]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); draw(); });
+  draw();
+})();

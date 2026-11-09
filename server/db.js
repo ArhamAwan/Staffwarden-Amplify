@@ -3,7 +3,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 // Schema v2. Fresh installs and v1 databases go through the same path: the v1 tables are created
 // if missing, then migrate() adds everything v2 needs without touching existing rows.
-const SCHEMA_VERSION = 36;
+const SCHEMA_VERSION = 37;
 
 function hasColumn(db, table, col) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
@@ -83,6 +83,7 @@ function openDb(file = ':memory:') {
 function migrate(db) {
   const version = db.prepare('PRAGMA user_version').get().user_version;
   if (version >= SCHEMA_VERSION) return;
+  if (version === 36) return migrateV37(db);
   if (version === 35) return migrateV36(db);
   if (version === 34) return migrateV35(db);
   if (version === 33) return migrateV34(db);
@@ -1286,6 +1287,27 @@ function migrateV36(db) {
     if (!cols.includes('cancel_note')) db.exec('ALTER TABLE leave_requests ADD COLUMN cancel_note TEXT');
     // days shown on the calendar for reference only (another country's holidays): not days off
     db.exec(`CREATE TABLE IF NOT EXISTS observances (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, name TEXT NOT NULL, region TEXT, UNIQUE(day, name))`);
+    db.exec('PRAGMA user_version = 36');
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  migrateV37(db);
+}
+
+// v37: links sent by email (an invite to join, a password reset, handing over ownership), each used once and
+// kept only as a fingerprint; when someone was invited and when they joined
+function migrateV37(db) {
+  db.exec('BEGIN');
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS email_links (
+      token TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK (kind IN ('invite','reset','client_reset','handover')),
+      user_id INTEGER NOT NULL, created_by INTEGER, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT)`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_email_links_user ON email_links(user_id, kind)');
+    const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+    if (!cols.includes('invited_at')) db.exec('ALTER TABLE users ADD COLUMN invited_at TEXT');
+    if (!cols.includes('joined_at')) db.exec('ALTER TABLE users ADD COLUMN joined_at TEXT');
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {

@@ -21,8 +21,8 @@
   <a class="brand" href="/welcome" aria-label="Staffwarden home"><svg class="mini-owl" viewBox="0 0 64 64" aria-hidden="true"><path d="M13 42c0-14 8-22 19-22s19 8 19 22c0 13-8 20-19 20s-19-7-19-20z" fill="#8C78E8"/><circle cx="24.5" cy="37" r="8.5" fill="#F3F0FF"/><circle cx="39.5" cy="37" r="8.5" fill="#F3F0FF"/><circle cx="24.5" cy="37.5" r="4.2" fill="#120C2E"/><circle cx="39.5" cy="37.5" r="4.2" fill="#120C2E"/><path d="M29.5 43h5L32 47.5z" fill="#F7B544"/><path d="M13 30c0-12 8-20 19-20s19 8 19 20z" fill="#4A37A8"/><path d="M13 30.5h38c-2 3-8.5 4-19 4s-17-1-19-4z" fill="#241A5C"/><circle cx="32" cy="18.5" r="4.4" fill="#C3B3FF"/></svg><span>Staffwarden</span></a>
   <nav class="links" aria-label="Sections"><a href="#features">Features</a><a href="#shift">A working day</a><a href="#privacy">Privacy</a><a href="#pricing">Pricing</a><a href="#faq">Questions</a></nav>
   <span class="clock" aria-hidden="true"><i></i><b data-clock>9:00 AM</b></span>
-  <a class="signin" href="/#signin">Sign in</a>
-  <a class="btn brass" href="mailto:hello@staffwarden.com?subject=Staffwarden%20demo">Book a demo</a>
+  <a class="signin" href="/signin">Sign in</a>
+  <a class="btn brass" href="/signup">Start free trial</a>
 </header>
 
 <main>
@@ -33,7 +33,7 @@
     <h1 id="hero-h" class="words">It keeps watch, so you don’t have&nbsp;to.</h1>
     <p class="lede r" style="--d:.55s">Staffwarden tracks your remote team’s hours and attendance, takes fair screenshots, pays everyone on time and keeps the team talking. And everyone sees exactly what’s tracked about them.</p>
     <div class="ctas r" style="--d:.7s">
-      <a class="btn primary big" href="mailto:hello@staffwarden.com?subject=Staffwarden%20demo">Book a demo</a>
+      <a class="btn primary big" href="/signup">Start free trial</a>
       <a class="btn ghost big" href="#shift">See a working day<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14m0 0l-6-6m6 6l6-6"/></svg></a>
     </div>
     <p class="trust r" style="--d:.85s"><span class="faces" aria-hidden="true"><i style="--c:#C2410C">EC</i><i style="--c:#6B55D6">LW</i><i style="--c:#0F766E">OG</i><i style="--c:#15803D">NB</i><i style="--c:#B45309">JH</i></span>For remote and office teams in any time zone, on any shift. Mac and Windows.</p>
@@ -221,9 +221,37 @@
 
 <!-- ============ price and questions ============ -->
 <section class="pricing" id="pricing" aria-labelledby="price-h">
-  <div class="wrap price-grid">
-    <div class="r"><h2 id="price-h">One price, no surprises.</h2><p class="sub">Every feature for every person. Add people when you hire, remove them when they leave.</p></div>
-    <div class="price-card r" data-hover><span class="tag">Everything included</span><b>Per person</b><p>One monthly price for each person on the team. Ask us for a quote.</p><a class="btn primary" href="mailto:hello@staffwarden.com?subject=Staffwarden%20quote">Ask for a quote</a></div>
+  <div class="wrap">
+    <div class="price-head r"><div><h2 id="price-h">Pay for the people you have.</h2><p class="sub">One price for each person on the team, every month. Try everything free for 14 days, no card needed. Add or remove people any time; the bill follows.</p></div>
+      <div class="pl-tog" role="group" aria-label="Billing period"><button type="button" data-iv="month" aria-pressed="false">Monthly</button><button type="button" data-iv="year" aria-pressed="true">Yearly<em>2 months free</em></button></div></div>
+    <div class="pl-calc r"><label for="ppl">How many people<span>will track time?</span></label><input id="ppl" type="range" min="2" max="300" value="25"><output class="num" for="ppl" id="ppl-n">25</output></div>
+    <div class="plans">
+      <article class="plan r" data-plan="starter" data-year="4">
+        <h3>Starter</h3>
+        <p class="pl-blurb">Hours, attendance and time off for a small team.</p>
+        <div class="pl-price"><b class="num" data-each>$4</b><span>a person<br>a month</span></div>
+        <div class="pl-total"><span data-ppl>25 people</span><b class="num"><span data-total>$0</span> <small data-per>a year</small></b></div>
+        <a class="btn ghost" href="/signup">Start free trial</a>
+        <ul><li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Desktop app for Mac and Windows</li><li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Timesheets and attendance</li><li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Time off with your own rules</li><li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Live dashboard</li><li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Check-ins and team chat</li></ul>
+      </article>
+      <article class="plan r best" data-plan="business" data-year="7">
+        <h3>Business<span class="pl-best">Most teams pick this</span></h3>
+        <p class="pl-blurb">Everything to run people: pay, HR and projects.</p>
+        <div class="pl-price"><b class="num" data-each>$7</b><span>a person<br>a month</span></div>
+        <div class="pl-total"><span data-ppl>25 people</span><b class="num"><span data-total>$0</span> <small data-per>a year</small></b></div>
+        <a class="btn primary" href="/signup">Start free trial</a>
+        <ul><li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Everything in Starter</li><li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Payroll and payslips</li><li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>HR records, contracts, expenses</li><li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Projects and tasks</li><li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Reports and exports</li></ul>
+      </article>
+      <article class="plan r" data-plan="pro" data-year="10">
+        <h3>Pro</h3>
+        <p class="pl-blurb">For teams that work for clients.</p>
+        <div class="pl-price"><b class="num" data-each>$10</b><span>a person<br>a month</span></div>
+        <div class="pl-total"><span data-ppl>25 people</span><b class="num"><span data-total>$0</span> <small data-per>a year</small></b></div>
+        <a class="btn ghost" href="/signup">Start free trial</a>
+        <ul><li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Everything in Business</li><li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Client portal with requests</li><li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Screenshots, with privacy rules</li><li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Shift reports by email</li><li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Priority help</li></ul>
+      </article>
+    </div>
+    <p class="pl-note r">Prices in US dollars, paid by card through Stripe. The account owner, archived people and clients on the portal don’t count. More than 300 people? <a href="mailto:hello@staffwarden.com?subject=Staffwarden%20for%20a%20large%20team">Talk to us</a>.</p>
   </div>
 </section>
 
@@ -232,9 +260,10 @@
     <h2 id="faq-h" class="r">Questions, answered.</h2>
     <details class="r" open><summary>Does it work across time zones and different shifts?</summary><p>Yes. Each person can have their own hours and time zone, from early mornings to overnight shifts. Shifts can even cross midnight and still count for the day they began, and each person can have their own time zone and hours.</p></details>
     <details class="r"><summary>What do the screenshots actually capture?</summary><p>The screen in use, 1 to 3 times every 10 minutes at random moments, only while the timer runs. Private windows and notifications are blacked out first, on the employee’s own computer.</p></details>
-    <details class="r"><summary>Can it run our payroll?</summary><p>It works out each payslip from tracked hours, attendance, time off, expenses and income tax, including people paid in dollars. You approve it and mark each person paid.</p></details>
+    <details class="r"><summary>Can it run our payroll?</summary><p>It works out each payslip from tracked hours, attendance, time off and expenses, in your own currency, and anyone can be paid in another. You approve it and mark each person paid. For companies in Pakistan it also takes income tax and EOBI.</p></details>
     <details class="r"><summary>Will my team push back on being tracked?</summary><p>They see everything that’s tracked about them, they’re asked before tracking starts, and they’re told about every change. That openness is the point.</p></details>
-    <details class="r"><summary>How long does it take to set up?</summary><p>Import people from their contracts, set your shift hours, and send everyone the desktop app. We help you through it.</p></details>
+    <details class="r"><summary>What happens after the free trial?</summary><p>Nothing is charged unless you add a card. If you don’t, tracking pauses and everything stays readable for 60 days, so you can still decide or take your data away.</p></details>
+    <details class="r"><summary>How long does it take to set up?</summary><p>Make your company’s space, invite your people by email, set your shift hours, and they install the desktop app. Most teams are tracking the same day.</p></details>
   </div>
 </section>
 
@@ -242,17 +271,17 @@
 <section class="final" aria-labelledby="final-h">
   <div class="dawn-moon" aria-hidden="true"></div>
   <h2 id="final-h" class="r">Let the owl keep watch.</h2>
-  <p class="r">See Staffwarden with your own team’s hours on a short call.</p>
-  <div class="ctas r"><a class="btn primary big" href="mailto:hello@staffwarden.com?subject=Staffwarden%20demo">Book a demo</a><a class="btn ghost big" href="mailto:hello@staffwarden.com">Talk to us</a></div>
+  <p class="r">Fourteen days free, every feature on, no card. Set up before your coffee cools.</p>
+  <div class="ctas r"><a class="btn primary big" href="/signup">Start free trial</a><a class="btn ghost big" href="mailto:hello@staffwarden.com?subject=Staffwarden%20demo">Book a demo</a></div>
 </section>
 </main>
 
 <footer class="foot">
   <div class="wrap foot-grid">
-    <div><a class="brand" href="/welcome"><span>Staffwarden</span></a><p>Built entirely in-house by Amplify Media Technologies.</p></div>
-    <div><b>Product</b><a href="#features">Features</a><a href="#shift">A working day</a><a href="#pricing">Pricing</a><a href="/#signin">Download the app</a></div>
+    <div><a class="brand" href="/welcome"><span>Staffwarden</span></a><p>Hours, attendance, HR and payroll for remote teams, anywhere.</p></div>
+    <div><b>Product</b><a href="#features">Features</a><a href="#shift">A working day</a><a href="#pricing">Pricing</a><a href="/signin">Download the app</a></div>
     <div><b>Trust</b><a href="#privacy">What’s tracked</a><a href="#privacy">Privacy</a></div>
-    <div><b>Company</b><a href="mailto:hello@staffwarden.com">Contact</a><a href="/#signin">Sign in</a></div>
+    <div><b>Company</b><a href="mailto:hello@staffwarden.com">Contact</a><a href="/signin">Sign in</a><a href="/signup">Start free trial</a></div>
   </div>
 </footer>
 <script src="/js/welcome.js" defer></script>

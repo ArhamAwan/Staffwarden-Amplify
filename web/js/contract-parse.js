@@ -97,7 +97,8 @@ function money(s) {
   if (!m) return null;
   const n = Math.round(Number(m[2].replace(/,/g, '')));
   if (!(n >= 100)) return null;
-  const cur = /usd|\$|dollar/i.test(`${m[1] || ''} ${m[3] || ''}`) || (/\b(usd|dollars?)\b/i.test(t) && !/\b(pkr|rs\.?|rupees)\b/i.test(t)) ? 'USD' : 'PKR';
+  const cur = /usd|\$|dollar/i.test(`${m[1] || ''} ${m[3] || ''}`) || (/\b(usd|dollars?)\b/i.test(t) && !/\b(pkr|rs\.?|rupees)\b/i.test(t)) ? 'USD'
+    : /pkr|rs|rupee|\/-/i.test(`${m[1] || ''} ${m[3] || ''}`) || /\b(pkr|rs\.?|rupees)\b/i.test(t) ? 'PKR' : null;   // no currency written: the company's own
   return { amount: n, currency: cur };
 }
 const numWord = (s) => (/^\d+$/.test(s) ? Number(s) : WORDNUM[String(s).toLowerCase()] || null);
@@ -136,7 +137,7 @@ export function parseContract(raw) {
   const text = clean(raw);
   const lines = text.split('\n');
   const flat = lines.join(' ');
-  const out = { name: null, email: null, phone: null, cnic: null, title: null, joined_on: null, base: null, currency: 'PKR', probation_end: null, probation_months: null, notice_days: null, contract: 'full_time', bank_name: null, iban: null, account_title: null, address: null, kind: 'new', pay_from: null, found: [] };
+  const out = { name: null, email: null, phone: null, cnic: null, title: null, joined_on: null, base: null, currency: null, probation_end: null, probation_months: null, notice_days: null, contract: 'full_time', bank_name: null, iban: null, account_title: null, address: null, kind: 'new', pay_from: null, found: [] };
   const got = (k, v) => { if (v != null && v !== '' && out[k] == null) { out[k] = v; out.found.push(k); } };
 
   // what sort of document: a first contract, or a promotion, raise or extension of one

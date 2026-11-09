@@ -128,6 +128,9 @@ ufw --force enable >/dev/null
 echo "==> Nightly database backup (kept 14 days) at $BK"
 cat > /etc/cron.daily/workhelm-backup <<EOF
 #!/bin/sh
+bash /opt/workhelm/deploy/backup.sh
+EOF
+#!/bin/sh
 sqlite3 $DATA/tracker.db ".backup '$BK/tracker-\$(date +%F).db'" && find $BK -name 'tracker-*.db' -mtime +14 -delete
 EOF
 chmod 755 /etc/cron.daily/workhelm-backup

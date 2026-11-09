@@ -249,7 +249,7 @@ function pickedPane(it, { pj, requests, approvals, rmsgs, cs, ret }) {
   const said = it.task && it.text.startsWith(`On “${it.task}”: `) ? it.text.slice(`On “${it.task}”: `.length) : it.text;
   return html`<div class="pp">${head(it.task || it.text, who)}<div class="pp-b">${pbub(from, it.detail || said, it.since, false, false, true)}</div>
     <div class="pp-f"><form class="pp-reply" data-submit="ibx-reply" data-kind="cmt" data-id="${it.task_id}"><input name="body" maxlength="4000" placeholder="Answer on the task" aria-label="Your comment" required><button class="btn primary" type="submit">${icon('chat')} Comment</button></form>
-      <div class="pp-acts"><a class="btn quiet" href="#/tasks?task=${it.task_id}">${icon('tasks')} Open the task</a><span class="pp-left">${cs} sees your name and “Amplify” on the task.</span></div></div></div>`;
+      <div class="pp-acts"><a class="btn quiet" href="#/tasks?task=${it.task_id}">${icon('tasks')} Open the task</a><span class="pp-left">${cs} sees your name and “${String(S.settings.org_name || 'your company').split(' ')[0]}” on the task.</span></div></div></div>`;
 }
 const tz = (c) => (c && c.tz_name) || undefined;
 const when = (iso, c, o) => new Date(iso).toLocaleString('en-US', { timeZone: tz(c), ...o });
@@ -652,7 +652,7 @@ export const inboxPage = {
       ${shown.length ? html`<ul class="cq-l">${shown.map(card)}</ul>` : html`<p class="cq-ok">${icon('check')}${items.length ? 'Nothing here with this filter.' : 'Every client has an answer. New messages, requests and comments land here.'}</p>`}
       <p class="ibx2-foot">Amber after 2 hours, red after 4.</p></section>`;
     // ---------- middle ----------
-    let center = html`<div class="ibx2-none">${icon('check')}<h2>All caught up</h2><p>Nothing from a client is waiting on Amplify.</p></div>`;
+    let center = html`<div class="ibx2-none">${icon('check')}<h2>All caught up</h2><p>Nothing from a client is waiting on ${String(S.settings.org_name || 'you').split(' ')[0]}.</p></div>`;
     let rail = '';
     if (it) {
       const cs = short(it.client), first = it.from ? it.from.name.split(' ')[0] : cs;

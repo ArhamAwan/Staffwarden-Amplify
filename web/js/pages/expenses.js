@@ -1,6 +1,6 @@
 // Expense claims and advances to review. Managers approve their team's claims first (when the owner has
 // that on); HR approves them for payroll and decides advances.
-import { html, raw, icon, money, dayShort, dayMD, relTime, plural, initials, avColor } from '../util.js';
+import { html, raw, icon, money, homeCurrency, dayShort, dayMD, relTime, plural, initials, avColor } from '../util.js';
 import { get, post, qs, fileUrl } from '../api.js';
 import { S, actions, tag, empty, openModal, toast, errMsg, qAttr, kpis, findPeople, findBox, longList, noMatch } from '../ui.js';
 import { ptabs } from './payroll.js';
@@ -15,7 +15,7 @@ const mine = (e) => (isHRme() ? e.status === 'pending' || e.status === 'manager_
 function expBento(claims, waiting, sum) {
   const st = (k) => claims.filter((e) => e.status === k);
   const month = (claims.map((e) => e.spent_on).sort().pop() || '').slice(0, 7);
-  const cats = new Map(); for (const e of claims) if (e.spent_on.startsWith(month) && e.status !== 'declined' && e.currency === 'PKR') cats.set(e.category, (cats.get(e.category) || 0) + e.amount);
+  const cats = new Map(); for (const e of claims) if (e.spent_on.startsWith(month) && e.status !== 'declined' && e.currency === homeCurrency()) cats.set(e.category, (cats.get(e.category) || 0) + e.amount);
   const cl = [...cats].sort((a, b) => b[1] - a[1]).slice(0, 4), cmax = Math.max(1, ...cl.map((x) => x[1]));
   const ppl = [...new Map(waiting.map((e) => [e.user_id, e])).values()];
   const [y, m] = month.split('-').map(Number);
@@ -49,7 +49,7 @@ export default {
     const head = html`<div class="page-h"><div><h1>Expenses</h1><p class="sub">${hr ? 'People send a receipt, their manager approves it, and it is paid with their salary.' : 'Claims from your team. You approve them first, then HR.'}</p></div>
       <div class="tools">${sub}</div>${hr ? ptabs('expenses') : ''}</div>`;
     if (tab === 'advances' && hr) return html`${head}${advancesView(advances, q)}`;
-    const sum = (list) => list.reduce((n, e) => n + (e.currency === 'PKR' ? e.amount : 0), 0);
+    const sum = (list) => list.reduce((n, e) => n + (e.currency === homeCurrency() ? e.amount : 0), 0);
     if (!claims.length) return html`${head}<section class="panel">${empty('No expense claims yet', 'People send them from their Pay page with a photo of the receipt.')}</section>`;
     const c = claims.find((x) => x.id === sel) || claims[0];
     // a big company: find a person, 25 at a time (waiting ones come first from the server)
@@ -59,7 +59,7 @@ export default {
         return html`<tr class="link ${e.id === c.id ? 'sel' : ''}" data-k="e${e.id}" data-act="q" ${raw(qAttr('id', e.id))} tabindex="0"><td class="nm"><span class="person">${av(e.user_id, e.user_name)}<span><b>${e.user_name}</b><span>${relTime(e.created_at)}</span></span></span></td>
         <td><b>${e.note}</b><div class="small muted">${catName(e.category)} · ${dayMD(e.spent_on)}</div></td><td class="r num"><b>${money(e.amount, e.currency)}</b></td>
         <td>${over && mine(e) ? tag('absent', `Over the ${catName(e.category).toLowerCase()} limit`) : tag(k, mine(e) ? (e.status === 'manager_ok' ? `${e.manager_name || 'Manager'} approved, waiting for you` : 'Waiting for you') : w)}</td></tr>`; })}</tbody></table></div>${pg.more}` : noMatch(q)}
-      <p class="ext-foot"><span>${plural(found.length, 'claim')}</span><b class="num">${money(sum(found.filter((e) => e.status !== 'declined')))}${found.some((e) => e.currency !== 'PKR') ? ' and more in other currencies' : ''}</b></p></div></section>`;
+      <p class="ext-foot"><span>${plural(found.length, 'claim')}</span><b class="num">${money(sum(found.filter((e) => e.status !== 'declined')))}${found.some((e) => e.currency !== homeCurrency()) ? ' and more in other currencies' : ''}</b></p></div></section>`;
     const [k, w] = EXP_STATUS[c.status];
     const over = c.limit != null && c.amount > c.limit;
     const detail = html`<section class="panel exp-detail" data-k="d${c.id}"><div class="body">

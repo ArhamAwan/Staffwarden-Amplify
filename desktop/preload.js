@@ -5,6 +5,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('tracker', {
   state: () => ipcRenderer.invoke('state'),
   login: (p) => ipcRenderer.invoke('login', p),
+  findCompany: (email) => ipcRenderer.invoke('find-company', { email }),
+  openForgot: (serverUrl) => ipcRenderer.invoke('open-forgot', { serverUrl }),
   logout: () => ipcRenderer.invoke('logout'),
   acceptPolicy: () => ipcRenderer.invoke('accept-policy'),
   projects: () => ipcRenderer.invoke('projects'),

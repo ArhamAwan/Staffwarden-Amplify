@@ -121,7 +121,7 @@ function createApp(opts = {}) {
   loadSettings();
   // an install from before the company's name was saved kept it only as the built-in default: save it, so
   // changing that default (the app is for any company now) never renames a company already running
-  if (!opts.orgName && !db.prepare("SELECT 1 FROM settings WHERE key = 'orgName'").get() && db.prepare('SELECT 1 FROM users LIMIT 1').get()) {
+  if (!opts.orgName && !opts.tenant && !db.prepare("SELECT 1 FROM settings WHERE key = 'orgName'").get() && db.prepare('SELECT 1 FROM users LIMIT 1').get()) {
     saveSetting('orgName', 'Amplify Media'); cfg.orgName = 'Amplify Media';
   }
 
@@ -162,6 +162,7 @@ function createApp(opts = {}) {
 
   const HR_EVENTS = new Set(['payroll', 'hr', 'expenses', 'timeoff', 'users']);
   function emit(type, userId = null) {
+    if (type === 'users' && opts.tenant && opts.tenant.onUsersChanged) { try { opts.tenant.onUsersChanged(); } catch (e) { console.error('seats', e); } }
     const msg = `data: ${JSON.stringify({ type, user_id: userId, at: nowIso() })}\n\n`;
     for (const c of sseClients) {
       if (c.kind === 'client') continue;
@@ -254,7 +255,8 @@ function createApp(opts = {}) {
       ...(({ special, ...h }) => h)(ctx.calc.hoursOn(u, ctx.calc.todayOf(u))), work_days: u.work_days || cfg.workDays,
       day_hours: ctx.calc.dayHours(u),
       day_start_min: T.dayStartMin(u.shift_start || cfg.shiftStart, u.shift_end || cfg.shiftEnd),
-      shots_per_10: sp.per_10, shots_source: sp.source, other_device: !!u.other_device,
+      // screenshots are a Pro feature on the service: off for everyone when the plan doesn't have them
+      shots_per_10: opts.tenant && !opts.tenant.allows('screenshots') ? 0 : sp.per_10, shots_source: opts.tenant && !opts.tenant.allows('screenshots') ? 'plan' : sp.source, other_device: !!u.other_device,
       // a fun look the owner switched on (god mode): cosmetic only, never a permission
       fun_mode: u.fun_mode && (!u.fun_until || Date.parse(u.fun_until) > clockNow()) ? u.fun_mode : null,
       // the developer tools (server health, apps, errors); never a way into screenshots, pay or messages
@@ -266,6 +268,8 @@ function createApp(opts = {}) {
       // the colour theme: theirs, else the company's default; and the logo colour for "Your company"
       theme: ctx.themeOf ? ctx.themeOf(u) : 'night', theme_own: u.theme || null, theme_default: ctx.themeDefault ? ctx.themeDefault() : 'night',
       brand: ctx.companyPublic ? ctx.companyPublic().brand_now : null,
+      // the company's Staffwarden account: trial, paused, payment trouble (the owner sees billing; others only a pause)
+      account: opts.tenant && opts.tenant.publicInfo ? opts.tenant.publicInfo(u) : null,
     };
   };
 
@@ -479,13 +483,16 @@ function createApp(opts = {}) {
     POLICY_VERSION, db, cfg, route, clientIp, tokenHash, verifyNobody, passwordProblem, now: clockNow, nowIso, emit, emitTo, emitUsers, emitPortal, emitClientUser, onlineNow, publicUrl: opts.publicUrl || null, pushFetch: opts.pushFetch || null, gifFetch: opts.gifFetch || null, smtpOptions: opts.smtpOptions || null, publicClient, managersOf, sweepNotify, audit, publicUser, shotPolicy, shotDir, hashPassword, verifyPassword, newToken, PAUSE_REASONS,
     isManager, isHR, needHR, hrDir, needConsent, needConsentNow, needManager, cmpVersion, POLICY_CHANGES, needOwner, canSee, visibleUsers, targetUser, managedTeamIds, touch, removeShots, purgeOld, sweepStale,
     saveSetting, defaults, T, MAX_BODY, clockNow, listDownloads: () => listDownloads(), latestApp: (p, a) => latestApp(p, a),
+    // set when this company runs on the shared Staffwarden service (one app per company): its account and
+    // email. Without it (one company on its own server) everything works as before and nothing is billed.
+    tenant: opts.tenant || null, mail: opts.mail || null,
   };
   ctx.calc = createCalc(ctx);
   ctx.notify = createNotify(ctx);
   ctx.pnotify = createPortalNotify(ctx);
   ctx.changes = createChanges(ctx);
   ctx.payroll = createPayroll(ctx);
-  for (const f of ['auth', 'people', 'projects', 'tasks', 'performance', 'timer', 'capture', 'views', 'timeoff', 'admin', 'notifications', 'explain', 'hr', 'payroll', 'clients', 'portal', 'chat', 'portal2', 'team', 'shift', 'gifs', 'dev', 'leaderboard', 'shiftreport', 'assets', 'company', 'plans', 'themes', 'notes']) require(`./routes/${f}`)(ctx);
+  for (const f of ['auth', 'people', 'projects', 'tasks', 'performance', 'timer', 'capture', 'views', 'timeoff', 'admin', 'notifications', 'explain', 'hr', 'payroll', 'clients', 'portal', 'chat', 'portal2', 'team', 'shift', 'gifs', 'dev', 'leaderboard', 'shiftreport', 'assets', 'company', 'plans', 'themes', 'notes', 'account']) require(`./routes/${f}`)(ctx);
 
   // ---------- server ----------
   // a file sent as it is (not as JSON), for uploads bigger than a JSON body allows
@@ -546,8 +553,10 @@ function createApp(opts = {}) {
 
   // Desktop app installers, put in <data>/downloads on the server (they survive updates). Anyone can
   // download them: the sign-in page links to them so new staff can install the app.
-  const dlDir = path.join(cfg.dataDir, 'downloads');
+  const dlDir = opts.dlDir || path.join(cfg.dataDir, 'downloads');
   ctx.dlDir = dlDir; ctx.BUILD = BUILD;
+  // the money the company pays people in unless set per person (a single-company install from before was in rupees)
+  ctx.homeCurrency = () => cfg.payCurrency || (opts.tenant ? 'USD' : 'PKR');
   // how many screens are open right now (for the developer's health page)
   ctx.liveCounts = () => { let staff = 0, clients = 0; for (const c of sseClients) { if (c.kind === 'client') clients++; else staff++; } return { staff, clients }; };
   // to every open staff screen and portal (the notice at the top, feature switches)
@@ -590,7 +599,7 @@ function createApp(opts = {}) {
     fs.createReadStream(file).pipe(res);
   }
 
-  const server = http.createServer(async (req, res) => {
+  async function handle(req, res) {
     const url = new URL(req.url, 'http://localhost');
     const send = (status, payload, extra = {}) => {
       res.writeHead(status, { 'Content-Type': extra['Content-Type'] || 'application/json', 'Cache-Control': 'no-store', 'X-Server-Time': nowIso(), 'X-Workhelm-Build': BUILD, ...SEC_HEADERS, ...(viaHttps(req) ? HSTS : {}), ...extra });
@@ -608,6 +617,8 @@ function createApp(opts = {}) {
       const user = isLogin ? null : r.open ? (() => { try { return authUser(req); } catch { return null; } })() : authUser(req);
       if (user && user.kind === 'client') need(r.client, 403, 'Not available in the client portal');
       if (user && user.preview) need(req.method === 'GET', 403, 'This is a preview. Nothing you do here is sent.');
+      // the company's account: tracking paused (trial over, not paid, closed) and what its plan includes
+      if (opts.tenant && opts.tenant.gate) { const why = opts.tenant.gate(url.pathname, req.method, user); if (why && why.soft !== undefined) return send(200, why.soft); if (why) throw new HttpError(why.status || 403, why.message, why.extra); }
       const body = r.raw ? await readRaw(req, r.raw) : ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readBody(req) : {};
       const out = await r.handler({ req, user, body, params, query: url.searchParams });
       if (out && out.sse) {
@@ -621,6 +632,13 @@ function createApp(opts = {}) {
         req.on('close', () => sseClients.delete(client));
         return;
       }
+      // a big file (the company's export): streamed from disk, never read into memory
+      if (out && typeof out.streamFile === 'string') {
+        const st = fs.statSync(out.streamFile);
+        res.writeHead(200, { 'Content-Type': out.type || 'application/octet-stream', 'Content-Length': st.size, 'Content-Disposition': `attachment; filename="${String(out.name || path.basename(out.streamFile)).replace(/"/g, '')}"`, 'Cache-Control': 'no-store', ...SEC_HEADERS });
+        fs.createReadStream(out.streamFile).pipe(res);
+        return;
+      }
       if (out && out.raw) return send(200, out.raw, { 'Content-Type': out.type, 'Cache-Control': 'private, max-age=300', ...(out.headers || {}) });
       send(200, out);
     } catch (e) {
@@ -629,17 +647,19 @@ function createApp(opts = {}) {
       if (ctx.recordError) ctx.recordError(e, null);
       send(500, { error: 'Internal error' });
     }
-  });
+  }
+  const server = http.createServer(handle);
 
-  const closeServer = server.close.bind(server);
-  server.close = (cb) => {
+  // stops this company's timers and live connections (the server closing, or the company being unloaded)
+  function stop() {
     clearInterval(pinger); clearInterval(sweeper);
     for (const c of sseClients) { try { c.res.end(); } catch { /* already closed */ } }
     sseClients.clear();
-    return closeServer(cb);
-  };
+  }
+  const closeServer = server.close.bind(server);
+  server.close = (cb) => { stop(); return closeServer(cb); };
 
-  return { server, db, seedOwner, purgeOld, sweepStale, sweepNotify, cfg };
+  return { server, handle, stop, db, ctx, seedOwner, purgeOld, sweepStale, sweepNotify, cfg };
 }
 
 module.exports = { createApp, cmpVersion };

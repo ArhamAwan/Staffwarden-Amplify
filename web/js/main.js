@@ -1,7 +1,7 @@
 import { get, post, getToken, setToken, setUnauthorizedHandler, setNewBuildHandler, startLive, clearImages, setViewAs } from './api.js';
 import { registerSW } from './push.js';
 import { requireNotifications, resetGate } from './notifygate.js';
-import { html, esc, icon, ago, initials, avColor, HELM, CREDIT, owl } from './util.js';
+import { html, esc, icon, ago, initials, avColor, HELM, owl, setHomeCurrency } from './util.js';
 import { S, actions, toast, errMsg, tickClocks, hydrateImages, openViewer, dial } from './ui.js';
 import { morph } from './morph.js';
 import { enter, snapshot, pulseChanges } from './motion.js';
@@ -11,6 +11,8 @@ import { openTask } from './pages/tasks.js';
 import { invalidatePeople } from './parts.js';
 import { watchOverlay } from './lock.js';
 import { chatEvent } from './chat.js';
+import { handleLink, showClosed, companyInfo } from './links.js';
+import { PAGE_FEATURE, hasFeature, planGatePage, accountBar, account } from './pages/billing.js';
 watchOverlay();
 import { teamPage, mePage } from './pages/dashboard.js';
 import timeline from './pages/timeline.js';
@@ -81,7 +83,10 @@ const routes = () => {
     : { ...EMP, pay, ...(isHR() ? HR_PAGES : {}) };
   const lb = S.me.leaderboard ? { leaderboard } : {};
   const dev = S.me.is_dev ? { dev: devHome, 'dev-apps': devApps, 'dev-errors': devErrors, 'dev-tools': devTools } : {};
-  return god() ? { ...base, ...lb, ...dev, '': godHome } : { ...base, ...lb, ...dev };
+  const all = god() ? { ...base, ...lb, ...dev, '': godHome } : { ...base, ...lb, ...dev };
+  // a page the company's plan doesn't include says so, and which plan has it
+  for (const [k, f] of Object.entries(PAGE_FEATURE)) if (all[k] && !hasFeature(f)) all[k] = planGatePage(f);
+  return all;
 };
 const CHAT_NAV = ['chat', 'Chat', 'chats'];
 const LB_NAV = () => (S.me && S.me.leaderboard ? [['leaderboard', 'Leaderboard', 'trophy']] : []);
@@ -119,6 +124,10 @@ export async function showDownloads(box, { dark = true } = {}) {
   };
   const here = /Mac/.test(navigator.platform) ? 'mac' : /Win/.test(navigator.platform) ? 'windows' : '';
   const sorted = [...opts].sort((a, b) => (b[0].kind.startsWith(here || 'x') ? 1 : 0) - (a[0].kind.startsWith(here || 'x') ? 1 : 0));
+  if (box.classList.contains('lk-dl')) {
+    box.innerHTML = sorted.map(([d, n]) => { const os = d.kind === 'windows' ? 'windows' : 'mac'; const short = d.kind === 'windows' ? 'Windows' : d.kind === 'mac-arm' ? 'Mac, Apple chip' : 'Mac, Intel'; return `<a class="${here && d.kind.startsWith(here) ? 'lk-mine' : ''}" href="/downloads/${encodeURIComponent(d.file)}" download title="${esc(n)}, ${mb(d.size)}">${OS[os]}<span>${esc(short)}</span></a>`; }).join('');
+    return;
+  }
   if (box.classList.contains('si-dl')) {
     box.innerHTML = `<span class="si-dl-h">Track your time with the desktop app</span><div class="si-dl-row">${sorted.map(([d, n]) => { const os = d.kind === 'windows' ? 'windows' : 'mac'; const short = d.kind === 'windows' ? 'Windows' : d.kind === 'mac-arm' ? 'Apple chip' : 'Intel Mac'; return `<a class="si-dl-b${here && d.kind.startsWith(here) ? ' mine' : ''}" href="/downloads/${encodeURIComponent(d.file)}" download title="${esc(n)}, ${mb(d.size)}">${OS[os]}<span>${esc(short)}</span></a>`; }).join('')}</div>`;
     return;
@@ -141,39 +150,78 @@ function watchLogin() {
   pw.addEventListener('blur', () => o.classList.remove('shut'));
 }
 
-function showLogin(msg) {
+async function showLogin(msg, email) {
   teardown();
+  const co = await companyInfo();
+  const pre = email || (/^#signin\?email=([^&]+)/.exec(location.hash) || [])[1];
+  const preEmail = pre ? decodeURIComponent(pre) : '';
+  const home = co.apex ? `${co.apex}/welcome` : '/welcome';
   // one screen, never scrolls: the owl in front of the moon on the left, one glass card on the right
   app.innerHTML = `<div class="si">
     <div class="si-sky" aria-hidden="true"><i class="si-stars"></i><i class="si-stars s2"></i><i class="si-glow"></i></div>
-    <header class="si-top"><span class="si-brand"><span class="mark">${HELM}</span><b class="wordmark">Staffwarden</b></span><a class="si-home" href="/welcome">What is Staffwarden?</a></header>
+    <header class="si-top"><span class="si-brand"><span class="mark">${HELM}</span><b class="wordmark">Staffwarden</b></span><a class="si-home" href="${esc(home)}">What is Staffwarden?</a></header>
     <section class="si-art" aria-hidden="true">
       <div class="si-stage"><div class="si-moon"></div><div class="si-owl">${owl('live')}</div></div>
       <p class="si-tag">Keeping watch, so you don’t have&nbsp;to.</p>
     </section>
-    <section class="si-card" aria-labelledby="si-h">
-      <h1 id="si-h">Welcome back</h1><p class="si-sub">Sign in with the email and password you were given.</p>
-      <form id="login" novalidate>
-        <label class="si-f"><span>Email</span><input id="em" name="email" type="email" autocomplete="username" required autofocus placeholder="you@company.com"></label>
-        <label class="si-f"><span>Password</span><input id="pw" name="password" type="password" autocomplete="current-password" required placeholder="Your password"></label>
-        <p class="err" role="alert" id="login-err">${esc(msg || '')}</p>
-        <button class="si-go" type="submit">Sign in</button></form>
-      <div id="dl" class="si-dl"></div>
-    </section>
-    <footer class="si-foot">${CREDIT}. Time is tracked only while you choose to, and private windows never leave your computer.</footer>
+    <section class="si-card" aria-labelledby="si-h" id="si-card"></section>
+    <footer class="si-foot">Time is tracked only while you choose to, and private windows never leave your computer.</footer>
   </div>`;
-  showDownloads(document.getElementById('dl'), { dark: false });
-  watchLogin();
-  document.getElementById('login').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const f = e.target, btn = f.querySelector('button'), err = document.getElementById('login-err');
-    err.textContent = ''; btn.disabled = true;
-    try {
-      const r = await post('/api/auth/login', { email: f.email.value.trim(), password: f.password.value });
-      setToken(r.token);
-      await boot();
-    } catch (ex) { err.textContent = errMsg(ex); btn.disabled = false; }
-  });
+  const card = document.getElementById('si-card');
+  const coRow = co.address ? `<div class="si-co"><span class="si-co-lg" style="background:${co.brand ? esc(co.brand) : '#6B55D6'}">${co.icon ? `<img src="${esc(co.icon)}" alt="">` : esc((co.name || '?').trim()[0].toUpperCase())}</span><span class="si-co-t"><b>${esc(co.name || '')}</b><span>${esc(co.address)}</span></span></div>` : '';
+  function signInCard(m = msg, em = preEmail) {
+    card.innerHTML = `<h1 id="si-h">Welcome back</h1><p class="si-sub">${co.address ? `Sign in to ${esc(co.name || 'your company')}.` : 'Sign in with the email and password you were given.'}</p>
+      ${coRow}
+      <form id="login" novalidate>
+        <label class="si-f"><span>Email</span><input id="em" name="email" type="email" autocomplete="username" required placeholder="you@company.com" value="${esc(em)}"></label>
+        <label class="si-f"><span>Password</span><input id="pw" name="password" type="password" autocomplete="current-password" required placeholder="Your password"></label>
+        <p class="err" role="alert" id="login-err">${esc(m || '')}</p>
+        <button class="si-go" type="submit">Sign in</button></form>
+      <div class="si-links"><button type="button" class="si-forgot" id="forgot">Forgot password?</button>${co.apex ? `<a href="${esc(co.apex)}/signin">Not ${esc(co.name || 'your company')}?</a>` : ''}</div>
+      <div id="dl" class="si-dl"></div>`;
+    showDownloads(document.getElementById('dl'), { dark: false });
+    watchLogin();
+    const f = document.getElementById('login');
+    (em ? f.password : f.email).focus();
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = f.querySelector('button'), err = document.getElementById('login-err');
+      err.textContent = ''; btn.disabled = true;
+      try {
+        const r = await post('/api/auth/login', { email: f.email.value.trim(), password: f.password.value });
+        setToken(r.token);
+        let after = null; try { after = sessionStorage.getItem('sw-after'); sessionStorage.removeItem('sw-after'); } catch { /* private window */ }
+        if (after) history.replaceState(null, '', after); else if (/^#signin/.test(location.hash)) history.replaceState(null, '', '#/');
+        await boot();
+      } catch (ex) { err.textContent = errMsg(ex); btn.disabled = false; }
+    });
+    document.getElementById('forgot').addEventListener('click', () => forgotCard(f.email.value.trim()));
+  }
+  function forgotCard(em) {
+    card.innerHTML = co.forgot ? `<h1 id="si-h">New password</h1><p class="si-sub">Type your email. If it’s one of ${esc(co.name || 'the company')}’s, we’ll send a link to set a new password.</p>
+      <form id="fg" novalidate><label class="si-f"><span>Email</span><input name="email" type="email" autocomplete="username" required placeholder="you@company.com" value="${esc(em)}"></label>
+        <p class="err" role="alert" id="fg-err"></p><button class="si-go" type="submit">Email me a link</button></form>
+      <div class="si-links"><button type="button" class="si-forgot" id="back">Back to sign in</button></div>`
+      : `<h1 id="si-h">Forgot your password?</h1><p class="si-sub">Ask whoever runs Staffwarden at your company. They can set a new one for you from People, in a minute.</p>
+      <div class="si-links"><button type="button" class="si-forgot" id="back">Back to sign in</button></div>`;
+    document.getElementById('back').addEventListener('click', () => signInCard('', em));
+    const fg = document.getElementById('fg');
+    if (!fg) return;
+    fg.email.focus();
+    fg.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = fg.querySelector('button'), err = document.getElementById('fg-err'), v = fg.email.value.trim();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { err.textContent = 'That doesn’t look like an email address.'; fg.email.focus(); return; }
+      err.textContent = ''; btn.disabled = true;
+      try {
+        await post('/api/auth/forgot', { email: v });
+        card.innerHTML = `<h1 id="si-h">Check your email</h1><p class="si-sub">If <b>${esc(v)}</b> belongs to ${esc(co.name || 'the company')}, a link is on its way. It works for 30 minutes, once.</p>
+          <div class="si-links"><button type="button" class="si-forgot" id="back">Back to sign in</button></div>`;
+        document.getElementById('back').addEventListener('click', () => signInCard('', v));
+      } catch (ex) { err.textContent = errMsg(ex); btn.disabled = false; }
+    });
+  }
+  signInCard();
 }
 actions.logout = async () => { try { await post('/api/auth/logout'); } catch { /* already gone */ } setToken(null); S.me = null; showLogin(); };
 // A new version of the website went live while this page was open: say so, and refresh on request.
@@ -218,6 +266,8 @@ function navHtml() {
   const routeOf = (n) => (n[0] === '' ? '' : n[0]);
   const here = name === 'hr-import' ? 'hr' : name || '';
   const grp = (t, list) => {
+    // pages outside the plan: hidden, except for the owner (who can change the plan)
+    list = list.filter(([r]) => !PAGE_FEATURE[r] || hasFeature(PAGE_FEATURE[r]) || (account() && account().billing));
     if (!list.length) return '';
     const mine = list.some((n) => routeOf(n) === here);
     // going to a page in another group opens that group; after that it stays as you leave it, open or closed
@@ -251,12 +301,11 @@ function buildShell() {
     <nav class="rail" aria-label="Main"><div class="brand"><span class="mark">${owl('watch', 'Staffwarden')}</span><div><b class="wordmark">Staffwarden</b><span>${esc(S.settings.org_name)}</span></div></div>
       <button type="button" class="rail-search" data-act="jump" aria-label="Search or jump to a page (Ctrl+K)">${icon('search')}<span>Search or jump to</span><kbd>${/Mac|iP/.test(navigator.platform) ? '⌘K' : 'Ctrl K'}</kbd></button>
       <div id="nav" style="display:flex;flex-direction:column;gap:2px"></div>
-      <p class="credit rail-credit">${CREDIT}</p>
       <a class="rail-clock" id="clock" href="#/me" hidden><i></i><span class="rc-t"></span><b class="rc-v num"></b></a>
       <div class="who"><a href="#/profile" class="me-link" id="melink" aria-label="Your profile: settings, sign-ins and the desktop app"><span class="avatar" style="background:${avColor(u.id)}">${esc(initials(u.name))}</span><span class="me-txt"><span class="nm">${esc(u.name)}</span><span class="rl me-cta">Open profile</span></span><svg class="me-chev" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
       <button class="btn icon" data-act="logout" aria-label="Sign out" title="Sign out">${icon('out').toString()}</button></div></nav>
     <main class="main" id="main"><div class="topstrip"><div class="annbar" id="annbar" role="status" hidden></div><span class="livepill" id="pill" role="status"><i></i><span id="pilltxt">Connecting…</span></span>
-      ${bellHtml()}<button class="btn sm" data-act="tour" aria-label="How Staffwarden works">${icon('help').toString()} Tour</button><button class="btn sm" id="refbtn" data-act="refresh" aria-label="Refresh now">${icon('refresh').toString()} Refresh</button></div><div id="view" tabindex="-1"></div></main></div>`;
+      ${bellHtml()}<button class="btn sm" data-act="tour" aria-label="How Staffwarden works">${icon('help').toString()} Tour</button><button class="btn sm" id="refbtn" data-act="refresh" aria-label="Refresh now">${icon('refresh').toString()} Refresh</button></div><div class="acct-note" id="acctbar" role="status" hidden></div><div id="view" tabindex="-1"></div></main></div>`;
   view = document.getElementById('view');
   navEl = document.getElementById('nav');
   morph(navEl, navHtml());
@@ -330,7 +379,7 @@ async function run({ navigated = false, manual = false } = {}) {
   if (navigated && current.key !== key) {
     const cached = pageCache.get(key);
     if (cached) {
-      try { morph(view, page.render(cached, q).toString()); if (page.after) page.after(view, cached); if (!soft) { enter(view); window.scrollTo(0, 0); } hydrateImages(view); tickClocks(view); current = { name, key, base }; shownCached = true; } catch { view.innerHTML = skeleton(); }
+      try { morph(view, page.render(cached, q).toString()); if (page.after) page.after(view, cached, q); if (!soft) { enter(view); window.scrollTo(0, 0); } hydrateImages(view); tickClocks(view); current = { name, key, base }; shownCached = true; } catch { view.innerHTML = skeleton(); }
     } else if (current.name !== name) view.innerHTML = skeleton();
     else if (soft) view.setAttribute('aria-busy', 'true');
   }
@@ -343,7 +392,7 @@ async function run({ navigated = false, manual = false } = {}) {
     const fresh = navigated && current.key !== key && !shownCached && !soft;
     const before = fresh || shownCached || soft ? null : snapshot(view);
     morph(view, page.render(data, q).toString());
-    if (page.after) page.after(view, data);
+    if (page.after) page.after(view, data, q);
     if (fresh) enter(view); else if (before) pulseChanges(view, before);
     hydrateImages(view);
     tickClocks(view);
@@ -484,14 +533,14 @@ async function onEvent(ev) {
   if (ev.type === 'boost') { showBoost(ev.boost_id); return; }
   if (ev.type === 'idle') { checkNudge(); if (S.me.role !== 'owner' && !(isMgr() && current.name === '')) return; }
   if (ev.type === 'banner') { refreshSysBanner(); if (!/^dev/.test(current.name || '')) return; }
-  if (ev.type === 'me' || ev.type === 'leaderboard') { try { S.me = await get('/api/me'); } catch { /* keep old */ } }
+  if (ev.type === 'me' || ev.type === 'leaderboard') { try { S.me = await get('/api/me'); } catch { /* keep old */ } updateNav(); showAcctBar(); }
   if (ev.type === 'announcement') { refreshAnnBar(); if (current.name !== 'announcements') return; }
   if (ev.type === 'boost_answer' && current.name !== 'chat') return;
   if (ev.type === 'fun') { try { S.me = await get('/api/me'); } catch { /* keep old */ } }
   // god mode: my own timer started or paused (from the desktop app): the countdown or the pause card
   if ((ev.type === 'timer' || ev.type === 'pause') && S.me && ev.user_id === S.me.id && S.me.fun_mode) godTimer();
   if (ev.type === 'tasks' && S.me.fun_mode) funWatch();
-  if (ev.type === 'settings') { try { S.settings = await get('/api/settings'); S.me = await get('/api/me'); } catch { /* keep old */ } }
+  if (ev.type === 'settings') { try { S.settings = await get('/api/settings'); setHomeCurrency(S.settings.pay_currency); S.me = await get('/api/me'); } catch { /* keep old */ } }
   if (ev.type === 'users') invalidatePeople();
   if (ev.type === 'users' && ev.user_id === S.me.id) { try { S.me = await get('/api/me'); } catch { /* keep old */ } }
   if (['me', 'settings', 'users', 'fun', 'leaderboard'].includes(ev.type)) syncTheme();
@@ -500,8 +549,18 @@ async function onEvent(ev) {
   schedule();
 }
 
+// the account's news for this person (a trial ending, a declined card, tracking paused), above every page
+function showAcctBar() {
+  const el = document.getElementById('acctbar');
+  if (!el) return;
+  const b = accountBar();
+  if (!b) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false; el.className = `acct-note ${b.tone}`;
+  el.innerHTML = `<span class="an-ic" aria-hidden="true">${icon(b.tone === 'bad' ? 'flag' : 'clock')}</span><div class="an-t">${b.html}</div>${b.act ? `<a class="btn sm ${b.tone === 'bad' ? 'primary' : 'amber'}" href="${b.act[1]}">${esc(b.act[0])}</a>` : ''}`;
+}
 function start() {
   buildShell();
+  showAcctBar();
   window.addEventListener('hashchange', onHash);
   document.addEventListener('visibilitychange', onVisible);
   window.addEventListener('focus', onVisible);
@@ -533,7 +592,9 @@ function teardown() {
 async function boot() {
   // someone new (from an ad or a link) arriving at the plain address sees what Staffwarden is first;
   // the desktop app, links into the app and "Sign in" (#signin) go straight to signing in
-  if (!getToken() && !location.hash && location.pathname === '/' && !/Electron|Staffwarden/i.test(navigator.userAgent)) { location.replace('/welcome'); return; }
+  // a link from an email (an invite, a new password, taking over) or a new owner arriving from sign-up
+  if (await handleLink(app, { boot, showLogin, showDownloads })) return;
+  if (!getToken() && !location.hash && location.pathname === '/' && !/Electron|Staffwarden/i.test(navigator.userAgent) && !(await companyInfo()).address) { location.replace('/welcome'); return; }
   if (!getToken()) return showLogin();
   // "See it as the client" opens here in its own tab, and stays a preview in that tab
   const pv = /^#\/client-view\?cu=(\d+)/.exec(location.hash);
@@ -545,9 +606,11 @@ async function boot() {
   try {
     S.me = await get('/api/me');
     S.settings = await get('/api/settings');
+    setHomeCurrency(S.settings.pay_currency);
     godTimer();   // god mode: where the timer is now, so its next start or pause plays a moment
   } catch (e) {
     if (e.status === 401) return showLogin();
+    if (e.status === 403 && e.data && e.data.closed) return showClosed(app, e.data);
     app.innerHTML = `<div class="center"><div class="login"><div class="card"><h1>Can't reach the server</h1><p class="muted mt">${esc(errMsg(e))}</p><button class="btn primary mt" onclick="location.reload()">Try again</button></div></div></div>`;
     return;
   }

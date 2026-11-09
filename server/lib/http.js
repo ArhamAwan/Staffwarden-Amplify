@@ -1,6 +1,6 @@
 'use strict';
 class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  constructor(status, message, extra) { super(message); this.status = status; if (extra) this.extra = extra; }
 }
 function need(cond, status, msg) { if (!cond) throw new HttpError(status, msg); }
 function str(v, name, max = 200) {

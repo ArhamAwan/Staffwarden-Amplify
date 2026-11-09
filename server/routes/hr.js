@@ -49,7 +49,7 @@ module.exports = (ctx) => {
       const isAuto = !!auto[key] && (flow === 'join' || key === 'deactivate');
       const autoDone = isAuto && auto[key]();
       const ok = (r && r.done_at) || autoDone;
-      return { key, title, sub, done: !!ok, auto: isAuto, auto_done: !!autoDone, done_at: r ? r.done_at : null, done_by: r ? nameOf(r.done_by) : null };
+      return { key, title: key === 'cnic' && ctx.homeCurrency() !== 'PKR' ? 'ID copy' : title, sub, done: !!ok, auto: isAuto, auto_done: !!autoDone, done_at: r ? r.done_at : null, done_by: r ? nameOf(r.done_by) : null };
     });
   }
 
@@ -62,7 +62,7 @@ module.exports = (ctx) => {
       record: {
         dob: rec.dob || null, contract: rec.contract || 'full_time', joined_on: P().localJoin(u, rec), probation_end: rec.probation_end || null, notice_days: rec.notice_days ?? null,
         bank_name: rec.bank_name || null, account_title: rec.account_title || null, iban: me ? mask(rec.iban) : rec.iban || null, iban_masked: mask(rec.iban),
-        emergency_name: rec.emergency_name || null, emergency_phone: rec.emergency_phone || null, phone: rec.phone || null, cnic: me ? (rec.cnic ? `•••••-•••••••-${String(rec.cnic).slice(-1)}` : null) : rec.cnic || null, address: rec.address || null, leaving_on: rec.leaving_on || null, leaving_reason: rec.leaving_reason || null,
+        emergency_name: rec.emergency_name || null, emergency_phone: rec.emergency_phone || null, phone: rec.phone || null, cnic: me ? (rec.cnic ? (/^\d{5}-\d{7}-\d$/.test(rec.cnic) ? `•••••-•••••••-${String(rec.cnic).slice(-1)}` : `••• ${String(rec.cnic).slice(-3)}`) : null) : rec.cnic || null, address: rec.address || null, leaving_on: rec.leaving_on || null, leaving_reason: rec.leaving_reason || null,
         notes: me ? undefined : rec.notes || null,
       },
       update_request: rec.upd_fields ? { fields: JSON.parse(rec.upd_fields), note: rec.upd_note || null, by: nameOf(rec.upd_by), at: rec.upd_at } : null,
@@ -108,7 +108,7 @@ module.exports = (ctx) => {
   // Nobody edits their HR record themselves until HR asks. HR picks what to update (and says why); the
   // person is told, fills in just those, and HR hears it's done. One request at a time.
   const UPDATABLE = { name: ['name'], dob: ['dob'], phone: ['phone'], address: ['address'], cnic: ['cnic'], emergency: ['emergency_name', 'emergency_phone'], bank: ['bank_name', 'account_title', 'iban'] };
-  const UPD_LABEL = { name: 'name', dob: 'date of birth', phone: 'phone', address: 'address', cnic: 'CNIC', emergency: 'emergency contact', bank: 'bank details' };
+  const UPD_LABEL = { name: 'name', dob: 'date of birth', phone: 'phone', address: 'address', cnic: 'ID number', emergency: 'emergency contact', bank: 'bank details' };
   const listOf = (keys) => { const l = keys.map((k) => UPD_LABEL[k]); return l.length > 1 ? `${l.slice(0, -1).join(', ')} and ${l[l.length - 1]}` : l[0]; };
   const hrPeople = () => db.prepare("SELECT id FROM users WHERE active = 1 AND (role = 'owner' OR hr = 1)").all().map((r) => r.id);
   const setReq = (uid, v) => {
@@ -187,11 +187,16 @@ module.exports = (ctx) => {
     if ('notice_days' in body) next.notice_days = body.notice_days === null || body.notice_days === '' ? null : int(body.notice_days, 'notice_days', 0, 365);
     for (const [k, m] of [['bank_name', 80], ['account_title', 100], ['emergency_name', 100], ['emergency_phone', 40], ['phone', 40], ['address', 300], ['leaving_reason', 200], ['notes', 2000]]) text(k, m);
     if ('employed' in body) next.employed = body.employed === null ? null : body.employed ? 1 : 0;
-    if ('cnic' in body) { const v = body.cnic ? String(body.cnic).replace(/\D/g, '') : null; need(v === null || v.length === 13, 400, 'A CNIC has 13 digits, like 61101-1234567-1'); next.cnic = v ? `${v.slice(0, 5)}-${v.slice(5, 12)}-${v.slice(12)}` : null; }
+    // a national ID: in Pakistan the 13-digit CNIC; anywhere else whatever the country uses
+    const pk = ctx.homeCurrency() === 'PKR';
+    if ('cnic' in body && pk) { const v = body.cnic ? String(body.cnic).replace(/\D/g, '') : null; need(v === null || v.length === 13, 400, 'A CNIC has 13 digits, like 61101-1234567-1'); next.cnic = v ? `${v.slice(0, 5)}-${v.slice(5, 12)}-${v.slice(12)}` : null; }
+    else if ('cnic' in body) { const v = body.cnic ? String(body.cnic).trim() : null; need(v === null || (v.length >= 4 && v.length <= 30), 400, 'The ID number looks too short or too long'); next.cnic = v || null; }
     if ('iban' in body) {
       const v = body.iban ? String(body.iban).replace(/\s+/g, '').toUpperCase() : null;
-      need(v === null || /^[A-Z]{2}\d{2}[A-Z0-9]{8,30}$/.test(v), 400, 'That IBAN does not look right. It starts with two letters, like PK36MEZN…');
-      next.iban = v ? v.replace(/(.{4})/g, '$1 ').trim() : null;
+      const iban = v && /^[A-Z]{2}\d{2}[A-Z0-9]{8,30}$/.test(v);
+      // Pakistan pays to IBANs; elsewhere an account number (with a routing or sort code in the bank's name) is fine too
+      need(v === null || iban || (!pk && /^[A-Z0-9-]{4,34}$/.test(v)), 400, pk ? 'That IBAN does not look right. It starts with two letters, like PK36MEZN…' : 'Type the account number or IBAN, letters and numbers only');
+      next.iban = v ? (iban ? v.replace(/(.{4})/g, '$1 ').trim() : v) : null;
     }
     db.prepare(`INSERT INTO hr_records (user_id, dob, contract, joined_on, probation_end, notice_days, bank_name, account_title, iban, emergency_name, emergency_phone, phone, cnic, address, leaving_on, leaving_reason, notes, employed, updated_at)
       VALUES (@user_id, @dob, @contract, @joined_on, @probation_end, @notice_days, @bank_name, @account_title, @iban, @emergency_name, @emergency_phone, @phone, @cnic, @address, @leaving_on, @leaving_reason, @notes, @employed, @updated_at)
@@ -214,8 +219,8 @@ module.exports = (ctx) => {
     need(u.id !== user.id || (user.role === 'owner' && !user.dev_owner) || P().rules().hr_own_pay, 403, 'Your own pay is changed by the owner');
     const cur = P().setupOf(u.id);
     const base = int(body.base ?? (cur && cur.base), 'base', 0, 100000000);
-    const currency = body.currency || (cur && cur.currency) || 'PKR';
-    need(['PKR', 'USD'].includes(currency), 400, 'currency must be PKR or USD');
+    const currency = body.currency || (cur && cur.currency) || ctx.homeCurrency();
+    need(require('../lib/money').validCurrency(currency), 400, 'Choose a currency from the list');
     const tax = body.tax_mode || (cur && cur.tax_mode) || 'pk';
     need(['pk', 'none'].includes(tax), 400, 'tax_mode must be pk or none');
     const list = (v, k) => {
@@ -387,10 +392,10 @@ module.exports = (ctx) => {
     const setup = P().setupOf(user.id);
     const f = body.receipt_base64 ? saveFile(body.receipt_base64, body.receipt_type) : null;
     const id = Number(db.prepare('INSERT INTO expenses (user_id, amount, currency, category, spent_on, note, receipt, receipt_type, status, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
-      .run(user.id, amount, setup ? setup.currency : 'PKR', body.category, isoDate(body.spent_on, 'spent_on'), str(body.note, 'note', 300), f ? f.file : null, f ? body.receipt_type : null, 'pending', nowIso()).lastInsertRowid);
+      .run(user.id, amount, setup ? setup.currency : ctx.homeCurrency(), body.category, isoDate(body.spent_on, 'spent_on'), str(body.note, 'note', 300), f ? f.file : null, f ? body.receipt_type : null, 'pending', nowIso()).lastInsertRowid);
     const first = P().rules().managers_first ? ctx.managersOf(user.id).filter((m) => (db.prepare('SELECT role FROM users WHERE id = ?').get(m) || {}).role === 'manager') : [];
     const hr = db.prepare("SELECT id FROM users WHERE active = 1 AND (hr = 1 OR role = 'owner')").all().map((x) => x.id).filter((x) => x !== user.id);
-    ctx.notify.notify(first.length ? first : hr, { kind: 'expense_request', title: `${user.name} sent an expense claim`, body: `${P().fmtMoney(amount, setup ? setup.currency : 'PKR')}: ${String(body.note).slice(0, 100)}`, link: '#/expenses', actor: user });
+    ctx.notify.notify(first.length ? first : hr, { kind: 'expense_request', title: `${user.name} sent an expense claim`, body: `${P().fmtMoney(amount, setup ? setup.currency : ctx.homeCurrency())}: ${String(body.note).slice(0, 100)}`, link: '#/expenses', actor: user });
     audit(user, 'expense.sent', user.id, `${amount} ${body.category}`);
     emit('expenses', user.id);
     return { id };
@@ -440,7 +445,7 @@ module.exports = (ctx) => {
   });
 
   // ---- advances ----
-  const advOut = (a) => ({ ...a, user_name: nameOf(a.user_id), decided_name: nameOf(a.decided_by), installment: Math.ceil(a.amount / a.months), currency: (P().setupOf(a.user_id) || {}).currency || 'PKR' });
+  const advOut = (a) => ({ ...a, user_name: nameOf(a.user_id), decided_name: nameOf(a.decided_by), installment: Math.ceil(a.amount / a.months), currency: (P().setupOf(a.user_id) || {}).currency || ctx.homeCurrency() });
   route('POST', '/api/advances', ({ user, body }) => {
     const setup = P().setupOf(user.id);
     need(setup, 409, 'Your pay is not set up yet. Ask HR.');
@@ -466,7 +471,7 @@ module.exports = (ctx) => {
     const approve = !!body.approve;
     const note = approve ? optStr(body.note, 'note', 300) : str(body.note, 'note', 300);
     db.prepare('UPDATE advances SET status = ?, decided_by = ?, decided_at = ?, decision_note = ? WHERE id = ?').run(approve ? 'approved' : 'declined', user.id, nowIso(), note, a.id);
-    const cur = (P().setupOf(a.user_id) || {}).currency || 'PKR';
+    const cur = (P().setupOf(a.user_id) || {}).currency || ctx.homeCurrency();
     ctx.notify.notify(a.user_id, { kind: 'advance_decision', title: approve ? 'Your advance was approved' : 'Your advance was declined', body: approve ? `${P().fmtMoney(a.amount, cur)}. ${P().fmtMoney(Math.ceil(a.amount / a.months), cur)} comes off each payslip from next month` : note, link: '#/pay', actor: user });
     audit(user, approve ? 'advance.approved' : 'advance.declined', a.user_id, `${a.amount} over ${a.months}`);
     emit('expenses', a.user_id);
@@ -490,8 +495,8 @@ module.exports = (ctx) => {
       if (!db.prepare('SELECT id FROM pay_runs WHERE period = ?').get(period)) items.push({ kind: 'payroll', title: `Start ${P().periodName(period)} payroll`, sub: 'Staffwarden fills it in from hours, attendance and time off', link: '#/payroll', start: period });
     }
     const exp = db.prepare("SELECT COUNT(*) n, COALESCE(SUM(amount),0) s, MIN(created_at) first FROM expenses WHERE status IN ('pending','manager_ok') AND user_id != ?").get(user.id);
-    if (exp.n) items.push({ kind: 'expenses', title: `${exp.n === 1 ? '1 expense claim' : exp.n + ' expense claims'}`, sub: `${P().fmtMoney(exp.s, 'PKR')} waiting`, since: exp.first, link: '#/expenses' });
-    for (const a of db.prepare("SELECT * FROM advances WHERE status = 'pending' AND user_id != ? ORDER BY id").all(user.id)) items.push({ kind: 'advance', title: `${nameOf(a.user_id)} asked for an advance`, sub: `${P().fmtMoney(a.amount, 'PKR')}, paid back over ${a.months} months`, since: a.created_at, link: '#/expenses?tab=advances', user_id: a.user_id });
+    if (exp.n) items.push({ kind: 'expenses', title: `${exp.n === 1 ? '1 expense claim' : exp.n + ' expense claims'}`, sub: `${P().fmtMoney(exp.s, ctx.homeCurrency())} waiting`, since: exp.first, link: '#/expenses' });
+    for (const a of db.prepare("SELECT * FROM advances WHERE status = 'pending' AND user_id != ? ORDER BY id").all(user.id)) items.push({ kind: 'advance', title: `${nameOf(a.user_id)} asked for an advance`, sub: `${P().fmtMoney(a.amount, (P().setupOf(a.user_id) || {}).currency || ctx.homeCurrency())}, paid back over ${a.months} months`, since: a.created_at, link: '#/expenses?tab=advances', user_id: a.user_id });
     const people = db.prepare("SELECT * FROM users WHERE active = 1 AND role != 'owner' AND COALESCE((SELECT employed FROM hr_records WHERE user_id = users.id), CASE WHEN users.is_dev = 1 AND users.tracks_time = 0 THEN 0 ELSE 1 END) = 1 ORDER BY name").all();
     for (const u of people) {
       const rec = P().recordOf(u.id) || {};

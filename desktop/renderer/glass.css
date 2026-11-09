@@ -78,3 +78,49 @@ html.mac { background: linear-gradient(170deg, rgba(34,24,76,.86), rgba(12,8,30,
 html.mac body { background: transparent !important; }
 html.solid { background: radial-gradient(120% 70% at 0% 0%, rgba(124,92,255,.32), transparent 60%), radial-gradient(90% 60% at 100% 100%, rgba(224,85,155,.2), transparent 60%), #0E0A22 fixed !important; }
 html.solid body { background: transparent !important; }
+
+/* signing in: the owl in front of the moon, then one step at a time */
+.si2 { margin: -14px -14px -16px; min-height: 100vh; display: flex; flex-direction: column; }
+html.mac .si2 { margin-top: -40px; }
+.si2-hero { position: relative; height: 300px; flex: none; overflow: hidden; background: radial-gradient(420px 300px at 50% 0%, rgba(130,100,230,.55), transparent 70%), linear-gradient(180deg, #1C1240, rgba(13,8,32,0)); }
+.si2-hero.small { height: 220px; }
+.si2-stars { position: absolute; inset: 0; background-image: radial-gradient(1.4px 1.4px at 12% 22%, rgba(255,255,255,.8), transparent), radial-gradient(1px 1px at 30% 60%, rgba(255,255,255,.6), transparent), radial-gradient(1.6px 1.6px at 82% 18%, rgba(255,255,255,.75), transparent), radial-gradient(1px 1px at 70% 50%, rgba(255,255,255,.5), transparent), radial-gradient(1.2px 1.2px at 92% 70%, rgba(255,255,255,.6), transparent), radial-gradient(1px 1px at 8% 80%, rgba(255,255,255,.5), transparent); }
+.si2-moon { position: absolute; left: 50%; top: 48px; width: 180px; height: 180px; margin-left: -90px; border-radius: 50%; display: grid; place-items: center;
+  background: radial-gradient(circle at 34% 30%, #F6DDB4 0, #CDA9EA 40%, #8E6CE2 72%, #6B55D6 100%); box-shadow: 0 0 90px 20px rgba(140,110,230,.45); animation: si2Moon 1.2s cubic-bezier(.2,.7,.15,1) both; }
+.si2-moon .owl { width: 108px; height: 108px; margin-top: 18px; filter: drop-shadow(0 12px 20px rgba(40,20,90,.55)); animation: si2Owl 1s cubic-bezier(.2,.7,.15,1) .15s both; }
+.si2-hero.small .si2-moon { width: 128px; height: 128px; margin-left: -64px; top: 46px; }
+.si2-hero.small .si2-moon .owl { width: 78px; height: 78px; margin-top: 12px; }
+@keyframes si2Moon { from { opacity: 0; transform: scale(.9); } }
+@keyframes si2Owl { from { opacity: 0; transform: translateY(18px); } }
+.si2-wm { position: absolute; left: 0; right: 0; bottom: 18px; text-align: center; }
+.si2-wm b { font: italic 400 30px/1 "Warden Serif", Georgia, serif; color: #F2EFFF; }
+.si2-hero.small .si2-wm b { font-size: 24px; }
+.si2-wm span { display: block; margin-top: 6px; font-size: 13px; color: #ABA4CE; }
+.si2-body { flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 16px 20px 16px; }
+.si2-body > label { font-size: 13px; font-weight: 650; margin-top: 4px; }
+.si2-in { height: 46px; border-radius: 12px !important; font-size: 15px !important; padding: 0 14px !important; background: rgba(10,6,28,.55) !important; border: 1px solid rgba(255,255,255,.14) !important; color: #F2EFFF; }
+.si2-in:focus { outline: none; border-color: #9B7BFF !important; box-shadow: 0 0 0 3px rgba(155,123,255,.25); }
+.si2-go { height: 48px; margin-top: 4px; border-radius: 13px !important; font-size: 15px !important; }
+.si2 .err:empty { display: none; }
+.si2-hint { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: rgba(255,255,255,.04); font-size: 13px; line-height: 1.5; color: #D9D3F2; }
+.si2-hint svg, .si2-trust svg, .si2-cos svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.si2-hint svg { color: #5BD39E; margin-top: 2px; }
+.si2-trust { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.si2-trust li { display: flex; align-items: center; gap: 12px; font-size: 13.5px; color: #D9D3F2; }
+.si2-trust .ti { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: rgba(155,123,255,.14); color: #C9BBFF; flex: none; }
+.si2-foot { margin-top: auto; text-align: center; font-size: 12.5px; color: #8A83AE; line-height: 1.7; padding-top: 10px; }
+.si2-foot p { margin: 0; } .si2-foot .credit { margin-top: 0 !important; padding-top: 2px; }
+.si2-co { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 14px; border: 1px solid rgba(155,123,255,.5); background: linear-gradient(120deg, rgba(155,123,255,.2), rgba(155,123,255,.06)); min-width: 0; }
+.si2-co .lg, .si2-cos .lg { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; font-weight: 700; color: #fff; flex: none; }
+.si2-co-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.si2-co-t b, .si2-cos b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si2-co-t span, .si2-cos .t span { font-size: 12.5px; color: #ABA4CE; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si2-forgot { align-self: center; font-weight: 600; }
+.si2-h { margin: 0; font: italic 400 30px/1.1 "Warden Serif", Georgia, serif; }
+.si2-cos { list-style: none; margin: 4px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.si2-cos button { width: 100%; height: auto; display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 14px !important; border: 1px solid rgba(160,140,230,.26) !important; background: rgba(255,255,255,.04) !important; box-shadow: none !important; color: #F2EFFF !important; font-weight: 400; text-align: left; cursor: pointer; font: inherit; }
+.si2-cos button:hover, .si2-cos button:focus-visible { border-color: rgba(155,123,255,.7) !important; background: rgba(155,123,255,.14) !important; }
+.si2-cos .t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+@media (prefers-reduced-motion: reduce) { .si2-moon, .si2-moon .owl { animation: none; } }
+.paused-note { padding: 12px 14px; border-color: rgba(247,181,68,.4) !important; background: rgba(247,181,68,.1) !important; font-size: 13px; line-height: 1.5; color: #E9E2FF; }
+.paused-note b { color: #F7C46B; }

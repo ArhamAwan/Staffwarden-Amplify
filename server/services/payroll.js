@@ -31,7 +31,7 @@ const nextPeriod = (p) => { const [y, m] = p.split('-').map(Number); return m ==
 const periodName = (p) => new Date(p + '-01T00:00:00Z').toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const dayList = (days) => days.length <= 4 ? days.map((d) => T.human(d).replace(/^\w+, /, '')).join(', ') : `${T.human(days[0]).replace(/^\w+, /, '')} to ${T.human(days[days.length - 1]).replace(/^\w+, /, '')}`;
-const fmtMoney = (n, cur) => `${cur === 'USD' ? '$' : 'Rs'} ${Math.abs(Math.round(n)).toLocaleString('en-US')}`;
+const { fmtMoney } = require('../lib/money');
 
 function createPayroll(ctx) {
   const { db, cfg } = ctx;

@@ -92,6 +92,12 @@ const DEFAULT_SERVER = process.env.WORKHELM_SERVER || process.env.AMPLIFY_SERVER
 // With a server built in (or given by WORKHELM_SERVER), that is always the server: staff never type it
 // and a value saved by an older version is ignored.
 const FIXED_SERVER = !!(process.env.WORKHELM_SERVER || process.env.AMPLIFY_SERVER || BUILT_IN_SERVER);
+// On Staffwarden as a service each company has its own address under the built-in one
+// (northwind.staffwarden.com under staffwarden.com): the app finds it from the email and remembers it.
+const hostOf = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ''; } };
+const protoOf = (u) => { try { return new URL(u).protocol; } catch { return ''; } };
+const underBase = (u) => { const h = hostOf(u), b = hostOf(DEFAULT_SERVER); return !!h && !!b && protoOf(u) === protoOf(DEFAULT_SERVER) && /^[a-z0-9-]+$/.test(h.slice(0, -b.length - 1)) && h.endsWith(`.${b}`); };
+const allowedServer = (u) => (FIXED_SERVER ? (u && (sameUrl(u, DEFAULT_SERVER) || underBase(u)) ? String(u).replace(/\/+$/, '') : DEFAULT_SERVER) : u);
 let win, tray, panel, tracker, queue, client, updater, user = null, settings = null;
 // Every request says which app version this is, so the owner can see on the People page who needs to update.
 // the version, and the computer's own time zone (offered to managers as a suggestion for this person's zone)
@@ -105,10 +111,10 @@ const cfgFile = () => path.join(app.getPath('userData'), 'config.json');
 function loadConfig() {
   try {
     const raw = JSON.parse(fs.readFileSync(cfgFile(), 'utf8'));
-    config.serverUrl = FIXED_SERVER ? DEFAULT_SERVER : (raw.serverUrl || DEFAULT_SERVER);
+    config.serverUrl = FIXED_SERVER ? allowedServer(raw.serverUrl) : (raw.serverUrl || DEFAULT_SERVER);
     // signed in to a different server before: that sign-in does not apply here
     // (the same server under its old address, e.g. before it moved to HTTPS, keeps the sign-in)
-    if (FIXED_SERVER && raw.serverUrl && !sameUrl(raw.serverUrl, DEFAULT_SERVER) && !PREVIOUS_SERVERS.some((p) => sameUrl(p, raw.serverUrl))) raw.token = null;
+    if (FIXED_SERVER && raw.serverUrl && !sameUrl(raw.serverUrl, DEFAULT_SERVER) && !underBase(raw.serverUrl) && !PREVIOUS_SERVERS.some((p) => sameUrl(p, raw.serverUrl))) raw.token = null;
     config.notifSeen = raw.notifSeen && typeof raw.notifSeen === 'object' ? raw.notifSeen : {};
     config.dayTzMin = Number.isFinite(raw.dayTzMin) ? raw.dayTzMin : null;
     config.shift = raw.shift && typeof raw.shift === 'object' ? raw.shift : null;
@@ -736,7 +742,7 @@ handle('state', async () => {
 
 handle('login', async ({ serverUrl, email, password }) => {
   // Accept "192.168.1.5:3000" as well as "http://192.168.1.5:3000"
-  let url = (FIXED_SERVER ? DEFAULT_SERVER : (serverUrl || DEFAULT_SERVER)).trim().replace(/\/+$/, '');
+  let url = (FIXED_SERVER ? allowedServer(serverUrl) : (serverUrl || DEFAULT_SERVER)).trim().replace(/\/+$/, '');
   if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
   config.serverUrl = url;
   client = makeClient();
@@ -748,6 +754,17 @@ handle('login', async ({ serverUrl, email, password }) => {
   return { user };
 });
 
+// email first: which companies this email belongs to (asked of the plain address). A server that runs one
+// company has no such list: then it's straight to the password.
+handle('find-company', async ({ email }) => {
+  const base = (FIXED_SERVER ? DEFAULT_SERVER : DEFAULT_SERVER).replace(/\/+$/, '');
+  const res = await netFetch(`${base}/api/platform/find`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...APP_HEADERS }, body: JSON.stringify({ email }) });
+  if (res.status === 404) return { single: true, url: base };
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) return { error: d.error || `The server said ${res.status}` };
+  return { companies: (d.companies || []).filter((c) => !FIXED_SERVER || underBase(c.url) || sameUrl(c.url, DEFAULT_SERVER)) };
+});
+handle('open-forgot', ({ serverUrl } = {}) => { const u = allowedServer(serverUrl || config.serverUrl) || DEFAULT_SERVER; shell.openExternal(underBase(u) ? `${u}/#signin` : `${DEFAULT_SERVER.replace(/\/+$/, '')}/forgot`); return { ok: true }; });
 handle('logout', async () => {
   if (tracker.status().active) return { error: 'Stop the timer before signing out.' };
   try { await client.req('POST', '/api/auth/logout'); } catch { /* offline: token is discarded locally anyway */ }
@@ -833,7 +850,7 @@ app.whenReady().then(() => {
   if (!gotLock) return;
   if (process.platform === 'darwin') {
     const N = rename.NAME;
-    try { app.setAboutPanelOptions({ applicationName: N, applicationVersion: app.getVersion(), copyright: 'Built in-house by Amplify Media Technologies' }); } catch { /* older macOS */ }
+    try { app.setAboutPanelOptions({ applicationName: N, applicationVersion: app.getVersion(), copyright: 'Staffwarden' }); } catch { /* older macOS */ }
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       { label: N, submenu: [{ role: 'about', label: `About ${N}` }, { type: 'separator' }, { role: 'hide', label: `Hide ${N}` }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit', label: `Quit ${N}` }] },
       { role: 'editMenu' }, { role: 'windowMenu' },

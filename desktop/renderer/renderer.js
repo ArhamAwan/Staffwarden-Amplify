@@ -78,10 +78,9 @@ function toast(msg) {
 // Staffwarden's mark (a ship's wheel), the same drawing as the web dashboard's.
 // Warden Owl, the Staffwarden mark (the same drawing as the website's)
 const HELM = '<svg class="helm owl" viewBox="0 0 64 64" aria-hidden="true"><path d="M13 42c0-14 8-22 19-22s19 8 19 22c0 13-8 20-19 20s-19-7-19-20z" fill="#8C78E8"/><path d="M24 50c2.5 2 5 3 8 3s5.5-1 8-3M26 55.5c2 1.3 4 2 6 2s4-.7 6-2" stroke="#C3B3FF" stroke-width="2.2" stroke-linecap="round" fill="none"/><circle cx="24.5" cy="37" r="8.5" fill="#E9E6F5"/><circle cx="39.5" cy="37" r="8.5" fill="#E9E6F5"/><circle cx="24.5" cy="37" r="4.2" fill="#1A1238"/><circle cx="39.5" cy="37" r="4.2" fill="#1A1238"/><circle cx="26" cy="35.5" r="1.3" fill="#fff"/><circle cx="41" cy="35.5" r="1.3" fill="#fff"/><path d="M29.5 43h5L32 47.5z" fill="#F7B544"/><path d="M13 30c0-12 8-20 19-20s19 8 19 20z" fill="#4A37A8"/><rect x="14" y="27" width="36" height="4" rx="1.5" fill="#35267F"/><path d="M13 30.5h38c-2 3-8.5 4-19 4s-17-1-19-4z" fill="#241A5C"/><circle cx="32" cy="18.5" r="4.4" fill="#C3B3FF"/><circle cx="32" cy="17.6" r="1.3" fill="#4A37A8"/><path d="M31.2 18.4h1.6l.5 2.8h-2.6z" fill="#4A37A8"/></svg>';
-const CREDIT = 'Built entirely in-house by Amplify Media Technologies';
 function brand() { const m = el('div', { class: 'mark' }); m.innerHTML = HELM; return el('div', { class: 'brand' }, m, el('h1', { class: 'wordmark' }, 'Staffwarden')); }
-const credit = () => el('div', { class: 'credit' }, el('p', {}, CREDIT + '.'),
-  el('p', { class: 'verline' }, el('span', { class: 'ver' }, upd && upd.current ? `Version ${upd.current}` : ''), ' · ',
+const credit = () => el('div', { class: 'credit' },
+  el('p', { class: 'verline' }, el('span', { class: 'ver' }, upd && upd.current ? `Version ${upd.current}` : ''), upd && upd.current ? ' · ' : '',
     el('button', { class: 'link small chk', onclick: (e) => checkNow(e.currentTarget) }, 'Check for updates')));
 // "Check for updates": says the answer right there, and shows the update bar when there is one.
 async function checkNow(btn) {
@@ -97,24 +96,100 @@ async function checkNow(btn) {
   else msg.textContent = ' · You have the latest version.';
 }
 
+
+// ---------- signing in: email first, then the company's password ----------
+// The owl in front of the moon on top; below it one step at a time. On Staffwarden as a service the email
+// finds the company (and its own address); a server for one company goes straight to the password.
+const TRUST = [
+  ['M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm0 3v5l3 2', 'Records only while your timer runs'],
+  ['M3 5h18v12H3zM8 21h8M12 17v4', 'You see every screenshot before it’s sent'],
+  ['M5 11h14v9H5zM8 11V8a4 4 0 0 1 8 0v3', 'Private windows never leave this computer'],
+];
+const line = (d) => { const n = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); n.setAttribute('viewBox', '0 0 24 24'); n.setAttribute('aria-hidden', 'true'); const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', d); n.append(p); return n; };
+const COLORS = ['#1D4ED8', '#0F766E', '#B45309', '#7C3AED', '#BE185D', '#15803D', '#C2410C', '#4338CA'];
+const colorOf = (t) => COLORS[[...String(t)].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length];
+const isCompanyUrl = (u) => /^https?:\/\/[a-z0-9-]+\.[^/]+\.[^/]+/i.test(u || '');
+let signin = { email: '', company: null, list: null };
+function hero(small) {
+  const owlBox = el('div', { class: 'si2-moon' }); owlBox.innerHTML = HELM;
+  return el('div', { class: `si2-hero${small ? ' small' : ''}`, 'aria-hidden': 'true' }, el('i', { class: 'si2-stars' }), owlBox,
+    el('div', { class: 'si2-wm' }, el('b', {}, 'Staffwarden'), small ? null : el('span', {}, 'Keeping watch, so you don’t have to.')));
+}
 function loginView(serverUrl, message, fixedServer = false) {
   clear(); bodyKey = null;
+  // signed in to a company before: straight to its password
+  if (!signin.company && isCompanyUrl(serverUrl) && fixedServer) signin.company = { url: serverUrl, address: serverUrl.replace(/^https?:\/\//, ''), name: null };
+  if (signin.company || signin.single) return passwordStep(serverUrl, message, fixedServer);
+  if (signin.list) return pickStep(serverUrl, fixedServer);
   const err = el('div', { class: 'err', role: 'alert' }, message || '');
-  const server = el('input', { id: 'srv', value: serverUrl });
-  const email = el('input', { id: 'em', type: 'email', autocomplete: 'username' });
-  const pw = el('input', { id: 'pw', type: 'password', autocomplete: 'current-password' });
-  root.append(
-    brand(), el('div', { class: 'muted' }, 'Sign in with your work account'),
-    el('form', { class: 'card', onsubmit: async (e) => {
-      e.preventDefault(); err.textContent = '';
-      const r = await API.login({ serverUrl: server.value, email: email.value, password: pw.value });
-      if (r.error) err.textContent = r.error; else boot();
-    } },
-    ...(fixedServer ? [] : [el('label', { for: 'srv' }, 'Server'), server]),
-    el('label', { for: 'em' }, 'Email'), email,
-    el('label', { for: 'pw' }, 'Password'), pw,
-    err, el('button', { class: 'block' }, 'Sign in')),
-    credit());
+  const email = el('input', { id: 'em', class: 'si2-in', type: 'email', autocomplete: 'username', value: signin.email, placeholder: 'you@company.com' });
+  const go = el('button', { class: 'block si2-go' }, 'Continue');
+  let typeAddress = !fixedServer && !isCompanyUrl(serverUrl) && serverUrl && !/localhost:3000/.test(serverUrl);
+  const server = el('input', { id: 'srv', class: 'si2-in', value: serverUrl || '', placeholder: 'yourcompany.staffwarden.com' });
+  const body = el('form', { class: 'si2-body', onsubmit: async (e) => {
+    e.preventDefault(); err.textContent = '';
+    const v = email.value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { err.textContent = 'That doesn’t look like an email address.'; email.focus(); return; }
+    signin.email = v;
+    if (typeAddress) { signin.single = true; signin.server = server.value.trim(); return loginView(serverUrl, '', fixedServer); }
+    go.disabled = true; go.textContent = 'Finding your company…';
+    const r = await API.findCompany(v);
+    go.disabled = false; go.textContent = 'Continue';
+    if (r.error) { err.textContent = r.error; return; }
+    if (r.single) { signin.single = true; return loginView(serverUrl, '', fixedServer); }
+    if (!r.companies.length) { err.textContent = 'We couldn’t find a company with this email. Check the email in your invite, or ask whoever runs Staffwarden at your company.'; return; }
+    if (r.companies.length === 1) { signin.company = r.companies[0]; return loginView(serverUrl, '', fixedServer); }
+    signin.list = r.companies; return loginView(serverUrl, '', fixedServer);
+  } },
+  ...(typeAddress ? [el('label', { for: 'srv' }, 'Company address'), server] : []),
+  el('label', { for: 'em' }, 'Work email'), email, err, go,
+  el('div', { class: 'si2-hint' }, line('M5 12.5l4.5 4.5L19 7.5'), el('span', {}, typeAddress ? 'Signing in to the address above.' : 'We find your company from your email.')),
+  el('ul', { class: 'si2-trust', 'aria-label': 'What the app records' }, TRUST.map(([d, t]) => el('li', {}, el('span', { class: 'ti' }, line(d)), el('span', {}, t)))),
+  el('div', { class: 'si2-foot' }, fixedServer ? null : el('p', {}, typeAddress ? 'Find it by email instead? ' : 'Have a company address instead? ', el('button', { type: 'button', class: 'link', onclick: () => { typeAddress = !typeAddress; signin.single = false; loginView(serverUrl, '', fixedServer); } }, typeAddress ? 'Use my email' : 'Type it in'))),
+  credit());
+  root.append(el('div', { class: 'si2' }, hero(false), body));
+  email.focus();
+  enterView();
+}
+function companyCard(c, onChange) {
+  const name = c.name || c.address;
+  return el('div', { class: 'si2-co' }, el('span', { class: 'lg', style: `background:${colorOf(c.slug || c.address)}` }, (name.trim()[0] || '?').toUpperCase()),
+    el('div', { class: 'si2-co-t' }, el('b', {}, name), c.name ? el('span', {}, c.address) : null),
+    onChange ? el('button', { type: 'button', class: 'link', onclick: onChange }, 'Change') : null);
+}
+function passwordStep(serverUrl, message, fixedServer) {
+  const c = signin.company, err = el('div', { class: 'err', role: 'alert' }, message || '');
+  const email = el('input', { id: 'em', class: 'si2-in', type: 'email', autocomplete: 'username', value: signin.email });
+  const pw = el('input', { id: 'pw', class: 'si2-in', type: 'password', autocomplete: 'current-password', placeholder: 'Your password' });
+  const target = c ? c.url : signin.server || serverUrl;
+  const change = () => { signin = { email: email.value.trim(), company: null, list: null }; loginView(fixedServer ? '' : serverUrl, '', fixedServer); };
+  const go = el('button', { class: 'block si2-go' }, c && c.name ? `Sign in to ${c.name.split(' ')[0]}` : 'Sign in');
+  const body = el('form', { class: 'si2-body', onsubmit: async (e) => {
+    e.preventDefault(); err.textContent = '';
+    go.disabled = true;
+    const r = await API.login({ serverUrl: target, email: email.value.trim(), password: pw.value });
+    go.disabled = false;
+    if (r.error) { err.textContent = r.error; pw.focus(); } else { signin = { email: '', company: null, list: null }; boot(); }
+  } },
+  c ? companyCard(c, change) : null,
+  el('label', { for: 'em' }, 'Email'), email, el('label', { for: 'pw' }, 'Password'), pw, err, go,
+  el('button', { type: 'button', class: 'link si2-forgot', onclick: () => API.openForgot(target) }, 'Forgot password?'),
+  c ? null : el('button', { type: 'button', class: 'link si2-forgot', onclick: change }, 'Use another email'),
+  el('div', { class: 'si2-foot' }, c ? el('p', {}, `The app remembers ${c.name || 'your company'} on this computer.`) : null, credit()));
+  root.append(el('div', { class: 'si2' }, hero(true), body));
+  (email.value ? pw : email).focus();
+  enterView();
+}
+function pickStep(serverUrl, fixedServer) {
+  const list = signin.list;
+  const body = el('div', { class: 'si2-body' },
+    el('h2', { class: 'si2-h' }, 'Which company?'),
+    el('p', { class: 'muted' }, `${signin.email} is in ${list.length} companies. Each has its own password.`),
+    el('ul', { class: 'si2-cos' }, list.map((c) => el('li', {}, el('button', { type: 'button', onclick: () => { signin.company = c; signin.list = null; loginView(serverUrl, '', fixedServer); } },
+      el('span', { class: 'lg', style: `background:${colorOf(c.slug)}` }, (c.name.trim()[0] || '?').toUpperCase()), el('span', { class: 't' }, el('b', {}, c.name), el('span', {}, c.address)), line('M9 6l6 6-6 6'))))),
+    el('button', { type: 'button', class: 'link si2-forgot', onclick: () => { signin = { email: signin.email, company: null, list: null }; loginView(serverUrl, '', fixedServer); } }, 'Use another email'),
+    el('div', { class: 'si2-foot' }, credit()));
+  root.append(el('div', { class: 'si2' }, hero(true), body));
   enterView();
 }
 
@@ -295,6 +370,9 @@ function mainView(st) {
       el('div', { class: 'toplinks' },
         el('button', { class: 'link', id: 'howto', onclick: () => policyView(true) }, 'How it works'),
         el('button', { class: 'link', id: 'signout', onclick: async () => { const r = await API.logout(); if (r.error) toast(r.error); else boot(); } }, 'Sign out'))),
+    // the company's account is paused (trial over, not paid, closed): said plainly, before Start
+    me && me.account && me.account.paused ? el('div', { class: 'notice paused-note', role: 'status' }, el('b', {}, me.account.status === 'closed' ? 'This company’s account is closed.' : 'Tracking is paused.'),
+      el('span', {}, me.account.billing ? ' Choose a plan on the website to start tracking again. Nothing is lost.' : ' The company’s Staffwarden account needs attention, and the owner already knows. Your hours, payslips and time off are all still on the website.')) : null,
     el('div', { id: 'notice' }),
     el('div', { id: 'perm' }),
     el('div', { id: 'body', class: 'stack' },

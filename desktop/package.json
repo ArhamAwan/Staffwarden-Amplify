@@ -3,8 +3,8 @@
   "productName": "Staffwarden",
   "version": "0.9.29",
   "private": true,
-  "description": "Staffwarden desktop app: visible, consent-based time tracking. Built entirely in-house by Amplify Media Technologies.",
-  "author": "Amplify Media Technologies",
+  "description": "Staffwarden desktop app: visible, consent-based time tracking.",
+  "author": "Staffwarden",
   "main": "main.js",
   "workhelm": {
     "server": "https://staffwarden.com",
@@ -65,7 +65,7 @@
     "linux": {
       "target": "AppImage"
     },
-    "copyright": "Copyright \u00a9 2026 Amplify Media Technologies",
+    "copyright": "Copyright \u00a9 2026 Staffwarden",
     "directories": {
       "buildResources": "build"
     },

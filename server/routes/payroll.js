@@ -316,7 +316,7 @@ module.exports = (ctx) => {
 
   // ---- the same two, as Excel files laid out for people to read (the CSV stays for bank uploads) ----
   const human = (d) => (d ? new Date(`${String(d).slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
-  const curSign = (c) => (c === 'USD' ? '$' : 'Rs');
+  const curSign = (c) => require('../lib/money').signOf(c);
   const xlsxOut = (buf, name) => ({ raw: buf, type: X.XLSX_TYPE, headers: { 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' } });
   const approvedBy = (r) => `Approved by ${nameOf(r.approved_by) || 'the CEO'}${r.approved_at ? ` on ${human(r.approved_at)}` : ''}`;
   const statusLine = (r) => (r.status === 'paid' ? `Paid. ${approvedBy(r)}` : P().LOCKED(r.status) ? approvedBy(r) : 'Draft, not approved yet. Numbers can still change');
@@ -348,7 +348,7 @@ module.exports = (ctx) => {
     const last = rows.length - 1;
     // a total for each currency
     const curs = [...new Set(on.map(([s]) => s.currency))];
-    for (const c of curs.length ? curs : ['PKR']) {
+    for (const c of curs.length ? curs : [ctx.homeCurrency()]) {
       const list = on.filter(([s]) => s.currency === c);
       rows.push([{ v: '', s: 'total' }, { v: `Total, ${list.length} ${list.length === 1 ? 'transfer' : 'transfers'}`, s: 'total' }, { v: '', s: 'total' }, { v: '', s: 'total' }, { v: '', s: 'total' }, { v: list.reduce((n, [s]) => n + s.net, 0), s: 'totalMoney' }, { v: c, s: 'totalC' }, { v: '', s: 'total' }, { v: '', s: 'total' }]);
     }
@@ -366,7 +366,7 @@ module.exports = (ctx) => {
     const r = runOf(params.id);
     const name = P().periodName(r.period), win = ctx.payWindow(r.period);
     const slips = slipsOf(r);
-    const intro = (title) => [[{ v: title, s: 'title' }], [{ v: `${ctx.companyFor(r.company).legal || 'Staffwarden'}${ctx.companyFor(r.company).ntn ? ` (NTN ${ctx.companyFor(r.company).ntn})` : ''} · ${name}, paid ${human(win.from)} to ${human(win.by)}`, s: 'sub' }], [{ v: statusLine(r), s: 'sub' }], []];
+    const intro = (title) => [[{ v: title, s: 'title' }], [{ v: `${ctx.companyFor(r.company).legal || 'Staffwarden'}${ctx.companyFor(r.company).ntn ? ` (${ctx.homeCurrency() === 'PKR' ? 'NTN' : 'tax no.'} ${ctx.companyFor(r.company).ntn})` : ''} · ${name}, paid ${human(win.from)} to ${human(win.by)}`, s: 'sub' }], [{ v: statusLine(r), s: 'sub' }], []];
 
     // 1. one row a person
     const H = ['Name', 'Role', 'Days worked', 'Base salary', 'Additions', 'Expenses repaid', 'Gross pay', 'Deductions', 'Income tax', 'Net pay', 'Company contributions', 'Currency', 'Bank', 'Paid on'];
@@ -459,18 +459,22 @@ module.exports = (ctx) => {
   route('GET', '/api/me/pay', ({ user }) => {
     const slips = db.prepare("SELECT p.*, r.period, r.status FROM payslips p JOIN pay_runs r ON r.id = p.run_id WHERE p.user_id = ? AND r.status != 'draft' ORDER BY r.period DESC LIMIT 24").all(user.id)
       .map((s) => ({ ...slipOut(s, { full: false }), period: s.period, name: P().periodName(s.period), status: s.status, pay_day: payDay(s.period), pay_by: payBy(s.period) }));
-    const ty = slips.length ? taxYearOf(slips[0].period) : taxYearOf(ctx.calc.companyToday().slice(0, 7));
-    const year = { tax_year: ty, from: `${ty - 1}-07`, to: `${ty}-06`, gross: 0, tax: 0, deductions: 0, net: 0, months: 0 };
-    for (const s of slips) if (taxYearOf(s.period) === ty && (s.status === 'approved' || s.status === 'paid')) { year.gross += s.gross; year.tax += s.tax; year.deductions += s.deductions; year.net += s.net; year.months++; }
     const setup = P().setupOf(user.id), rec = P().recordOf(user.id);
-    const advances = db.prepare('SELECT * FROM advances WHERE user_id = ? ORDER BY id DESC LIMIT 10').all(user.id).map((a) => ({ ...a, installment: Math.ceil(a.amount / a.months), currency: setup ? setup.currency : 'PKR', decided_name: nameOf(a.decided_by) }));
+    // Pakistan's tax year runs July to June (and has its certificate); everywhere else, the calendar year
+    const currency = (slips[0] && slips[0].currency) || (setup && setup.currency) || ctx.homeCurrency();
+    const pk = currency === 'PKR';
+    const yearOf = pk ? taxYearOf : (period) => Number(period.slice(0, 4));
+    const ty = slips.length ? yearOf(slips[0].period) : yearOf(ctx.calc.companyToday().slice(0, 7));
+    const year = { tax_year: ty, pk, currency, from: pk ? `${ty - 1}-07` : `${ty}-01`, to: pk ? `${ty}-06` : `${ty}-12`, gross: 0, tax: 0, deductions: 0, net: 0, months: 0 };
+    for (const s of slips) if (yearOf(s.period) === ty && s.currency === currency && (s.status === 'approved' || s.status === 'paid')) { year.gross += s.gross; year.tax += s.tax; year.deductions += s.deductions; year.net += s.net; year.months++; }
+    const advances = db.prepare('SELECT * FROM advances WHERE user_id = ? ORDER BY id DESC LIMIT 10').all(user.id).map((a) => ({ ...a, installment: Math.ceil(a.amount / a.months), currency: setup ? setup.currency : ctx.homeCurrency(), decided_name: nameOf(a.decided_by) }));
     return { slips, year, base: setup ? { amount: setup.base, currency: setup.currency } : null, bank: rec && rec.iban ? { name: rec.bank_name, last4: String(rec.iban).replace(/\s/g, '').slice(-4) } : null, advances };
   });
   route('GET', '/api/me/certificate', ({ user, query }) => certOf(user, query));
   function certOf(user, query) {
     const ty = Number(query.get('tax_year')) || taxYearOf(ctx.calc.companyToday().slice(0, 7)) - 1;
     const slips = db.prepare("SELECT p.*, r.period FROM payslips p JOIN pay_runs r ON r.id = p.run_id WHERE p.user_id = ? AND r.status IN ('approved','paid') AND r.period >= ? AND r.period <= ? ORDER BY r.period").all(user.id, `${ty - 1}-07`, `${ty}-06`);
-    const out = { tax_year: ty, from: `${ty - 1}-07-01`, to: `${ty}-06-30`, salary: 0, allowances: 0, extra: 0, deductions: 0, tax: 0, eobi: 0, other: 0, expenses: 0, net: 0, months: slips.length, currency: slips[0] ? slips[0].currency : 'PKR' };
+    const out = { tax_year: ty, from: `${ty - 1}-07-01`, to: `${ty}-06-30`, salary: 0, allowances: 0, extra: 0, deductions: 0, tax: 0, eobi: 0, other: 0, expenses: 0, net: 0, months: slips.length, currency: slips[0] ? slips[0].currency : ctx.homeCurrency() };
     for (const s of slips) {
       for (const l of JSON.parse(s.lines)) {
         if (!l.counted) continue;

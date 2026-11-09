@@ -1,6 +1,6 @@
 // Import people from their contracts. Everything is read here in the browser: typed PDFs are read
 // directly, scans and photos go through OCR. HR checks every field before anyone is created.
-import { html, raw, icon, plural, initials, avColor, money, dateY } from '../util.js';
+import { html, raw, icon, plural, initials, avColor, money, dateY, L, CURRENCIES, homeCurrency } from '../util.js';
 import { get, post, fileBase64, fileBytes } from '../api.js';
 import { S, actions, tag, toast, errMsg, confirmBox } from '../ui.js';
 import { parseContract, joinItems } from '../contract-parse.js';
@@ -11,7 +11,7 @@ const st = { files: [], phase: 'pick', results: [], people: [] };
 let seq = 0;
 const FIELDS = ['name', 'email', 'title', 'joined_on', 'base', 'currency', 'contract', 'probation_end', 'notice_days', 'phone', 'cnic', 'bank_name', 'account_title', 'iban', 'address', 'pay_from'];
 const NEEDED = ['name', 'email', 'title', 'joined_on', 'base'];
-const LABEL = { name: 'Full name', email: 'Email (their sign-in)', title: 'Job title', joined_on: 'Joined', base: 'Base salary, a month', currency: 'Currency', contract: 'Contract', probation_end: 'Probation ends', notice_days: 'Notice (days)', phone: 'Phone', cnic: 'CNIC', bank_name: 'Bank', account_title: 'Account title', iban: 'IBAN', address: 'Address', pay_from: 'New pay from' };
+const LABEL = { name: 'Full name', email: 'Email (their sign-in)', title: 'Job title', joined_on: 'Joined', base: 'Base salary, a month', currency: 'Currency', contract: 'Contract', probation_end: 'Probation ends', notice_days: 'Notice (days)', phone: 'Phone', get cnic() { return L.id; }, bank_name: 'Bank', account_title: 'Account title', get iban() { return L.account; }, address: 'Address', pay_from: 'New pay from' };
 const KIND = { promotion: 'promotion agreement', increment: 'salary increment agreement', amendment: 'amended or extended contract' };
 
 export default {
@@ -134,7 +134,7 @@ function card(f) {
     ${m && m.pay ? html`<label class="imp-pay"><input type="checkbox" data-imp="${f.id}" data-f="usePay" ${f.usePay ? raw('checked') : ''}><span><b>Also change their pay to the contract’s salary</b> Their pay is ${money(m.pay.base, m.pay.currency)} a month now. ${KIND[f.parsed.kind] ? 'This agreement changes their pay, so this starts on.' : 'An old contract may show an older salary, so this is off unless you turn it on.'}</span></label>` : ''}
     <div class="imp-grid">
       ${inp('name', 'maxlength="100" autocomplete="off"')}${inp('email', 'type="email" maxlength="200" autocomplete="off"')}${inp('title', 'maxlength="100"')}
-      ${inp('joined_on', 'type="date"')}${inp('base', 'type="number" min="0" step="1" inputmode="numeric" class="num"')}${sel('currency', [['PKR', 'Rupees (Rs)'], ['USD', 'Dollars ($)']])}
+      ${inp('joined_on', 'type="date"')}${inp('base', 'type="number" min="0" step="1" inputmode="numeric" class="num"')}${sel('currency', [homeCurrency(), 'USD', ...CURRENCIES.map((c) => c[0])].filter((c, i, x) => x.indexOf(c) === i).map((c) => [c, `${c} (${(CURRENCIES.find((x) => x[0] === c) || [c, c])[1]})`]))}
       ${sel('contract', Object.entries(CONTRACT))}${inp('probation_end', 'type="date"')}${inp('notice_days', 'type="number" min="0" max="365"')}
       ${inp('phone', 'maxlength="40"')}${inp('cnic', 'maxlength="15" placeholder="61101-1234567-1"')}${inp('bank_name', 'maxlength="80"')}
       ${inp('account_title', 'maxlength="100"')}${inp('iban', 'maxlength="40" autocomplete="off"')}${inp('address', 'maxlength="300"')}${KIND[f.parsed.kind] ? inp('pay_from', 'type="date"') : ''}
@@ -217,7 +217,7 @@ async function read(f) {
     const r = isPdf ? await pdfText(f) : { text: await ocrImage(f, f.file, 0.05, 0.95, 'Reading it by OCR'), method: 'ocr' };
     if (r.text.replace(/\s/g, '').length < 30) throw new Error('No text could be read. Try a sharper scan or photo.');
     const p = parseContract(r.text);
-    Object.assign(f, { status: 'done', text: r.text, method: r.method, parsed: p, include: true, usePay: p.kind !== 'new', v: Object.fromEntries(FIELDS.map((k) => [k, p[k] ?? (k === 'currency' ? 'PKR' : k === 'contract' ? 'full_time' : '')])) });
+    Object.assign(f, { status: 'done', text: r.text, method: r.method, parsed: p, include: true, usePay: p.kind !== 'new', v: Object.fromEntries(FIELDS.map((k) => [k, p[k] ?? (k === 'currency' ? homeCurrency() : k === 'contract' ? 'full_time' : '')])) });
   } catch (e) { Object.assign(f, { status: 'error', error: errMsg(e) }); }
   S.refresh();
 }

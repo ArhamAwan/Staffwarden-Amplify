@@ -2,7 +2,7 @@
 // client statements and the client portal, with a preview of a payslip that follows the form as it is typed.
 // Pictures are saved as soon as they are picked: any format is drawn onto a canvas here and sent as PNG
 // (a signature or stamp has its white paper taken out); the words are saved with Save changes.
-import { html, raw, esc, icon } from '../util.js';
+import { html, raw, esc, icon, money, inPK } from '../util.js';
 import { get, put, del, getToken, download, fileUrl } from '../api.js';
 import { S, actions, toast, errMsg, confirmBox, openModal } from '../ui.js';
 
@@ -34,25 +34,28 @@ const lines = (s) => String(s || '').split(/\n+/).map((x) => x.trim()).filter(Bo
 function preview(c, tab) {
   const brand = c.brand || '#6B4FE0';
   const logo = c.images.logo ? html`<img src="${c.images.logo.url}" alt="" class="cp-logo">` : html`<b class="cp-name">${c.name || 'Your company'}</b>`;
-  const addr = [...lines(c.address), [c.ntn ? `NTN ${c.ntn}` : '', c.eobi_no ? `EOBI ${c.eobi_no}` : ''].filter(Boolean).join(' · ')].filter(Boolean);
+  const addr = [...lines(c.address), [c.ntn ? `${inPK() ? 'NTN' : 'Tax no.'} ${c.ntn}` : '', c.eobi_no && inPK() ? `EOBI ${c.eobi_no}` : ''].filter(Boolean).join(', ')].filter(Boolean);
+  // an example month in the company's own money (Pakistan's has income tax taken off)
+  const X = inPK() ? { who: 'Sara Khan', base: 120000, unpaid: 10909, late: 13636, exp: 6500, tax: 455 } : { who: 'Sarah Cole', base: 4000, unpaid: 182, late: 91, exp: 120, tax: 0 };
+  X.gross = X.base + X.exp; X.off = X.unpaid + X.late + X.tax; X.net = X.gross - X.off;
   const reach = [c.email, c.phone, c.website].filter(Boolean).join(' · ');
   const foot = html`<div class="cp-foot"><span>${c.legal_name || c.name}</span>${reach ? html`<span>${reach}</span>` : ''}</div>`;
   const row = (k, v, neg) => html`<div class="cp-row"><span>${k}</span><b class="${neg ? 'neg' : ''}">${v}</b></div>`;
   if (tab === 'cert') {
     return html`<div class="cp" style="--b:${brand}"><i class="cp-band"></i>
       <div class="cp-h"><div>${logo}</div><div class="cp-addr r">${addr.map((a) => html`<span>${a}</span>`)}</div></div>
-      <div class="cp-b"><span class="cp-mut">Issued today</span><b class="cp-title">Salary and tax certificate</b><span class="cp-sub">Tax year 2027 · July 1, 2026 to June 30, 2027</span>
-        <p class="cp-p">This is to certify that <b>Sara Khan</b>, Call agent, has been employed by ${c.legal_name || c.name || 'your company'} and was paid the amounts below.</p>
-        ${row('Total pay', 'Rs 95,455')}${row('Income tax taken', 'Rs 455')}<div class="cp-row strong"><span>Net pay</span><b style="color:${brand}">Rs 101,500</b></div>
+      <div class="cp-b"><span class="cp-mut">Issued today</span><b class="cp-title">${inPK() ? 'Salary and tax certificate' : 'Salary certificate'}</b><span class="cp-sub">${inPK() ? 'Tax year 2027, July 1, 2026 to June 30, 2027' : 'January 1 to December 31, 2026'}</span>
+        <p class="cp-p">This is to certify that <b>${X.who}</b>, Call agent, has been employed by ${c.legal_name || c.name || 'your company'} and was paid the amounts below.</p>
+        ${row('Total pay', money(X.gross - X.unpaid - X.late))}${X.tax ? row('Income tax taken', money(X.tax)) : ''}<div class="cp-row strong"><span>Net pay</span><b style="color:${brand}">${money(X.net)}</b></div>
         <div class="cp-sign"><div><span class="cp-sigimg" data-co-sig>${c.images.signature ? '' : html`<em>Signature</em>`}</span><i></i><b>${c.signer_name || 'Who signs'}</b><span>${c.signer_title || ''}</span></div><span class="cp-stamp" data-co-stamp></span></div></div>
       ${foot}</div>`;
   }
   return html`<div class="cp" style="--b:${brand}"><i class="cp-band"></i>
     <div class="cp-h"><div>${logo}<div class="cp-addr">${addr.map((a) => html`<span>${a}</span>`)}</div></div><div class="r"><b class="cp-title">Payslip</b><span class="cp-sub">October 2026</span></div></div>
-    <div class="cp-who"><span><b>Sara Khan</b>Call agent</span><span class="r">Bank ··· 4821<br>Paid Nov 1 to Nov 10</span></div>
-    <div class="cp-sum"><span>Gross<b>Rs 126,500</b></span><span>Taken off<b>Rs 25,000</b></span><span>Net pay<b style="color:${brand}">Rs 101,500</b></span></div>
-    <div class="cp-lines">${row('Base salary', 'Rs 120,000')}${row('Unpaid leave', '− Rs 10,909', true)}${row('Late arrivals', '− Rs 13,636', true)}${row('Expense: headset', 'Rs 6,500')}${row('Income tax', '− Rs 455', true)}</div>
-    <div class="cp-net"><b>Net pay</b><b style="color:${brand}">Rs 101,500</b></div>
+    <div class="cp-who"><span><b>${X.who}</b>Call agent</span><span class="r">Bank ··· 4821<br>Paid Nov 1 to Nov 10</span></div>
+    <div class="cp-sum"><span>Gross<b>${money(X.gross)}</b></span><span>Taken off<b>${money(X.off)}</b></span><span>Net pay<b style="color:${brand}">${money(X.net)}</b></span></div>
+    <div class="cp-lines">${row('Base salary', money(X.base))}${row('Unpaid leave', money(-X.unpaid), true)}${row('Late arrivals', money(-X.late), true)}${row('Expense: headset', money(X.exp))}${X.tax ? row('Income tax', money(-X.tax), true) : ''}</div>
+    <div class="cp-net"><b>Net pay</b><b style="color:${brand}">${money(X.net)}</b></div>
     ${c.images.signature || c.images.stamp ? html`<div class="cp-b"><span class="cp-mut">Approved for payment</span><div class="cp-sign" style="margin-top:4px"><div><span class="cp-sigimg" data-co-sig>${c.images.signature ? '' : html`<em>Signature</em>`}</span><i></i><b>${c.signer_name || 'Who signs'}</b><span>${c.signer_title || ''}</span></div><span class="cp-stamp" data-co-stamp></span></div></div>` : ''}
     ${foot}</div>`;
 }
@@ -81,8 +84,8 @@ export function companyBlock(c) {
           <div class="co-grid">${field('legal_name', 'Legal name', '', { max: 120 })}${field('name', 'Name people know', '(on screens)', { max: 80 })}
             ${field('address', 'Address', '', { type: 'area', max: 300, wide: true })}
             ${field('phone', 'Phone', '', { type: 'tel', max: 40 })}${field('email', 'Email for pay questions', '', { type: 'email' })}
-            ${field('website', 'Website')}${field('ntn', 'NTN', '(tax number)', { max: 40 })}
-            ${field('secp', 'SECP registration', '(optional)', { max: 40 })}${field('eobi_no', 'EOBI employer number', '(optional)', { max: 40, hint: 'Shown on payslips once EOBI is on in Payroll rules.' })}</div></div>
+            ${field('website', 'Website')}${inPK() ? field('ntn', 'NTN', '(tax number)', { max: 40 }) : field('ntn', 'Tax number', '(optional)', { max: 40 })}
+            ${inPK() ? html`${field('secp', 'SECP registration', '(optional)', { max: 40 })}${field('eobi_no', 'EOBI employer number', '(optional)', { max: 40, hint: 'Shown on payslips once EOBI is on in Payroll rules.' })}` : field('secp', 'Company registration number', '(optional)', { max: 40 })}</div></div>
         <div class="co-sec"><h3>Brand colour</h3><p class="hint">For the band at the top of documents and for net pay.${c.images.logo ? ' The first one is taken from your logo.' : ''}</p>
           <div class="co-sws" role="radiogroup" aria-label="Brand colour">
             ${c.images.logo ? html`<label class="co-sw" title="From your logo" data-own="sw-auto"><input type="radio" name="brand" value="" data-co-auto ${raw(!cur ? 'checked' : '')}><i data-co-autosw></i><span class="sr">From your logo</span></label>` : ''}

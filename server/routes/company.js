@@ -107,7 +107,7 @@ module.exports = (ctx) => {
     for (const [k, max] of Object.entries(FIELDS)) if (k in body) { const v = optStr(body[k], k, max) || ''; if ((prev[k] || '') !== v) changed.push(k); next[k] = v; }
     if ('email' in body && next.email) need(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next.email), 400, 'That email address doesn’t look right');
     if ('brand' in body) { need(body.brand === '' || body.brand === null || /^#[0-9a-f]{6}$/i.test(body.brand), 400, 'The brand colour must look like #0E6E78'); next.brand = String(body.brand || '').toLowerCase(); if ((prev.brand || '') !== next.brand) changed.push('brand'); }
-    if ('name' in body) { const n = optStr(body.name, 'name', 80); need(n, 400, 'Give the company a name'); if (n !== cfg.orgName) { saveSetting('orgName', n); changed.push('name'); } }
+    if ('name' in body) { const n = optStr(body.name, 'name', 80); need(n, 400, 'Give the company a name'); if (n !== cfg.orgName) { saveSetting('orgName', n); changed.push('name'); if (ctx.tenant) ctx.tenant.renamed(n); } }
     saveSetting('company', next);
     if (changed.length) audit(user, 'company.changed', null, changed.join(', '));
     emit('settings');
@@ -183,7 +183,7 @@ module.exports = (ctx) => {
     let y = 40;
     if (logo) { const d = doc.image(L, y, 200, 52, logo); y += d.h + 18; }
     else { doc.text(L, y + 22, co.name || co.legal, { size: 19, bold: true, color: INK, maxW: 300 }); y += 36; }
-    const addr = [...String(co.address || '').split(/\n+/).map((x) => x.trim()).filter(Boolean), [co.ntn ? `NTN ${co.ntn}` : '', co.eobi_no ? `EOBI ${co.eobi_no}` : ''].filter(Boolean).join(' · ')].filter(Boolean);
+    const addr = [...String(co.address || '').split(/\n+/).map((x) => x.trim()).filter(Boolean), [co.ntn ? `${ctx.homeCurrency() === 'PKR' ? 'NTN' : 'Tax no.'} ${co.ntn}` : '', co.eobi_no && ctx.homeCurrency() === 'PKR' ? `EOBI ${co.eobi_no}` : ''].filter(Boolean).join(' · ')].filter(Boolean);
     if (addressRight) {
       let ay = 52; for (const a of [...addr, [co.phone, co.email].filter(Boolean).join(' · ')].filter(Boolean)) { doc.text(R, ay, a, { size: 9, color: MUTED, align: 'right', maxW: 260 }); ay += 13; }
       y = Math.max(y, ay) + 8;
@@ -230,17 +230,19 @@ module.exports = (ctx) => {
   // a sample payslip with today's details, to check the look before payroll is run
   route('GET', '/api/company/sample.pdf', ({ user }) => {
     needEdit(user);
-    const co = ctx.companyFor(null), brand = brandOf(co), m = (n) => `Rs ${Math.abs(n).toLocaleString('en-US')}`;
+    const co = ctx.companyFor(null), brand = brandOf(co), home = ctx.homeCurrency(), pk = home === 'PKR', m = (n) => require('../lib/money').fmtMoney(n, home);
+    // an example month in the company's own money (Pakistan's has income tax taken off)
+    const X = pk ? { who: 'Sara Khan', base: 120000, unpaid: 10909, late: 13636, exp: 6500, tax: 455 } : { who: 'Sarah Cole', base: 4000, unpaid: 182, late: 91, exp: 120, tax: 0 };
     const doc = new Pdf();
     let y = head(doc, co, { title: 'Payslip', sub: 'Sample', sub2: 'How your payslips will look' });
     doc.line(L, y, R, y, { color: '#E6E4F0' }); y += 26;
-    doc.text(L, y, 'Employee', { size: 9, color: MUTED }); doc.text(L, y + 16, 'Sara Khan', { size: 13, bold: true, color: INK }); doc.text(L, y + 30, 'Call agent', { size: 9.5, color: MUTED });
+    doc.text(L, y, 'Employee', { size: 9, color: MUTED }); doc.text(L, y + 16, X.who, { size: 13, bold: true, color: INK }); doc.text(L, y + 30, 'Call agent', { size: 9.5, color: MUTED });
     doc.text(L + 180, y, 'Paid to', { size: 9, color: MUTED }); doc.text(L + 180, y + 16, 'Bank ... 4821', { size: 12, bold: true, color: INK });
     y += 52; doc.line(L, y, R, y, { color: '#E6E4F0' }); y += 22;
     doc.rect(L, y, R - L, 54, { fill: SOFT });
-    [['Gross pay', 126500], ['Income tax', 455], ['Deductions', 24545], ['Net pay', 101500]].forEach(([k, v], i) => { const x = L + 16 + (i * (R - L)) / 4; doc.text(x, y + 20, k, { size: 9, color: MUTED }); doc.text(x, y + 39, m(v), { size: 13, bold: true, color: i === 3 ? brand : INK }); });
+    [['Gross pay', X.base + X.exp], ['Income tax', X.tax], ['Deductions', X.unpaid + X.late], ['Net pay', X.base + X.exp - X.unpaid - X.late - X.tax]].forEach(([k, v], i) => { const x = L + 16 + (i * (R - L)) / 4; doc.text(x, y + 20, k, { size: 9, color: MUTED }); doc.text(x, y + 39, m(v), { size: 13, bold: true, color: i === 3 ? brand : INK }); });
     y += 80;
-    for (const [k, note, v] of [['Base salary', 'Full month', 120000], ['Unpaid leave', '2 days', -10909], ['Late arrivals', '15 late starts', -13636], ['Expense paid back', 'Not taxed', 6500], ['Income tax', 'On the brackets', -455]]) {
+    for (const [k, note, v] of [['Base salary', 'Full month', X.base], ['Unpaid leave', '1 day', -X.unpaid], ['Late arrivals', '6 late starts', -X.late], ['Expense paid back', 'Not taxed', X.exp], ...(X.tax ? [['Income tax', 'On the brackets', -X.tax]] : [])]) {
       doc.text(L, y, k, { size: 11, bold: true, color: INK }); doc.text(R, y, `${v < 0 ? '- ' : ''}${m(v)}`, { size: 11, bold: true, color: v < 0 ? '#B4442E' : INK, align: 'right' });
       doc.text(L, y + 14, note, { size: 9, color: MUTED }); y += 26; doc.line(L, y, R, y, { color: '#ECEAF4' }); y += 18;
     }

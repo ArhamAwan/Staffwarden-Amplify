@@ -46,7 +46,7 @@ Staffwarden replaces Hubstaff, ClickUp and WhatsApp for a company whose team wor
 |---|---|
 | 🦉 **Desktop app** | What each person runs on their computer. Start, Pause, Resume, Stop. Random screenshots with private windows painted black, an activity meter, boosts, notifications, and updates that install themselves. |
 | 🖥️ **Website** | The dashboard for everyone: your day, the team's live status, chat, tasks, time off, pay, the leaderboard, and for managers, HR and the owner everything about running the company. |
-| 🤝 **Client portal** | Amplify's clients sign in to see their project: progress, tasks, approvals, files, hours and messages with the team. Never anything about people's time, screenshots or pay. |
+| 🤝 **Client portal** | Your clients sign in to see their project: progress, tasks, approvals, files, hours and messages with the team. Never anything about people's time, screenshots or pay. |
 
 ---
 
@@ -212,7 +212,7 @@ cd desktop && npm install && npm start
 |---|---|---|
 | `PORT` | 3000 | |
 | `OWNER_EMAIL` / `OWNER_PASSWORD` | – | the owner account, created on first start |
-| `ORG_NAME` | Amplify Media | shown everywhere |
+| `ORG_NAME` | Your company | shown everywhere |
 | `SHIFT_START` / `SHIFT_END` | 09:00 / 18:00 | the company default; each person can differ |
 | `TZ_OFFSET_MIN` | 300 | company time zone (300 = Pakistan) |
 | `WEEKLY_TARGET_MIN` | 2400 | 40 hours |
@@ -237,6 +237,8 @@ sudo bash deploy/update.sh                                     # every update af
 ```
 
 `setup.sh` installs Node and Caddy (automatic HTTPS), runs Staffwarden as a service that restarts itself, opens only SSH, HTTP and HTTPS, and backs the database up every night (14 days kept, with an optional off-site copy). Data lives in `/var/lib/workhelm`, settings in `/etc/workhelm.env`, logs with `journalctl -u workhelm -f`.
+
+To sell it to other companies, each at its own address with sign-up, plans and Stripe billing, see [docs/service.md](docs/service.md) (`sudo bash deploy/service.sh …`).
 
 > The service, folders and the desktop app's internal name still say *workhelm*, so everyone's sign-in, settings and running timer carried over through the rename.
 

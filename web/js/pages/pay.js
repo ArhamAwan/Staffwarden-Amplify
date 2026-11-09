@@ -58,7 +58,7 @@ export default {
     return { me, slip, expenses, cert, tab };
   },
   render({ me, slip, expenses, cert, tab }) {
-    const tabs = [['slips', 'Payslips'], ['expenses', 'Expenses'], ['advance', 'Advance'], ['certificate', 'Tax certificate']];
+    const tabs = [['slips', 'Payslips'], ['expenses', 'Expenses'], ['advance', 'Advance'], ...(me.year.pk ? [['certificate', 'Tax certificate']] : [])];
     const head = html`<div class="page-h"><div><h1>Your pay</h1><p class="sub">${me.base ? `${money(me.base.amount, me.base.currency)} a month${me.bank ? ` · paid to ${me.bank.name || 'your bank'} ••• ${me.bank.last4}` : ''}` : 'Every line says where it came from'}</p></div>
       <div class="tools">${tab === 'expenses' ? html`<button class="btn primary" data-act="exp-new">${icon('plus')} New expense</button>` : tab === 'advance' ? (me.advances.some((a) => a.status === 'pending' || a.status === 'approved') ? '' : html`<button class="btn primary" data-act="adv-new">Ask for an advance</button>`) : tab === 'certificate' && cert && cert.months ? html`<button class="btn primary" data-act="pay-pdf" data-url="/api/me/certificate.pdf?tax_year=${cert.tax_year}" data-name="tax-certificate-${cert.tax_year}.pdf">${icon('download')} Download PDF</button>` : slip ? html`<button class="btn" data-act="pay-pdf" data-url="/api/payroll/slips/${slip.id}/pdf" data-name="payslip-${slip.run ? slip.run.period : slip.id}.pdf">${icon('download')} Download PDF</button>` : ''}</div>
       <nav class="tabs" aria-label="Pay">${tabs.map(([v, n]) => html`<button type="button" class="tab" data-act="q" ${raw(qAttr('tab', v === 'slips' ? '' : v))} aria-current="${tab === v ? 'page' : 'false'}">${n}</button>`)}</nav></div>`;
@@ -78,8 +78,8 @@ export default {
         ${questionsBlock(slip)}</div></section>`;
     const y = me.year;
     const side = html`<div class="noprint">
-      <section class="panel"><header><h2>This tax year</h2><span class="muted small">${periodLabel(y.from)} to ${periodLabel(y.to)}</span></header><div class="body"><dl class="kv tight">
-        <dt>Gross pay</dt><dd class="num r">${money(y.gross)}</dd><dt>Income tax</dt><dd class="num r">${money(y.tax)}</dd><dt>Deductions</dt><dd class="num r">${money(y.deductions)}</dd><dt>Net pay</dt><dd class="num r">${money(y.net)}</dd></dl>
+      <section class="panel"><header><h2>${y.pk ? 'This tax year' : `${y.tax_year} so far`}</h2><span class="muted small">${periodLabel(y.from)} to ${periodLabel(y.to)}</span></header><div class="body"><dl class="kv tight">
+        <dt>Gross pay</dt><dd class="num r">${money(y.gross, y.currency)}</dd>${y.pk || y.tax ? html`<dt>Income tax</dt><dd class="num r">${money(y.tax, y.currency)}</dd>` : ''}<dt>Deductions</dt><dd class="num r">${money(y.deductions, y.currency)}</dd><dt>Net pay</dt><dd class="num r">${money(y.net, y.currency)}</dd></dl>
         <p class="small muted mt">${plural(y.months, 'month')} approved so far.</p></div></section>
       <section class="panel flush"><header><h2>Payslips</h2></header><div class="body"><ul class="blist">${me.slips.map((s) => html`<li class="clickable" data-k="p${s.id}" data-act="go" data-href="#/pay?id=${s.id}" tabindex="0" ${s.id === slip.id ? raw('aria-current="true"') : ''}><span class="what">${s.name}</span><span class="len num">${money(s.net, s.currency)}</span><span class="when">${STATUS[s.status][1]}${s.open_questions ? ' · question waiting' : ''}</span></li>`)}</ul></div></section>
       <div class="pay-tiles"><a class="pay-tile" href="#/pay?tab=expenses">${icon('receipt')}<b>Expenses</b><span>Send a receipt; it’s paid with your salary</span></a><a class="pay-tile" href="#/pay?tab=advance">${icon('wallet')}<b>Advance</b><span>Ask for part of your pay early</span></a></div></div>`;

@@ -21,6 +21,8 @@ run_copy() {
   rclone copy "$BK" "$dest/db" --include 'tracker-*.db' --include 'before-update-*.db' --transfers 2
   rclone delete "$dest/db" --min-age 30d --include 'tracker-*.db' || true
   [[ -d "$DATA/files" ]] && rclone copy "$DATA/files" "$dest/files" --transfers 4
+  # each company's own files (on Staffwarden as a service)
+  if [[ -d "$DATA/companies" ]]; then for d in "$DATA"/companies/*/files; do [[ -d "$d" ]] && rclone copy "$d" "$dest/companies/$(basename "$(dirname "$d")")/files" --transfers 4; done; fi
   if [[ "${SCREENSHOTS:-no}" == "yes" && -d "$DATA/screenshots" ]]; then rclone copy "$DATA/screenshots" "$dest/screenshots" --transfers 8; fi
   echo "Copied to $BUCKET at $(date)."
 }

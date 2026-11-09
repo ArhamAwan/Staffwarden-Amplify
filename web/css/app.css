@@ -1729,3 +1729,4 @@ input[type="file"]::file-selector-button:hover { background: rgb(var(--v-735abf,
 .roster tr.lane-more td { display: table-cell; }
 .roster tr.lane-more .btn { margin-left: 12px; }
 .ci-wl b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.field[hidden] { display: none !important; }
