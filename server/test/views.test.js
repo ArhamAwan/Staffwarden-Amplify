@@ -155,18 +155,21 @@ test('time off: one paid day a month, unpaid as needed, no Monday or Friday unle
   // a paid day mid-week goes in, waiting for the owner
   const req = await ok('POST', '/api/timeoff', { token: tokens.carol, body: { kind: 'paid', start_day: '2026-10-27', end_day: '2026-10-27', note: 'Family' } });
   assert.equal(req.status, 'pending'); assert.equal(req.working_days, 1); assert.equal(req.paid, true);
+  // a reason is always needed
+  const none = await api('POST', '/api/timeoff', { token: tokens.alice, body: { kind: 'unpaid', start_day: '2026-11-11', end_day: '2026-11-11' } });
+  assert.equal(none.status, 400); assert.match(none.data.error, /reason/);
   // a second paid day that month is refused, even while the first is only asked for; unpaid is fine
-  const twice = await api('POST', '/api/timeoff', { token: tokens.carol, body: { kind: 'paid', start_day: '2026-10-28', end_day: '2026-10-28' } });
+  const twice = await api('POST', '/api/timeoff', { token: tokens.carol, body: { kind: 'paid', start_day: '2026-10-28', note: 'Family matter', end_day: '2026-10-28' } });
   assert.equal(twice.status, 409); assert.match(twice.data.error, /unpaid/);
   const check = await ok('POST', '/api/timeoff/check', { token: tokens.carol, body: { kind: 'paid', start_day: '2026-10-28', end_day: '2026-10-28' } });
   assert.equal(check.months[0].left, 0); assert.ok(check.problem);
-  const unpaid = await ok('POST', '/api/timeoff', { token: tokens.carol, body: { kind: 'unpaid', start_day: '2026-10-28', end_day: '2026-10-29' } });
+  const unpaid = await ok('POST', '/api/timeoff', { token: tokens.carol, body: { kind: 'unpaid', start_day: '2026-10-28', note: 'Family matter', end_day: '2026-10-29' } });
   assert.equal(unpaid.paid, false);
-  assert.equal((await api('POST', '/api/timeoff', { token: tokens.carol, body: { kind: 'unpaid', start_day: '2026-10-29', end_day: '2026-10-29' } })).status, 409, 'overlap');
+  assert.equal((await api('POST', '/api/timeoff', { token: tokens.carol, body: { kind: 'unpaid', start_day: '2026-10-29', note: 'Family matter', end_day: '2026-10-29' } })).status, 409, 'overlap');
   // a Monday sits next to the weekend: only in an emergency, with what happened
-  const mon = await api('POST', '/api/timeoff', { token: tokens.carol, body: { kind: 'unpaid', start_day: '2026-10-26', end_day: '2026-10-26' } });
+  const mon = await api('POST', '/api/timeoff', { token: tokens.carol, body: { kind: 'unpaid', start_day: '2026-10-26', note: 'Family matter', end_day: '2026-10-26' } });
   assert.equal(mon.status, 409); assert.match(mon.data.error, /emergency/);
-  assert.equal((await api('POST', '/api/timeoff', { token: tokens.carol, body: { kind: 'unpaid', start_day: '2026-10-26', end_day: '2026-10-26', emergency: true } })).status, 400, 'say what happened');
+  assert.equal((await api('POST', '/api/timeoff', { token: tokens.carol, body: { kind: 'unpaid', start_day: '2026-10-26', note: 'Sick', end_day: '2026-10-26', emergency: true } })).status, 400, 'say what happened');
   const em = await ok('POST', '/api/timeoff', { token: tokens.carol, body: { kind: 'unpaid', start_day: '2026-10-26', end_day: '2026-10-26', emergency: true, note: 'My father is in hospital' } });
   assert.equal(em.emergency, true); assert.deepEqual(em.sandwich_days, ['2026-10-26']);
   // only the owner decides: not her manager, not herself
@@ -177,9 +180,9 @@ test('time off: one paid day a month, unpaid as needed, no Monday or Friday unle
   await ok('POST', `/api/timeoff/${em.id}/decision`, { token: tokens.owner, body: { approve: true } });
   assert.equal((await api('POST', `/api/timeoff/${req.id}/decision`, { token: tokens.owner, body: { approve: false } })).status, 409, 'already decided');
   // a manager recording time off for someone also waits for the owner; the owner's own goes straight in
-  const rec = await ok('POST', '/api/timeoff', { token: tokens.max, body: { user_id: carolId, kind: 'paid', start_day: '2026-11-04', end_day: '2026-11-04' } });
+  const rec = await ok('POST', '/api/timeoff', { token: tokens.max, body: { user_id: carolId, kind: 'paid', start_day: '2026-11-04', note: 'Family matter', end_day: '2026-11-04' } });
   assert.equal(rec.status, 'pending');
-  const own = await ok('POST', '/api/timeoff', { token: tokens.owner, body: { kind: 'paid', start_day: '2026-11-04', end_day: '2026-11-04' } });
+  const own = await ok('POST', '/api/timeoff', { token: tokens.owner, body: { kind: 'paid', start_day: '2026-11-04', note: 'Family matter', end_day: '2026-11-04' } });
   assert.equal(own.status, 'approved');
 
   await ok('POST', '/api/holidays', { token: tokens.owner, body: { day: '2026-10-28', name: 'Test holiday' } });
@@ -193,8 +196,8 @@ test('time off: one paid day a month, unpaid as needed, no Monday or Friday unle
   // the day after a holiday counts as next to one too
   assert.deepEqual((await ok('POST', '/api/timeoff/check', { token: tokens.alice, body: { kind: 'unpaid', start_day: '2026-10-29', end_day: '2026-10-29' } })).sandwich_days, ['2026-10-29']);
   // several paid days at once: only one is paid
-  assert.equal((await api('POST', '/api/timeoff', { token: tokens.alice, body: { kind: 'paid', start_day: '2026-11-10', end_day: '2026-11-12' } })).status, 409);
-  const one = await ok('POST', '/api/timeoff', { token: tokens.alice, body: { kind: 'paid', start_day: '2026-11-11', end_day: '2026-11-11' } });
+  assert.equal((await api('POST', '/api/timeoff', { token: tokens.alice, body: { kind: 'paid', start_day: '2026-11-10', note: 'Family matter', end_day: '2026-11-12' } })).status, 409);
+  const one = await ok('POST', '/api/timeoff', { token: tokens.alice, body: { kind: 'paid', start_day: '2026-11-11', note: 'Family matter', end_day: '2026-11-11' } });
   await ok('DELETE', `/api/timeoff/${one.id}`, { token: tokens.alice });
   assert.equal((await ok('GET', '/api/timeoff?status=cancelled', { token: tokens.alice })).length, 1);
   // an employee only ever sees their own requests

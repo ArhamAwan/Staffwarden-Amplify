@@ -38,7 +38,7 @@ export default {
       <td class="muted small">${r.note || ''}${r.decision_note ? html`<br><i>Reply: ${r.decision_note}</i>` : ''}</td>
       <td class="r nowrap">${r.status === 'pending' && isOwner() && r.user_id !== S.me.id ? html`<button class="btn sm primary" data-act="decide" data-id="${r.id}" data-approve="1" data-who="${r.user_name}" data-range="${range(r)}" data-emergency="${r.emergency ? '1' : ''}" data-note="${r.note || ''}">Approve</button> <button class="btn sm" data-act="decide" data-id="${r.id}" data-who="${r.user_name}" data-range="${range(r)}">Decline</button> `
         : ''}${(r.status === 'approved' && (mgr || r.user_id === S.me.id)) || (r.status === 'pending' && r.user_id === S.me.id) ? html`<button class="btn sm danger" data-act="cancel-leave" data-id="${r.id}">Cancel</button>` : ''}</td></tr>`;
-    const table = (list, empt) => list.length ? html`<div class="tbl-wrap"><table class="t stack"><thead><tr>${mgr ? html`<th>Person</th>` : ''}<th>Pay</th><th>Dates</th><th>Length</th><th>Status</th><th>Note</th><th></th></tr></thead><tbody>${list.map(row)}</tbody></table></div>` : empty(empt[0], empt[1]);
+    const table = (list, empt) => list.length ? html`<div class="tbl-wrap"><table class="t stack"><thead><tr>${mgr ? html`<th>Person</th>` : ''}<th>Pay</th><th>Dates</th><th>Length</th><th>Status</th><th>Reason</th><th></th></tr></thead><tbody>${list.map(row)}</tbody></table></div>` : empty(empt[0], empt[1]);
     return html`
       <div class="page-h"><div><h1>Time off</h1><p class="sub">${isOwner() ? 'You approve or decline every request' : `${owner()} approves every request`}</p></div>
         <div class="tools"><button class="btn primary" data-act="new-leave">${isOwner() ? 'Record time off' : mgr ? 'Ask for time off' : 'Request time off'}</button></div></div>
@@ -107,8 +107,9 @@ actions['new-leave'] = () => {
         <label class="lv-opt"><input type="radio" name="kind" value="unpaid"><span><b>Unpaid</b><small>Comes off that month’s pay</small></span></label></fieldset>
       <div class="lv-check" data-lv-check role="status" aria-live="polite"></div>
       <label class="lv-em" data-lv-em hidden><input type="checkbox" name="emergency"><span><b>This is an emergency</b><small>Say what happened below. ${ownerFirst()} decides.</small></span></label>
-      <div class="field"><label class="f" for="lv-n" data-lv-nl>Note (optional)</label><textarea id="lv-n" name="note" maxlength="500"></textarea></div>`,
+      <div class="field"><label class="f" for="lv-n" data-lv-nl>Reason</label><textarea id="lv-n" name="note" maxlength="500" minlength="3" required placeholder="A family wedding, a doctor’s visit…"></textarea></div>`,
     onSubmit: async (fd) => {
+      if (String(fd.get('note') || '').trim().length < 3) { f.querySelector('#lv-n').focus(); throw new Error(f.emergency && f.emergency.checked ? 'Say what the emergency is' : 'Give a reason for the time off'); }
       await post('/api/timeoff', { user_id: fd.get('user_id') ? Number(fd.get('user_id')) : undefined, kind: fd.get('kind'), start_day: fd.get('start_day'), end_day: fd.get('end_day'), note: fd.get('note') || null, emergency: !!fd.get('emergency') });
       toast(own ? 'Time off recorded' : `Sent to ${ownerFirst(false)}`); S.refresh();
     },
@@ -134,8 +135,8 @@ actions['new-leave'] = () => {
     box.innerHTML = parts.join('');
     em.hidden = !w.needs_emergency;
     const emer = w.needs_emergency && f.emergency.checked;
-    nl.textContent = emer ? 'What happened (needed)' : 'Note (optional)';
-    note.required = !!emer;
+    nl.textContent = emer ? 'What happened' : 'Reason';
+    note.placeholder = emer ? 'What the emergency is, in a few words' : 'A family wedding, a doctor’s visit…';
     sub.disabled = !!w.problem || (w.needs_emergency && !f.emergency.checked) || !w.working_days;
   };
   f.addEventListener('click', (e) => { if (e.target.closest('[data-lv-unpaid]')) { f.querySelector('input[name=kind][value=unpaid]').checked = true; check(); } });

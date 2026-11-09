@@ -80,6 +80,7 @@ module.exports = (ctx) => {
     need(!clash, 409, 'There is already a time-off request for some of those days');
     need(!w.over.length, 409, w.over.length ? paidTooMany(w) : '');
     const note = optStr(body.note, 'note', 500);
+    need(note && note.trim().length >= 3, 400, 'Give a reason for the time off');
     const emergency = !!body.emergency && w.needs_emergency;
     if (w.needs_emergency) {
       need(!!body.emergency, 409, `Time off next to a weekend or a holiday (${w.sandwich_days.map((d) => T.human(d)).join(', ')}) isn’t allowed unless it’s an emergency. If it is, say so and tell us what happened.`);

@@ -63,7 +63,7 @@ test('October is worked out from leave, rules and what HR adds', async () => {
   const { ok, api, tokens, set } = env;
   // two days of unpaid leave, Wed and Thu
   set(Date.UTC(2026, 9, 24, 5, 0));
-  await ok('POST', '/api/timeoff', { token: tokens.owner, body: { user_id: sara.id, kind: 'unpaid', start_day: '2026-10-14', end_day: '2026-10-15' } });
+  await ok('POST', '/api/timeoff', { token: tokens.owner, body: { user_id: sara.id, kind: 'unpaid', start_day: '2026-10-14', note: 'Family matter', end_day: '2026-10-15' } });
   await ok('PUT', '/api/payroll/rules', { token: tokens.fatima, body: { absent: 'off' } });
   set(NOV2);
   assert.equal((await api('POST', '/api/payroll/runs', { token: tokens.sara, body: { period: '2026-10' } })).status, 403);
@@ -211,7 +211,7 @@ test('documents, joining steps and time off for HR', async () => {
   const st = await ok('PUT', `/api/hr/people/${sara.id}/steps`, { token: tokens.fatima, body: { flow: 'join', step: 'checkin', done: true } });
   assert.ok(st.find((s) => s.key === 'checkin').done);
   // HR sees everyone's time off; only the owner decides it
-  const tr = await ok('POST', '/api/timeoff', { token: tokens.hamza, body: { kind: 'unpaid', start_day: '2026-11-24', end_day: '2026-11-26' } });
+  const tr = await ok('POST', '/api/timeoff', { token: tokens.hamza, body: { kind: 'unpaid', start_day: '2026-11-24', note: 'Family matter', end_day: '2026-11-26' } });
   assert.ok((await ok('GET', '/api/timeoff?status=pending', { token: tokens.fatima })).some((r) => r.id === tr.id));
   assert.equal((await api('POST', `/api/timeoff/${tr.id}/decision`, { token: tokens.fatima, body: { approve: true } })).status, 403);
   await ok('POST', `/api/timeoff/${tr.id}/decision`, { token: tokens.owner, body: { approve: true } });
