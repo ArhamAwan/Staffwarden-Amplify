@@ -14,9 +14,11 @@ module.exports = (ctx) => {
     const wd = calc.workDaySet(u);
     const hol = new Set(db.prepare('SELECT day FROM holidays WHERE day >= ? AND day <= ?').all(r.start_day, r.end_day).map((h) => h.day));
     const days = T.eachDay(r.start_day, r.end_day).filter((d) => wd.has(T.dow(d)) && !hol.has(d)).length;
-    const decider = r.decided_by ? (db.prepare('SELECT name FROM users WHERE id = ?').get(r.decided_by) || {}).name : null;
+    const nameOf = (id) => (id ? (db.prepare('SELECT name FROM users WHERE id = ?').get(id) || {}).name || null : null);
+    const decider = nameOf(r.decided_by);
     return { id: r.id, user_id: r.user_id, user_name: u.name, kind: r.kind, paid: r.kind !== 'unpaid', start_day: r.start_day, end_day: r.end_day, working_days: days, note: r.note, status: r.status, decided_by: decider, decided_at: r.decided_at, decision_note: r.decision_note, created_at: r.created_at,
-      emergency: !!r.emergency, sandwich_days: r.sandwich ? r.sandwich.split(',') : [] };
+      emergency: !!r.emergency, sandwich_days: r.sandwich ? r.sandwich.split(',') : [],
+      cancelled_by: nameOf(r.cancelled_by), cancelled_by_id: r.cancelled_by || null, cancelled_at: r.cancelled_at || null, cancel_note: r.cancel_note || null };
   }
 
   route('GET', '/api/timeoff', ({ user, query }) => {
@@ -117,13 +119,23 @@ module.exports = (ctx) => {
     return out(db.prepare('SELECT * FROM leave_requests WHERE id = ?').get(r.id));
   });
 
-  route('DELETE', '/api/timeoff/:id', ({ user, params }) => {
+  // Cancelling: the person can take back their own request while it waits, or approved time off before it
+  // starts. The CEO can cancel anyone's, with a reason the person sees. Nobody else can.
+  route('DELETE', '/api/timeoff/:id', ({ user, params, query }) => {
     const r = db.prepare('SELECT * FROM leave_requests WHERE id = ?').get(Number(params.id));
-    need(r && (r.user_id === user.id || canSee(user, r.user_id)), 404, 'Request not found');
+    need(r && (r.user_id === user.id || canSee(user, r.user_id) || isHR(user)), 404, 'Request not found');
     need(['pending', 'approved'].includes(r.status), 409, 'That request is already closed');
-    if (r.user_id === user.id && !isManager(user)) need(r.status === 'pending' || r.start_day > T.localDay(clockNow(), calc.dayTz(user)), 403, 'Ask your manager to cancel time off that has already started');
-    db.prepare("UPDATE leave_requests SET status = 'cancelled' WHERE id = ?").run(r.id);
-    audit(user, 'timeoff.cancelled', r.user_id, `${r.kind} ${r.start_day} to ${r.end_day}`);
+    const own = r.user_id === user.id, ceo = user.role === 'owner';
+    need(own || ceo, 403, `Only ${(owners()[0] || {}).name || 'the CEO'} can cancel someone else’s time off`);
+    const target = db.prepare('SELECT * FROM users WHERE id = ?').get(r.user_id);
+    if (own && !ceo) need(r.status === 'pending' || r.start_day > T.localDay(clockNow(), calc.dayTz(target)), 403, `This time off has already started. Ask ${(owners()[0] || {}).name || 'the CEO'} to change it`);
+    const reason = optStr(query.get('reason'), 'reason', 500);
+    if (!own) need(reason && reason.trim().length >= 3, 400, 'Give a reason; they see it');
+    db.prepare("UPDATE leave_requests SET status = 'cancelled', cancelled_by = ?, cancelled_at = ?, cancel_note = ? WHERE id = ?").run(user.id, nowIso(), reason, r.id);
+    audit(user, 'timeoff.cancelled', r.user_id, `${r.kind} ${r.start_day} to ${r.end_day}${reason ? `: ${reason}` : ''}`);
+    const span = r.start_day === r.end_day ? T.human(r.start_day) : `${T.human(r.start_day)} to ${T.human(r.end_day)}`;
+    if (!own) ctx.notify.notify(r.user_id, { kind: 'timeoff_decision', title: `${user.name} cancelled your time off`, body: `${span}: ${String(reason).slice(0, 160)}`, link: '#/timeoff', actor: user });
+    else if (r.status === 'approved') ctx.notify.notify(owners().map((o) => o.id).filter((x) => x !== user.id), { kind: 'timeoff_request', title: `${user.name} cancelled approved time off`, body: `${span}. They’ll be working those days`, link: '#/timeoff', actor: user });
     emit('timeoff', r.user_id);
     return { ok: true };
   });

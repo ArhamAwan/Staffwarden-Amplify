@@ -12,6 +12,14 @@ const owner = (cap = true) => S.settings.owner_name || (cap ? 'The CEO' : 'the C
 const ownerFirst = (cap = true) => (S.settings.owner_name ? S.settings.owner_name.split(' ')[0] : cap ? 'The CEO' : 'the CEO');
 const perMonth = () => Number(S.settings.paid_leave_per_month ?? 1);
 const isOwner = () => S.me.role === 'owner';
+// who did what: approved or declined by the CEO; cancelled by whoever cancelled it (and approved by whom, before)
+const first1 = (n) => String(n || '').split(' ')[0];
+const statusBy = (r) => {
+  if (r.status === 'cancelled') return r.cancelled_by ? html` <span class="small muted">by ${r.cancelled_by_id === r.user_id ? 'them' : r.cancelled_by}${r.decided_by && r.decided_at ? `, after ${first1(r.decided_by)} approved it` : ''}</span>` : '';
+  return r.decided_by ? html` <span class="small muted">by ${r.decided_by}</span>` : '';
+};
+// the person: their own while it waits, or before approved time off starts. The CEO: anyone's, with a reason.
+const canCancel = (r, today) => ['pending', 'approved'].includes(r.status) && (isOwner() || (r.user_id === S.me.id && (r.status === 'pending' || r.start_day > today)));
 const range = (r) => (r.start_day === r.end_day ? dayShort(r.start_day) : `${dayMD(r.start_day)} to ${dayMD(r.end_day)}`);
 
 export default {
@@ -34,10 +42,10 @@ export default {
     const row = (r) => html`<tr data-k="r${r.id}">
       ${mgr ? html`<td><b>${r.user_name}</b></td>` : ''}
       <td>${r.paid ? 'Paid' : 'Unpaid'}${r.emergency ? html` ${tag('pending', 'Emergency')}` : ''}</td><td class="num">${range(r)}</td><td class="num">${plural(r.working_days, 'working day')}</td>
-      <td>${tag(r.status, { pending: 'Waiting', approved: 'Approved', denied: 'Declined', cancelled: 'Cancelled' }[r.status] || r.status)}${r.decided_by ? html` <span class="small muted">by ${r.decided_by}</span>` : ''}</td>
-      <td class="muted small">${r.note || ''}${r.decision_note ? html`<br><i>Reply: ${r.decision_note}</i>` : ''}</td>
+      <td>${tag(r.status, { pending: 'Waiting', approved: 'Approved', denied: 'Declined', cancelled: 'Cancelled' }[r.status] || r.status)}${statusBy(r)}</td>
+      <td class="muted small">${r.note || ''}${r.decision_note ? html`<br><i>Reply: ${r.decision_note}</i>` : ''}${r.cancel_note ? html`<br><i>Why it was cancelled: ${r.cancel_note}</i>` : ''}</td>
       <td class="r nowrap">${r.status === 'pending' && isOwner() && r.user_id !== S.me.id ? html`<button class="btn sm primary" data-act="decide" data-id="${r.id}" data-approve="1" data-who="${r.user_name}" data-range="${range(r)}" data-emergency="${r.emergency ? '1' : ''}" data-note="${r.note || ''}">Approve</button> <button class="btn sm" data-act="decide" data-id="${r.id}" data-who="${r.user_name}" data-range="${range(r)}">Decline</button> `
-        : ''}${(r.status === 'approved' && (mgr || r.user_id === S.me.id)) || (r.status === 'pending' && r.user_id === S.me.id) ? html`<button class="btn sm danger" data-act="cancel-leave" data-id="${r.id}">Cancel</button>` : ''}</td></tr>`;
+        : ''}${canCancel(r, today) ? html`<button class="btn sm danger" data-act="cancel-leave" data-id="${r.id}" data-mine="${r.user_id === S.me.id ? '1' : ''}" data-who="${r.user_name}" data-range="${range(r)}">Cancel</button>` : ''}</td></tr>`;
     const table = (list, empt) => list.length ? html`<div class="tbl-wrap"><table class="t stack"><thead><tr>${mgr ? html`<th>Person</th>` : ''}<th>Pay</th><th>Dates</th><th>Length</th><th>Status</th><th>Reason</th><th></th></tr></thead><tbody>${list.map(row)}</tbody></table></div>` : empty(empt[0], empt[1]);
     return html`
       <div class="page-h"><div><h1>Time off</h1><p class="sub">${isOwner() ? 'You approve or decline every request' : `${owner()} approves every request`}</p></div>
@@ -152,8 +160,20 @@ actions.decide = (el) => {
   });
 };
 actions['cancel-leave'] = async (el) => {
-  if (!(await confirmBox({ title: 'Cancel this time off?', message: 'The days go back to being normal working days.', confirm: 'Cancel time off', cancel: 'Keep it', danger: true }))) return;
-  try { await del(`/api/timeoff/${el.dataset.id}`); toast('Cancelled'); S.refresh(); } catch (e) { toast(errMsg(e), true); }
+  if (el.dataset.mine) {
+    if (!(await confirmBox({ title: 'Cancel this time off?', message: 'The days go back to being normal working days.', confirm: 'Cancel time off', cancel: 'Keep it', danger: true }))) return;
+    try { await del(`/api/timeoff/${el.dataset.id}`); toast('Cancelled'); S.refresh(); } catch (e) { toast(errMsg(e), true); }
+    return;
+  }
+  openModal({
+    title: `Cancel ${el.dataset.who}’s time off?`, sub: `${el.dataset.range}. The days go back to being working days.`, submit: 'Cancel time off', cancel: 'Keep it', danger: true,
+    body: html`<div class="field"><label class="f" for="cx-r">Why (they see this)</label><textarea id="cx-r" name="reason" maxlength="500" placeholder="A client call moved to that day"></textarea></div>`,
+    onSubmit: async (fd) => {
+      const reason = String(fd.get('reason') || '').trim();
+      if (reason.length < 3) throw new Error('Give a reason; they see it');
+      await del(`/api/timeoff/${el.dataset.id}?reason=${encodeURIComponent(reason)}`); toast(`Cancelled. ${first1(el.dataset.who)} gets a notification.`); S.refresh();
+    },
+  });
 };
 actions['new-holiday'] = () => openModal({
   title: 'Add a company holiday', submit: 'Add holiday',

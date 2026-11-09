@@ -185,6 +185,12 @@ test('time off: one paid day a month, unpaid as needed, no Monday or Friday unle
   const own = await ok('POST', '/api/timeoff', { token: tokens.owner, body: { kind: 'paid', start_day: '2026-11-04', note: 'Family matter', end_day: '2026-11-04' } });
   assert.equal(own.status, 'approved');
 
+  // cancelling: not her manager; the owner only with a reason she sees; who cancelled is kept apart from who approved
+  assert.equal((await api('DELETE', `/api/timeoff/${rec.id}`, { token: tokens.max })).status, 403);
+  assert.equal((await api('DELETE', `/api/timeoff/${rec.id}`, { token: tokens.owner })).status, 400);
+  await ok('DELETE', `/api/timeoff/${rec.id}?reason=${encodeURIComponent('Client call that day')}`, { token: tokens.owner });
+  const gone = (await ok('GET', '/api/timeoff?status=cancelled', { token: tokens.carol })).find((x) => x.id === rec.id);
+  assert.deepEqual([gone.cancelled_by, gone.cancel_note], ['Owner', 'Client call that day']);
   await ok('POST', '/api/holidays', { token: tokens.owner, body: { day: '2026-10-28', name: 'Test holiday' } });
   assert.equal((await api('POST', '/api/holidays', { token: tokens.carol, body: { day: '2026-10-29', name: 'x' } })).status, 403);
   const g = await ok('GET', '/api/timesheets?from=2026-10-26&to=2026-10-30&user_id=' + carolId, { token: tokens.owner });
