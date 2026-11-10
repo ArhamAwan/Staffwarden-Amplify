@@ -79,7 +79,7 @@ fi
 echo "==> Service"
 cat > /etc/systemd/system/workhelm.service <<EOF
 [Unit]
-Description=Workhelm (built in-house by Amplify Media Technologies)
+Description=Staffwarden
 After=network-online.target
 Wants=network-online.target
 

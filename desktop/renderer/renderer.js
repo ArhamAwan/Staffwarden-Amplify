@@ -218,7 +218,7 @@ function wizardSteps(review) {
   const idle = settings && settings.idle_limit_min ? settings.idle_limit_min : 10;
   const canDelete = !settings || settings.employees_can_delete_shots !== false;
   const list = [
-    { scene: 'timer', title: first ? `Welcome, ${first}` : 'Welcome', text: 'Staffwarden records your working time, and only while you choose to. Here is exactly what it does, step by step.', points: ['Staffwarden is built entirely in-house by Amplify Media Technologies. Your data goes to our own server, not to an outside company.'] },
+    { scene: 'timer', title: first ? `Welcome, ${first}` : 'Welcome', text: 'Staffwarden records your working time, and only while you choose to. Here is exactly what it does, step by step.', points: ['Your time and screenshots go only to your company’s Staffwarden account. They aren’t sold or shared with anyone else.'] },
     { scene: 'pauses', title: 'You are in control', text: 'Nothing is recorded until you press Start.', points: [
       'Pause any time and pick why: a short break, lunch, prayer or something personal.',
       'Every pause is saved with its start and end, so your day adds up.',
@@ -377,7 +377,7 @@ function mainView(st) {
         el('button', { class: 'link', id: 'signout', onclick: async () => { const r = await API.logout(); if (r.error) toast(r.error); else boot(); } }, 'Sign out'))),
     // the company's account is paused (trial over, not paid, closed): said plainly, before Start
     me && me.account && me.account.paused ? el('div', { class: 'notice paused-note', role: 'status' }, el('b', {}, me.account.status === 'closed' ? 'This company’s account is closed.' : 'Tracking is paused.'),
-      el('span', {}, me.account.billing ? ' Choose a plan on the website to start tracking again. Nothing is lost.' : ' The company’s Staffwarden account needs attention, and the owner already knows. Your hours, payslips and time off are all still on the website.')) : null,
+      el('span', {}, me.account.billing ? ' Choose a plan on the website to start tracking again. Nothing is lost.' : ' The company’s Staffwarden account needs attention, and the owner already knows. Your hours, payslips and time off are all still on the website.')) : '',
     el('div', { id: 'notice' }),
     el('div', { id: 'perm' }),
     el('div', { id: 'body', class: 'stack' },
@@ -607,7 +607,7 @@ async function showSummary(sum, justStopped = false) {
   const breaks = (sum.breaks || []);
   root.append(
     el('div', { class: 'row' }, el('div', {}, el('h1', {}, justStopped ? 'Timer stopped' : 'Today\'s summary'), el('div', { class: 'muted' }, dayLabel(sum.day)))),
-    justStopped ? el('div', { class: 'notice' }, el('span', {}, 'Your time for today has been saved. Here is how the day went.')) : null,
+    justStopped ? el('div', { class: 'notice' }, el('span', {}, 'Your time for today has been saved. Here is how the day went.')) : '',
     el('div', { class: 'tiles' },
       el('div', { class: 'tile w' }, el('b', { class: 'num' }, dur(sum.worked_secs)), el('span', {}, 'Worked')),
       el('div', { class: 'tile b' }, el('b', { class: 'num' }, dur(sum.break_secs)), el('span', {}, `On breaks${sum.break_count ? ` (${sum.break_count})` : ''}`)),

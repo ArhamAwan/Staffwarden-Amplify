@@ -2,7 +2,7 @@
   "name": "staffwarden",
   "version": "0.9.15",
   "private": true,
-  "description": "Staffwarden: time, attendance, tasks, chat, HR and payroll for remote teams. Built entirely in-house by Amplify Media Technologies.",
+  "description": "Staffwarden: time, attendance, tasks, chat, HR and payroll for remote teams.",
   "engines": {
     "node": ">=22.5"
   },

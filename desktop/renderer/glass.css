@@ -28,6 +28,15 @@ h1, h2 { font-family: Instrument, -apple-system, system-ui, sans-serif; }
 .tile b { font-family: Instrument, -apple-system, system-ui, sans-serif; font-weight: 650; font-size: 22px; color: var(--ink); }
 .tile.w b { color: var(--work-ink); } .tile.b b { color: var(--brk-ink); }
 .dialog, .wz, #root > .wz, .sheet { background: linear-gradient(160deg, rgba(44,32,92,.96), rgba(20,14,44,.95)) !important; color: var(--ink); border: 1px solid rgba(195,179,255,.22) !important; }
+/* the how-it-works steps sit on the dark glass card: their text has to be light too */
+.wz .wz-step { color: var(--muted); }
+.wz .wz-body h2 { color: var(--ink); }
+.wz .wz-body p, .wz .wz-points li { color: var(--ink-2); }
+.wz .wz-points li::before { background: #9B7BFF; }
+.wz .wz-check { background: rgba(255,255,255,.06); color: var(--ink-2); border: 1px solid rgba(255,255,255,.1); }
+.wz .wz-skip { color: var(--muted) !important; } .wz .wz-skip:hover { color: var(--ink) !important; }
+.wz .wz-dots i { background: rgba(255,255,255,.22); } .wz .wz-dots i.on { background: #8C78E8; } .wz .wz-dots i.done { background: rgba(195,179,255,.55); }
+.wz .wz-art { border-bottom-color: rgba(255,255,255,.1); }
 .scrim { background: rgba(6,4,16,.45) !important; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 input, select { background: rgba(255,255,255,.07) !important; border-color: rgba(255,255,255,.16) !important; color: var(--ink) !important; }
 input::placeholder { color: #8A83AE; }

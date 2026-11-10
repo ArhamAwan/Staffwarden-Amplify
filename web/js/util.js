@@ -149,7 +149,6 @@ export function owl(mode = 'still', label = '') {
 // the logo everywhere it appears (rail, sign-in, client portal, statements)
 export const HELM = owl('still');
 
-export const CREDIT = 'Built entirely in-house by Amplify Media Technologies';
 
 export const ICON = {
   building: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M10 21v-4h4v4"/>',
