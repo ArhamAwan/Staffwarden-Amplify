@@ -1076,6 +1076,15 @@ tr.link { transition: background-color .18s; }
 
 
 
+/* the roster's header: what the list is on the left; finding someone and the bar colours on the right */
+.roster > header.ro-h { padding: 18px 20px 16px; gap: 12px 24px; align-items: center; border-bottom: 1px solid var(--line-2); }
+.ro-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ro-sub { font-size: 13px; color: var(--muted); }
+.ro-tools { display: flex; align-items: center; gap: 10px 20px; flex-wrap: wrap; margin-left: auto; }
+.ro-tools .psearch { width: 240px; } .ro-tools .psearch input { width: 100%; }
+.ro-key { display: inline-flex; align-items: center; gap: 4px; padding: 4px; border-radius: 99px; background: rgba(255,255,255,.05); border: 1px solid var(--line-2); font-size: 12.5px; color: var(--ink-2); }
+.ro-key span { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; }
+@media (max-width: 720px) { .ro-tools { margin-left: 0; width: 100%; } .ro-tools .psearch { flex: 1 1 100%; width: 100%; max-width: none; } }
 .roster .lane-h th { position: static; padding: 14px 16px 8px; background: rgba(255,255,255,0.053); border-top: 1px solid var(--line-2); font-size: 13px; font-weight: 700; color: var(--ink); text-align: left; letter-spacing: 0; text-transform: none; }
 .roster .lane-h th .sw { margin-right: 8px; vertical-align: 0; }
 .roster .lane-c { margin-left: 8px; padding: 1px 8px; border-radius: 99px; background: var(--line-2); color: var(--muted); font-size: 12px; font-weight: 650; }
