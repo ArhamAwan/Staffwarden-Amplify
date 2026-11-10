@@ -618,11 +618,15 @@ function createPlatform(opts) {
     if (!app) return r.last_used_at || null;
     try { const t = (app.db.prepare('SELECT MAX(last_used_at) AS t FROM sessions').get() || {}).t; return t ? `${String(t).replace(' ', 'T')}${/Z|[+-]\d\d:?\d\d$/.test(t) ? '' : 'Z'}` : r.last_used_at || null; } catch { return r.last_used_at || null; }
   };
+  // a company that never paid anything (a trial, a test, a pilot that didn't go ahead) can be removed any
+  // time; one that has paid only once it is past its keep date. Either way its folder is moved aside, not erased.
+  const neverPaid = (r) => !r.stripe_subscription && !r.manual_billing && !store.prepare("SELECT 1 FROM payments WHERE slug = ? AND status IN ('paid','succeeded') LIMIT 1").get(r.slug);
+  const removable = (r) => r.status !== 'deleted' && r.slug !== defaultSlug && !r.comped && (neverPaid(r) || (paused(r) && r.delete_after && Date.parse(r.delete_after) <= now()));
   const companyOut = (r) => {
     const each = P.seatCents(r.plan, r.interval);
     const monthly = r.comped ? 0 : Math.round((r.seats || 0) * (r.interval === 'year' ? each / 12 : each));
     const late = store.prepare("SELECT at FROM payments WHERE slug = ? AND status = 'failed' ORDER BY at DESC LIMIT 1").get(r.slug);
-    return { slug: r.slug, name: r.name, address: hostOf(r.slug), url: urlOf(r.slug), country: (byCode(r.country) || {}).name || r.country, owner_email: r.owner_email, owner_name: r.owner_name, status: r.status, plan: r.plan, interval: r.interval, seats: r.seats, monthly_cents: ['active', 'past_due'].includes(r.status) ? monthly : 0, after_trial_cents: r.status === 'trial' ? monthly : 0, comped: !!r.comped, manual_billing: !!r.manual_billing, trial_ends_at: r.trial_ends_at, grace_ends_at: r.grace_ends_at, paused_at: r.paused_at, closing_at: r.closing_at, delete_after: r.delete_after, created_at: r.created_at, last_used_at: lastUsed(r), trial_days: P.TRIAL_DAYS, failed_at: late ? late.at : null, due_for_deletion: !!(r.delete_after && Date.parse(r.delete_after) <= now() && paused(r)) };
+    return { slug: r.slug, name: r.name, address: hostOf(r.slug), url: urlOf(r.slug), country: (byCode(r.country) || {}).name || r.country, owner_email: r.owner_email, owner_name: r.owner_name, status: r.status, plan: r.plan, interval: r.interval, seats: r.seats, monthly_cents: ['active', 'past_due'].includes(r.status) ? monthly : 0, after_trial_cents: r.status === 'trial' ? monthly : 0, comped: !!r.comped, manual_billing: !!r.manual_billing, trial_ends_at: r.trial_ends_at, grace_ends_at: r.grace_ends_at, paused_at: r.paused_at, closing_at: r.closing_at, delete_after: r.delete_after, created_at: r.created_at, last_used_at: lastUsed(r), trial_days: P.TRIAL_DAYS, failed_at: late ? late.at : null, due_for_deletion: !!(r.delete_after && Date.parse(r.delete_after) <= now() && paused(r)), removable: removable(r), never_paid: neverPaid(r) };
   };
 
   // ---------------- the plain address and the console: their API ----------------
@@ -990,13 +994,13 @@ function createPlatform(opts) {
     event(r.slug, 'flags', `${JSON.stringify(f)} by ${who}`);
     return companyOut(row(r.slug));
   });
-  // a company due for deletion: its folder is moved aside (out of the service), not erased here
+  // removing a company: its folder is moved aside (out of the service), not erased here
   on('POST', '/api/console/companies/:slug/remove', ({ req, params, body }) => {
     const who = consoleUser(req);
     const r = row(params.slug);
     need(r && r.status !== 'deleted', 404, 'No such company');
     need(r.slug !== defaultSlug && !r.comped, 400, 'This company can’t be removed here');
-    need(paused(r) && r.delete_after && Date.parse(r.delete_after) <= now(), 400, 'Only a company past its keep date can be removed');
+    need(removable(r), 400, 'A company that has paid can only be removed once it is past its keep date');
     need(String(body.confirm || '') === r.slug, 400, `Type ${r.slug} to confirm`);
     const app = tenants.get(r.slug);
     if (app) { app.stop(); try { app.db.close(); } catch { /* closed */ } tenants.delete(r.slug); }

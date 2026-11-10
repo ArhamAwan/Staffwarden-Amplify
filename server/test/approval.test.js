@@ -210,3 +210,31 @@ test('without card payments set up, a trial that ends is not paused: the console
   await P.sweep();
   assert.equal(mailer.outbox.filter(mine).length, 1, 'only once');
 });
+
+test('the console removes a company that never paid; one billed by bank transfer stays until its keep date', async () => {
+  const ct = await consoleToken();
+  const make = async (email, company, slug) => {
+    const r = await ask(email, company);
+    await ok(apex, 'POST', '/api/platform/request/verify', { body: { token: r.token, code: r.dev_code } });
+    const q = (await ok(at('admin'), 'GET', '/api/console/requests', { token: ct })).requests.find((x) => x.email === email);
+    await ok(at('admin'), 'POST', `/api/console/requests/${q.id}/approve`, { token: ct, body: {} });
+    const t = decodeURIComponent(lastMail('access_approved', email).text.match(/#t=(\S+)/)[1]);
+    return ok(apex, 'POST', '/api/platform/setup', { body: { t, slug, password: 'a-long-pass-123' } });
+  };
+  await make('tess@trialco.test', 'Trial Co', 'trialco');
+  const c = await ok(at('admin'), 'GET', '/api/console/companies/trialco', { token: ct });
+  assert.equal(c.removable, true); assert.equal(c.never_paid, true);
+  assert.equal((await req(at('admin'), 'POST', '/api/console/companies/trialco/remove', { token: ct, body: { confirm: 'nope' } })).status, 400, 'the address has to be typed');
+  assert.equal((await req(at('admin'), 'POST', '/api/console/companies/trialco/remove', { body: { confirm: 'trialco' } })).status, 401, 'console sign-in needed');
+  await ok(at('admin'), 'POST', '/api/console/companies/trialco/remove', { token: ct, body: { confirm: 'trialco' } });
+  assert.equal(P.row('trialco').status, 'deleted');
+  assert.equal((await req(at('trialco'), 'GET', '/api/settings')).status, 404, 'the address stops working');
+  assert.ok(!(await ok(at('admin'), 'GET', '/api/console/overview', { token: ct })).companies.some((x) => x.slug === 'trialco'), 'gone from the list');
+  assert.equal((await req(at('admin'), 'GET', '/api/console/companies/trialco', { token: ct })).status, 404);
+  assert.ok(fs.readdirSync(path.join(dataDir, 'removed')).some((d) => d.startsWith('trialco-')), 'moved aside, not erased');
+  // a bank-transfer customer has paid outside Stripe: not removable on a whim
+  await make('bo@bankco.test', 'Bank Co', 'bankco');
+  await ok(at('admin'), 'POST', '/api/console/companies/bankco/flags', { token: ct, body: { manual_billing: true } });
+  assert.equal((await ok(at('admin'), 'GET', '/api/console/companies/bankco', { token: ct })).removable, false);
+  assert.equal((await req(at('admin'), 'POST', '/api/console/companies/bankco/remove', { token: ct, body: { confirm: 'bankco' } })).status, 400);
+});

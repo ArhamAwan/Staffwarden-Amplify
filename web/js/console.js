@@ -245,7 +245,7 @@ async function company(slug, again = false) {
         ${canExtend ? `<button class="cn-btn" type="button" data-a="extend">${ic('plus')}Give 7 more days</button>` : ''}
         <button class="cn-btn" type="button" data-a="comp">${ic('gift')}${c.comped ? 'Stop it being free' : 'Make it free'}</button>
         <button class="cn-btn" type="button" data-a="man">${ic('bank')}${c.manual_billing ? 'Stop bank transfer' : 'Paid by bank transfer'}</button>
-        ${c.due_for_deletion ? `<button class="cn-btn danger" type="button" data-a="remove">${ic('trash')}Remove</button>` : ''}</div></section>
+        ${c.removable ? `<button class="cn-btn danger" type="button" data-a="remove">${ic('trash')}Remove</button>` : ''}</div></section>
     <div class="kp">
       <div class="rise" style="--i:2"><div class="kp-h"><span class="cn-ic">${ic('star')}</span>Plan</div><b class="w">${c.comped ? 'Free' : PLAN[c.plan]}</b><span class="kp-s">${c.comped ? 'Every feature, nothing charged' : `Paid ${c.interval}ly`}</span></div>
       <div class="rise" style="--i:3"><div class="kp-h"><span class="cn-ic b">${ic('ppl')}</span>People paid for</div><b class="num" data-count="${c.seats || 0}">${c.seats || 0}</b><span class="kp-s">${c.monthly_cents ? `${usd(c.monthly_cents)} a month` : c.after_trial_cents ? `${usd(c.after_trial_cents)} a month after the trial` : 'Nothing charged now'}</span></div>
@@ -277,7 +277,7 @@ async function company(slug, again = false) {
     if (a === 'extend') return act(b, 'extend', { days: 7 }, `${c.name} has 7 more days`);
     if (a === 'comp') return act(b, 'flags', { comped: !c.comped }, c.comped ? `${c.name} pays again from its next bill` : `${c.name} is free now`);
     if (a === 'man') return act(b, 'flags', { manual_billing: !c.manual_billing }, c.manual_billing ? `${c.name} pays by card again` : `${c.name} pays by bank transfer`);
-    if (a === 'remove' && await confirmDlg({ title: `Remove ${c.name}?`, text: `Its folder moves out of the service, to <b>removed/</b> on the server. It isn’t erased: you can still restore it by hand.`, word: c.slug, action: 'Remove the company' })) {
+    if (a === 'remove' && await confirmDlg({ title: `Remove ${c.name}?`, text: `${c.never_paid ? `${esc(c.name)} never paid, so it can go now. ` : ''}Its address stops working and everyone there is signed out. The folder moves out of the service, to <b>removed/</b> on the server; it isn’t erased, so it can still be restored by hand.`, word: c.slug, action: 'Remove the company' })) {
       b.disabled = true;
       try { await call('POST', `/api/console/companies/${encodeURIComponent(slug)}/remove`, { confirm: c.slug }); toast(`${c.name} was removed`); lastOverview = null; location.hash = '#/'; }
       catch (e) { b.disabled = false; toast(e.message, true); }
