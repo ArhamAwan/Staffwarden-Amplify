@@ -161,7 +161,10 @@ module.exports = (ctx) => {
     const work = companyDays();
     const out = [];
     let d = calc().companyToday();
+    // days before the company was on Staffwarden have no report
+    const since = String((db.prepare('SELECT MIN(created_at) f FROM users').get() || {}).f || '').slice(0, 10);
     for (let i = 0; i < 60 && out.length < n; i++, d = T.addDays(d, -1)) {
+      if (since && d < T.addDays(since, -1) && i > 0) break;   // a day of slack: created_at is UTC
       const anyone = list.some((u) => isWorkDay(u, d));
       if (!anyone && !work.has(T.dow(d))) continue;
       const r = readyAt(list, d);

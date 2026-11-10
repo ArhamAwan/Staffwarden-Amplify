@@ -59,7 +59,8 @@ function periodChoices(ov) {
   const today = companyToday(), cur = today.slice(0, 7), out = [];
   for (let i = 0; i < 4; i++) {
     const period = addMonths(cur, -i);
-    if (i === 0 && Number(today.slice(8)) < 20) continue;
+    if (i === 0 && Number(today.slice(8)) < 20 && ov.since !== cur) continue;   // a company new this month can start it early
+    if (ov.since && period < ov.since && !ov.runs.find((r) => r.period === period)) continue;   // before the company was on Staffwarden
     out.push({ period, ended: i > 0, run: ov.runs.find((r) => r.period === period) || null });
   }
   return out;
@@ -137,7 +138,8 @@ function nudge() {
 actions['co-nudge-off'] = (el) => { try { localStorage.setItem(NUDGE_KEY, '1'); } catch { /* fine */ } const n = el.closest('.co-nudge'); if (n) n.remove(); };
 
 function firstView(ov) {
-  const period = nextPeriod(ov) || addMonths(companyToday().slice(0, 7), -1);
+  const prev = addMonths(companyToday().slice(0, 7), -1);
+  const period = nextPeriod(ov) || (ov.since && ov.since > prev ? ov.since : prev);
   const st = (done, now) => (done ? 'done' : now ? 'now' : '');
   const pay = ov.with_pay, missing = ov.missing_pay.length, nobank = ov.no_bank.length;
   const items = [

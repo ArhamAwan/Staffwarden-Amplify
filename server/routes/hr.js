@@ -492,7 +492,9 @@ module.exports = (ctx) => {
       items.push({ kind: 'payroll', title: `${P().periodName(run.period)} payroll`, sub: run.status === 'draft' ? 'In draft: check it and send it for approval' : run.status === 'review' ? (open ? `${open === 1 ? '1 question' : open + ' questions'} to answer, then it can be approved` : 'Waiting for approval') : `Approved: pay everyone by ${T.human(payDay)} and mark each one paid`, due: payDay, link: '#/payroll', urgent: T.daysBetween(today, payDay) <= 3 });
     } else if (!lastPaid || lastPaid.period < prevMonth || today.slice(8) >= '20') {
       const period = today.slice(8) >= '20' ? today.slice(0, 7) : prevMonth;
-      if (!db.prepare('SELECT id FROM pay_runs WHERE period = ?').get(period)) items.push({ kind: 'payroll', title: `Start ${P().periodName(period)} payroll`, sub: 'Staffwarden fills it in from hours, attendance and time off', link: '#/payroll', start: period });
+      // a month before the company was on Staffwarden has nothing to pay from
+      const since = String((db.prepare('SELECT MIN(created_at) f FROM users').get() || {}).f || '').slice(0, 7);
+      if (!(since && period < since) && !db.prepare('SELECT id FROM pay_runs WHERE period = ?').get(period)) items.push({ kind: 'payroll', title: `Start ${P().periodName(period)} payroll`, sub: 'Staffwarden fills it in from hours, attendance and time off', link: '#/payroll', start: period });
     }
     const exp = db.prepare("SELECT COUNT(*) n, COALESCE(SUM(amount),0) s, MIN(created_at) first FROM expenses WHERE status IN ('pending','manager_ok') AND user_id != ?").get(user.id);
     if (exp.n) items.push({ kind: 'expenses', title: `${exp.n === 1 ? '1 expense claim' : exp.n + ' expense claims'}`, sub: `${P().fmtMoney(exp.s, ctx.homeCurrency())} waiting`, since: exp.first, link: '#/expenses' });

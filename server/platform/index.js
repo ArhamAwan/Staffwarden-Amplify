@@ -114,7 +114,7 @@ function createPlatform(opts) {
           Object.assign(out, {
             billing: true, chosen_plan: r.plan, interval: r.interval, comped: !!r.comped,
             trial_ends_at: r.trial_ends_at, trial_days_left: r.status === 'trial' && r.trial_ends_at ? Math.max(0, Math.ceil((Date.parse(r.trial_ends_at) - t) / DAY)) : null,
-            has_card: !!r.stripe_subscription, grace_ends_at: r.grace_ends_at, closing_at: r.closing_at, delete_after: r.delete_after,
+            has_card: !!r.stripe_subscription, cards: stripe.ready, grace_ends_at: r.grace_ends_at, closing_at: r.closing_at, delete_after: r.delete_after,
           });
         }
         return out;
@@ -552,9 +552,16 @@ function createPlatform(opts) {
             const app = tenantApp(r.slug);
             const secs = app ? (app.db.prepare("SELECT COALESCE(SUM((julianday(COALESCE(ended_at, ?)) - julianday(started_at)) * 86400), 0) AS s FROM time_entries").get(iso(t)) || {}).s : 0;
             const seats = Math.max(1, countSeats(r.slug));
-            await mailer.send('trial_ending', r.owner_email, { ...owner, trialEnds: r.trial_ends_at, hours: secs > 3600 ? Math.round(secs / 3600).toLocaleString('en-US') : null, planName: `${P.PLANS[r.plan].name}`, seats, price: `${money(seats * P.seatCents(r.plan, r.interval))} a ${r.interval}` }, r.slug);
+            await mailer.send('trial_ending', r.owner_email, { ...owner, cards: stripe.ready, trialEnds: r.trial_ends_at, hours: secs > 3600 ? Math.round(secs / 3600).toLocaleString('en-US') : null, planName: `${P.PLANS[r.plan].name}`, seats, price: `${money(seats * P.seatCents(r.plan, r.interval))} a ${r.interval}` }, r.slug);
           }
-          if (left <= 0 && !r.stripe_subscription && !r.manual_billing) {
+          // Without card payments set up, nobody could have paid: the trial isn't cut off. The console
+          // admins are told once, and they bill by invoice, make it free, or decide what happens next.
+          if (left <= 0 && !r.stripe_subscription && !r.manual_billing && !stripe.ready) {
+            if (!rem.trial_over_admin) {
+              remind(r.slug, 'trial_over_admin');
+              for (const a of adminEmails) mailer.send('trial_over_admin', a, { company: r.name, owner: r.owner_email, url: `${scheme}://admin.${base}${portPart}/#/c/${r.slug}` }).catch(() => {});
+            }
+          } else if (left <= 0 && !r.stripe_subscription && !r.manual_billing) {
             markPaused(r.slug, 'The free trial ended');
             await mailer.send('trial_ended', r.owner_email, { ...owner, deleteAfter: row(r.slug).delete_after }, r.slug);
           }

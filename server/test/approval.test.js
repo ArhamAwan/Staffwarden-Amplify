@@ -185,3 +185,24 @@ test('logins for people without email: a username, a one-time password, and thei
   await ok(at('brightline'), 'POST', '/api/me/password', { token: pt, body: { current_password: empLogin.people[0].password, new_password: 'plain-own-pass-42' } });
   assert.equal((await req(at('brightline'), 'POST', '/api/users/logins', { token: pt, body: { people: [{ name: 'Sneaky', team_id: team.id }] } })).status, 403);
 });
+
+test('without card payments set up, a trial that ends is not paused: the console admins are told once', async () => {
+  const r = await ask('nina@harbor.test', 'Harbor Pilot');
+  await ok(apex, 'POST', '/api/platform/request/verify', { body: { token: r.token, code: r.dev_code } });
+  const ct = await consoleToken();
+  const q = (await ok(at('admin'), 'GET', '/api/console/requests', { token: ct })).requests.find((x) => x.email === 'nina@harbor.test');
+  await ok(at('admin'), 'POST', `/api/console/requests/${q.id}/approve`, { token: ct, body: { trial_days: 7 } });
+  const t = decodeURIComponent(lastMail('access_approved', 'nina@harbor.test').text.match(/#t=(\S+)/)[1]);
+  const s = await ok(apex, 'POST', '/api/platform/setup', { body: { t, slug: 'harborpilot', password: 'a-long-pass-123' } });
+  const owner = (await ok(at('harborpilot'), 'POST', '/api/auth/handoff', { body: { code: s.handoff } })).token;
+  assert.equal((await ok(at('harborpilot'), 'GET', '/api/me', { token: owner })).account.cards, false, 'the owner’s app knows cards are off');
+  clock.t += 5 * DAY; await P.sweep();
+  assert.ok(lastMail('trial_ending', 'nina@harbor.test').text.includes('invoice'), 'the reminder talks about an invoice, not a card');
+  clock.t += 3 * DAY; await P.sweep();
+  assert.equal(P.row('harborpilot').status, 'trial', 'not paused');
+  const mine = (m) => m.kind === 'trial_over_admin' && m.data.company === 'Harbor Pilot';
+  const told = mailer.outbox.filter((m) => mine(m) && m.to === 'boss@sw.test');
+  assert.equal(told.length, 1);
+  await P.sweep();
+  assert.equal(mailer.outbox.filter(mine).length, 1, 'only once');
+});

@@ -45,7 +45,7 @@ export const checkinPage = {
     const recent = html`<section class="panel ci-recent"><header><h2>Your last check-ins</h2></header><div class="body">${(d.recent || []).length
       ? html`<ul class="ci-rl">${d.recent.map((r) => html`<li data-k="r${r.day}"><b>${dayShort(r.day)}</b><span>${(r.did || '').split('\n')[0] || 'No notes'}</span>${r.mood ? html`<span class="chip">${MOODL[r.mood] || r.mood}</span>` : ''}</li>`)}</ul>`
       : html`<p class="muted">Your earlier check-ins show here, so you can see what you said you’d do next.</p>`}</div></section>`;
-    return html`<div class="page-h"><div><h1>${ex ? 'Your check-in' : 'Wrap up your shift'}</h1><p class="sub">${ex ? 'Posted. You can still change it tonight; the chat keeps the first one.' : 'Two minutes, once a shift. It replaces the WhatsApp status message.'}</p></div></div>
+    return html`<div class="page-h"><div><h1>${ex ? 'Your check-in' : 'Wrap up your shift'}</h1><p class="sub">${ex ? `Posted. You can still change it ${d.shift && d.shift.end < d.shift.start ? 'tonight' : 'today'}; the chat keeps the first one.` : 'Two minutes, once a shift. It replaces the WhatsApp status message.'}</p></div></div>
       <div class="cols ci-cols"><div>${form}</div><div>${hours}${preview}${recent}</div></div>`;
   },
   after() { wirePreview(); },
@@ -155,6 +155,9 @@ export const checkinsPage = {
 
 // the day as a bento: who checked in (a ring), their hours, how the week went, what got in the way
 function ciBento(d, isToday) {
+  // a shift that runs past midnight is "tonight"; a day shift is "today"
+  const night = !!(S.settings && S.settings.shift_end && S.settings.shift_start && S.settings.shift_end < S.settings.shift_start);
+  const nowWord = night ? 'tonight' : 'today';
   const c = d.counts, pct = c.expected ? Math.round((100 * c.checked) / c.expected) : 0;
   const hrs = d.items.map((x) => ({ u: x.user, s: x.tracked_secs })).sort((a, b) => b.s - a.s).slice(0, 8), hmax = Math.max(1, ...hrs.map((x) => x.s));
   const wk = [...d.week.days]; while (wk.length < 7) { const last = wk[wk.length - 1].day, nx = new Date(Date.parse(last + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10); wk.push({ day: nx, smooth: 0, busy: 0, rough: 0, none: 0, later: true }); }
@@ -163,9 +166,9 @@ function ciBento(d, isToday) {
   const first = (n) => String(n).split(' ')[0];
   const ic = (n) => raw(`<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${{ ck: '<path d="M5 12.5l4.5 4.5L19 7.5"/>', cl: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', ch: '<path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/>', fl: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>', cl2: '<path d="M7 18a4.5 4.5 0 1 1 .6-8.96A6 6 0 0 1 19 10.5a3.75 3.75 0 0 1-.75 7.5z"/>' }[n]}</svg>`);
   return html`<section class="kpis bento ci-bento" aria-label="Check-ins at a glance">
-    <div class="kpi bt-ck"><div class="l">${ic('ck')}Checked in</div><div class="bt-ringw ci-ring">${ringSvg(pct)}<span class="bt-rv"><b class="num">${c.checked} of ${c.expected}</b><small>${isToday ? 'tonight' : dayShort(d.day)}</small></span></div>
+    <div class="kpi bt-ck"><div class="l">${ic('ck')}Checked in</div><div class="bt-ringw ci-ring">${ringSvg(pct)}<span class="bt-rv"><b class="num">${c.checked} of ${c.expected}</b><small>${isToday ? nowWord : dayShort(d.day)}</small></span></div>
       <div class="f">${c.expected - c.checked > 0 ? `${c.expected - c.checked} still to go` : c.expected ? 'Everyone has checked in' : 'Nobody worked'}</div></div>
-    <div class="kpi bt-tr"><div class="l">${ic('cl')}Tracked ${isToday ? 'tonight' : 'that day'}</div><div class="bt-row"><div class="v">${dur(c.tracked_secs)}</div><span class="bt-say">by everyone on a timer, from their timers</span></div>
+    <div class="kpi bt-tr"><div class="l">${ic('cl')}Tracked ${isToday ? nowWord : 'that day'}</div><div class="bt-row"><div class="v">${dur(c.tracked_secs)}</div><span class="bt-say">by everyone on a timer, from their timers</span></div>
       ${hrs.length ? html`<div class="ci-hrs">${hrs.map((x) => html`<span title="${x.u.name}: ${dur(x.s)}"><i style="width:${Math.max(4, Math.round((100 * x.s) / hmax))}%;background:${avColor(x.u.id)}"></i><small>${first(x.u.name)}</small></span>`)}</div>` : html`<div class="f">Hours show here as people check in</div>`}</div>
     <div class="kpi bt-mo"><div class="l">${ic('ch')}How shifts went this week</div>
       <div class="ci-wk">${wk.map((x) => html`<span class="ci-wd${x.day === d.day ? ' on' : ''}${x.later ? ' later' : ''}" title="${dayShort(x.day)}: ${x.smooth} good, ${x.busy} okay, ${x.rough} rough"><span class="ci-stack">${x.smooth + x.busy + x.rough + x.none ? ['rough', 'busy', 'smooth', 'none'].map((k) => (x[k] ? html`<i class="m-${k}" style="height:${(100 * x[k]) / wmax}%"></i>` : '')) : html`<i class="m-empty"></i>`}</span><small>${dayShort(x.day).slice(0, 2)}</small></span>`)}</div>

@@ -510,7 +510,7 @@ a { color: rgb(var(--v-c9bbff, 201 187 255)); }
 .hr-d { width: 42px; height: 44px; flex: none; border-radius: 11px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.1); display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.05; }
 .hr-d b { font-size: 16px !important; } .hr-d small { font-size: 10.5px !important; }
 .hr-bento .bt-faces { margin-top: auto; padding-top: 8px; } .hr-bento .bt-row .bt-faces { margin: 0; padding: 0; }
-.hr-more { margin-top: auto; padding-top: 8px; } .hr-more summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: rgb(var(--v-c9bbff, 201 187 255)); list-style: none; } .hr-more summary::-webkit-details-marker { display: none; } .hr-more[open] summary { margin-bottom: 6px; }
+.hr-wmore { margin-top: auto; padding-top: 8px; } .hr-wmore summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: rgb(var(--v-c9bbff, 201 187 255)); list-style: none; } .hr-wmore summary::-webkit-details-marker { display: none; } .hr-wmore[open] summary { margin-bottom: 6px; }
 
 /* check-ins: the day and the week */
 .ci-bento { grid-auto-rows: minmax(118px, auto); margin-top: 0; }

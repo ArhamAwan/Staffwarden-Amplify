@@ -43,7 +43,7 @@ module.exports = (ctx) => {
     const missing = db.prepare("SELECT id, name FROM users WHERE active = 1 AND role != 'owner' AND COALESCE((SELECT employed FROM hr_records WHERE user_id = users.id), CASE WHEN users.is_dev = 1 AND users.tracks_time = 0 THEN 0 ELSE 1 END) = 1 AND id NOT IN (SELECT user_id FROM pay_setup) ORDER BY name").all();
     const withPay = db.prepare('SELECT COUNT(*) n FROM pay_setup p JOIN users u ON u.id = p.user_id WHERE u.active = 1').get().n;
     const noBank = db.prepare("SELECT u.id, u.name FROM users u JOIN pay_setup p ON p.user_id = u.id LEFT JOIN hr_records h ON h.user_id = u.id WHERE u.active = 1 AND (h.iban IS NULL OR h.iban = '') ORDER BY u.name").all();
-    return { runs, missing_pay: missing, with_pay: withPay, no_bank: noBank, rules: P().rules(), can_approve: canApprove(user), today: ctx.calc.companyToday() };
+    return { runs, missing_pay: missing, with_pay: withPay, no_bank: noBank, rules: P().rules(), can_approve: canApprove(user), today: ctx.calc.companyToday(), since: String((db.prepare('SELECT MIN(created_at) f FROM users').get() || {}).f || '').slice(0, 7) || null };
   });
   const canApprove = (u) => u.role === 'owner' || (isHR(u) && !P().rules().owner_approves);
 

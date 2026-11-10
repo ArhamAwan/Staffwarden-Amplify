@@ -25,6 +25,7 @@
 
 /* Settings › Billing */
 .bl .body { display: flex; flex-direction: column; gap: 18px; }
+.bl .muted { overflow-wrap: anywhere; }
 .bl-tops { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 14px; }
 .bl-tile { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px; border-radius: 18px; border: 1px solid var(--line-2, rgba(255,255,255,.08)); background: rgba(255,255,255,.035); min-width: 0; }
 .bl-tile.bad { border-color: rgba(255,120,100,.45); }

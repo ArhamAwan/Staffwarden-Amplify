@@ -752,6 +752,8 @@ li.pz.sub .pz-len { font-weight: 600; color: var(--ink-2); }
 .prow.off { opacity: .6; }
 .pr-who { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
 .pr-who > :first-child { min-width: 0; }
+/* a long email under the name wraps inside its column instead of running under the next one */
+.pr-who .person { min-width: 0; max-width: 100%; } .pr-who .person > span:last-child { min-width: 0; } .pr-who .person > span:last-child > span { overflow-wrap: anywhere; }
 .prole { font-size: 11.5px; font-weight: 650; padding: 1px 8px; border-radius: 99px; background: var(--blue-wash, rgb(var(--v-5f36e2, 95 54 226) / 0.16)); color: var(--blue); }
 .prole.owner { background: var(--work-wash); color: var(--work-ink); }
 .pr-state { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
