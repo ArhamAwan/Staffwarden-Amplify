@@ -120,6 +120,15 @@ These are rules in the code, not settings.
 - HR is its own role: records and pay, never screenshots or activity
 </details>
 
+<details open>
+<summary><b>🚪 Getting a company in</b></summary>
+
+- Companies ask for access; you approve or decline each one in the console, with the trial length and plan
+- A one-time setup link creates the company: its own address, the owner's password and time zone
+- Invite people by email, or create logins (a username and a one-time password) for people without a work email
+- Printable slips and a spreadsheet of new logins; each person chooses their own password at first sign-in
+</details>
+
 <details>
 <summary><b>🤝 Client portal</b></summary>
 
@@ -236,7 +245,7 @@ sudo bash deploy/domain.sh staffwarden.com --cloudflare        # behind Cloudfla
 sudo bash deploy/update.sh                                     # every update after that
 ```
 
-In production, company sign-up needs a mail server (`SMTP_*` in `/etc/workhelm.env`): without one, sign-up stays closed rather than showing the email code on screen.
+Companies ask for access and you approve them in the console (or set `SIGNUP_MODE=open` for self-serve trials); see [docs/service.md](docs/service.md). In production, company sign-up needs a mail server (`SMTP_*` in `/etc/workhelm.env`): without one, sign-up stays closed rather than showing the email code on screen.
 
 `setup.sh` installs Node and Caddy (automatic HTTPS), runs Staffwarden as a service that restarts itself, opens only SSH, HTTP and HTTPS, and backs the database up every night (14 days kept, with an optional off-site copy). Data lives in `/var/lib/workhelm`, settings in `/etc/workhelm.env`, logs with `journalctl -u workhelm -f`.
 

@@ -3,10 +3,14 @@
 // to the welcome screen where they invite their team. Also the screen for an account that was closed.
 import { post, get, setToken, getToken } from './api.js';
 import { esc, owl, avColor, initials, copyText } from './util.js';
+import { loginsEditor, loginsResult } from './logins.js';
 
 const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 const LOCK = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 const X = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+const MAILI = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4zM4 7l8 6 8-6"/></svg>';
+const PERSONI = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20c.6-3.4 2.9-5.5 5.5-5.5s4.9 2.1 5.5 5.5M17 8v6M14 11h6"/></svg>';
+const LKIT = { btn: 'lk-btn', pri: 'lk-pri', sm: 'lk-sm' };
 const SEE = {
   clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
   shot: '<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>',
@@ -205,12 +209,18 @@ async function ready() {
       <p class="lk-lede">${ends ? `Your trial runs to <b>${esc(ends)}</b>. ` : ''}Four things and your team is tracking:</p>
       <ol class="lk-todo lk-hide-sm">
         <li><div><span class="lk-n lk-ok">${CHECK}</span><span><b>Make the company’s space</b><span class="lk-s">Done</span></span></div></li>
-        <li><div><span class="lk-n">2</span><span><b>Invite your people</b><span class="lk-s">They get an email with the address and the app</span></span></div></li>
+        <li><div><span class="lk-n">2</span><span><b>Bring your team in</b><span class="lk-s">Invite them by email, or create their logins</span></span></div></li>
         <li><div><span class="lk-n">3</span><span><b>Set working hours and shifts</b><span class="lk-s">So late starts and overtime are counted right</span></span></div></li>
         <li><div><span class="lk-n">4</span><span><b>Check the time-off rules</b><span class="lk-s">Paid days a month, who approves, holidays</span></span></div></li>
       </ol></section>`,
     card: `<ol class="lk-steps" aria-label="Step 3 of 3"><li class="lk-done"><i></i>You</li><li class="lk-done"><i></i>Your company</li><li class="lk-on" aria-current="step"><i></i>Your people</li></ol>
-      <h2>Invite your people</h2>
+      <h2>Bring your team in</h2>
+      <div class="lk-modes" role="tablist" aria-label="How to add people">
+        <button type="button" role="tab" id="m-em" aria-selected="true" aria-controls="p-em">${MAILI}<b>Invite by email</b><span>Each person picks their own password</span></button>
+        <button type="button" role="tab" id="m-lg" aria-selected="false" aria-controls="p-lg">${PERSONI}<b>Create logins</b><span>For people without a work email</span></button>
+      </div>
+      <div id="p-lg" role="tabpanel" aria-labelledby="m-lg" hidden></div>
+      <div id="p-em" role="tabpanel" aria-labelledby="m-em" class="lk-panel">
       <div class="lk-field"><label for="em-in">Their work emails</label>
         <div class="lk-box" id="box"><input id="em-in" type="email" inputmode="email" autocomplete="off" placeholder="name@company.com" aria-describedby="em-h" autofocus></div>
         <small id="em-h">Paste a list from a spreadsheet or type them, one after another.</small></div>
@@ -218,8 +228,29 @@ async function ready() {
       <p class="lk-err" role="alert"></p>
       <button class="lk-btn lk-pri lk-wide lk-big" type="button" id="send" disabled>Send invites</button>
       <div id="out"></div>
-      <button class="lk-plain" type="button" id="later">I’ll invite them later</button>`,
+      </div>
+      <button class="lk-plain" type="button" id="later">I’ll add them later</button>`,
   });
+  // creating logins instead: names in, usernames and one-time passwords out
+  const pEm = $('#p-em'), pLg = $('#p-lg'), mEm = $('#m-em'), mLg = $('#m-lg');
+  let lgReady = false;
+  const mode = (lg) => {
+    mEm.setAttribute('aria-selected', String(!lg)); mLg.setAttribute('aria-selected', String(lg));
+    pEm.hidden = lg; pLg.hidden = !lg;
+    if (lg && !lgReady) {
+      lgReady = true;
+      loginsEditor(pLg, { kit: LKIT, managers: true, rows: 3, onCreated: (r) => {
+        $('#later').hidden = true;
+        $('.lk-modes').hidden = true;
+        root.querySelector('.lk-st-card h2').textContent = 'Hand these out';
+        loginsResult(pLg, r, { kit: LKIT, company: name, onDone: () => { clearHash(); history.replaceState(null, '', '#/people'); deps.boot(); }, doneLabel: 'Go to your team' });
+      } });
+    }
+    (lg ? pLg.querySelector('input') : inp).focus();
+  };
+  mEm.addEventListener('click', () => mode(false));
+  mLg.addEventListener('click', () => mode(true));
+  root.querySelector('.lk-modes').addEventListener('keydown', (e) => { if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); const lg = mEm.getAttribute('aria-selected') === 'true'; mode(lg); (lg ? mLg : mEm).focus(); } });
   const box = $('#box'), inp = $('#em-in'), hint = $('#em-h'), send = $('#send'), sum = $('#sum');
   const list = [];  // { email, ok, sent }
   const each = plan ? (billing.interval === 'month' ? plan.month_cents : plan.year_cents / 12) : 0;

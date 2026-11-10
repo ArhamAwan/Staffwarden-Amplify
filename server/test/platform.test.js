@@ -78,7 +78,7 @@ async function signUp({ name, email, password = 'a-long-pass-123', company, slug
 test.before(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sw-platform-'));
   P = createPlatform({
-    dataDir, baseDomain: apex, scheme: 'http', now: () => clock.t, mailer, fetchImpl: fakeFetch, seatDelayMs: 0, limitScale: 50, adminEmails: 'boss@staffwarden.test',
+    dataDir, baseDomain: apex, scheme: 'http', now: () => clock.t, mailer, fetchImpl: fakeFetch, seatDelayMs: 0, limitScale: 50, adminEmails: 'boss@staffwarden.test', signupMode: 'open',
     webDir: path.join(__dirname, '..', '..', 'web'), log: { error() {} },
     stripe: { secretKey: 'sk_test_1', webhookSecret: WHSEC, prices: { 'starter:year': 'price_sy', 'starter:month': 'price_sm', 'business:year': 'price_by', 'business:month': 'price_bm', 'pro:year': 'price_py', 'pro:month': 'price_pm' } },
   });
@@ -375,7 +375,7 @@ test('a customer company’s developer can’t ship desktop updates or read the 
 
 test('in production, sign-up waits for a mail server and never shows the code', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sw-prod-'));
-  const Q = createPlatform({ dataDir: dir, baseDomain: apex, scheme: 'http', now: () => clock.t, mailer, showCodes: false, webDir: path.join(__dirname, '..', '..', 'web'), log: { error() {} } });
+  const Q = createPlatform({ dataDir: dir, baseDomain: apex, scheme: 'http', now: () => clock.t, mailer, showCodes: false, signupMode: 'open', webDir: path.join(__dirname, '..', '..', 'web'), log: { error() {} } });
   await new Promise((r) => Q.server.listen(0, r));
   const p2 = Q.server.address().port;
   try {

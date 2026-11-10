@@ -15,6 +15,8 @@ module.exports = (ctx) => {
       fun_mode: viewer && viewer.role === 'owner' && u.fun_mode && (!u.fun_until || Date.parse(u.fun_until) > ctx.now()) ? u.fun_mode : null,
       effective: { tz_offset_min: calc.userTz(u), tz_name: calc.zoneOf(u), shift_start: u.shift_start || cfg.shiftStart, shift_end: u.shift_end || cfg.shiftEnd, break_start: u.break_start || cfg.breakStart || null, break_end: u.break_end || cfg.breakEnd || null, day_start_min: calc.dayStart(u), work_days: u.work_days || cfg.workDays, weekly_target_min: calc.weeklyTargetMin(u), shots_per_10: ctx.shotPolicy(u).per_10, shots_source: ctx.shotPolicy(u).source },
       invited: !!u.invited_at && !u.joined_at, invited_at: u.invited_at || null,
+      // a login a manager made: a username instead of an email, waiting for its first sign-in
+      username: !String(u.email).includes('@'), login_waiting: !!u.must_change_pw, login_expires_at: u.must_change_pw ? u.otp_expires_at || null : null,
       last_seen_at: u.last_seen_at || null, created_at: u.created_at, app_version: u.app_version || null, app_platform: u.app_platform || null,
       manages: u.role === 'manager' ? db.prepare('SELECT team_id FROM manager_teams WHERE user_id = ?').all(u.id).map((r) => r.team_id) : [],
     };
@@ -98,6 +100,70 @@ module.exports = (ctx) => {
     emit('users', id);
     // when the email couldn't go out, the person who invited them gets the link to pass on themselves
     return { ...userOut(db.prepare('SELECT * FROM users WHERE id = ?').get(id), user), ...(sent ? { invite_sent: !!sent.sent, ...(sent.sent ? {} : { invite_link: sent.link }) } : {}) };
+  });
+
+  // Logins for people without a work email (or whose email the owner doesn't want to use): a username and a
+  // one-time password, shown once, that the person replaces at their first sign-in. It lasts 7 days.
+  const OTP_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no 0/O or 1/I, so a printed slip reads clearly
+  const otp = () => { const b = require('node:crypto').randomBytes(9); const c = [...b].map((x) => OTP_CHARS[x % OTP_CHARS.length]).join(''); return `${c.slice(0, 3)}-${c.slice(3, 7)}-${c.slice(7, 9)}`; };
+  const OTP_DAYS = 7;
+  const usernameOf = (v) => String(v || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9._-]+/g, '.').replace(/^[._-]+|[._-]+$/g, '').replace(/\.{2,}/g, '.').slice(0, 40);
+  const freeUsername = (want) => {
+    let u = want, n = 2;
+    while (db.prepare('SELECT 1 FROM users WHERE email = ?').get(u) || db.prepare('SELECT 1 FROM client_users WHERE email = ?').get(u)) u = `${want.slice(0, 36)}${n++}`;
+    return u;
+  };
+  route('POST', '/api/users/logins', ({ user, body }) => {
+    needManager(user);
+    const list = Array.isArray(body.people) ? body.people : [];
+    need(list.length >= 1 && list.length <= 100, 400, 'Add 1 to 100 people at a time');
+    const scope = managedTeamIds(user);
+    const rows = list.map((p, i) => {
+      const name = String((p && p.name) || '').trim().slice(0, 100);
+      need(name.length >= 2, 400, `Row ${i + 1}: type the person’s name`);
+      const want = usernameOf(p.username || name);
+      need(want.length >= 2 && /^[a-z0-9]/.test(want), 400, `Row ${i + 1}: the username needs letters or numbers`);
+      const role = p.role === 'manager' ? 'manager' : 'employee';
+      need(role === 'employee' || (user.role === 'owner'), 403, 'Only the owner can create managers');
+      let teamId = null;
+      if (p.team_id != null && p.team_id !== '') {
+        teamId = int(p.team_id, 'team_id', 1, 1e9);
+        need(db.prepare('SELECT 1 FROM teams WHERE id = ?').get(teamId), 404, `Row ${i + 1}: that team doesn’t exist`);
+        need(scope === null || scope.includes(teamId), 403, 'You can only add people to your own teams');
+      } else need(scope === null, 400, `Row ${i + 1}: choose a team`);
+      return { name, want, role, teamId };
+    });
+    const out = [];
+    const at = ctx.nowIso(), expires = new Date(ctx.now() + OTP_DAYS * 86400000).toISOString();
+    for (const r of rows) {
+      const username = freeUsername(r.want);
+      const password = otp();
+      const { salt, hash } = hashPassword(password);
+      const id = Number(db.prepare(`INSERT INTO users (email, name, role, pw_salt, pw_hash, team_id, tracks_time, must_change_pw, otp_expires_at, created_at) VALUES (?,?,?,?,?,?,?,1,?,?)`)
+        .run(username, r.name, r.role, salt, hash, r.teamId, r.role === 'employee' ? 1 : 0, expires, at).lastInsertRowid);
+      audit(user, 'user.login_created', id, `${r.name} (${username})`);
+      out.push({ id, name: r.name, username, password, role: r.role, team: teamName(r.teamId) });
+    }
+    emit('users');
+    return { people: out, expires_at: expires, address: ctx.publicUrl || null };
+  });
+  route('POST', '/api/users/:id/one-time-password', ({ user, params }) => {
+    needManager(user);
+    const t = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(params.id));
+    need(t && canSee(user, t.id), 404, 'User not found');
+    need(t.id !== user.id, 400, 'Change your own password from your profile');
+    need(t.role !== 'owner', 403, 'Only the owner changes the owner’s password');
+    need(user.role === 'owner' || t.role === 'employee', 403, 'Only the owner can change managers');
+    need(!t.is_dev && !t.hr || (user.role === 'owner' && !user.dev_owner), 403, 'Only the owner can change the password of an HR or developer account');
+    need(t.active, 400, 'Turn the account back on first');
+    const password = otp();
+    const { salt, hash } = hashPassword(password);
+    const expires = new Date(ctx.now() + OTP_DAYS * 86400000).toISOString();
+    db.prepare('UPDATE users SET pw_salt = ?, pw_hash = ?, must_change_pw = 1, otp_expires_at = ? WHERE id = ?').run(salt, hash, expires, t.id);
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(t.id);
+    audit(user, 'user.one_time_password', t.id, t.name);
+    emit('users', t.id);
+    return { id: t.id, name: t.name, username: t.email, password, expires_at: expires, address: ctx.publicUrl || null };
   });
 
   route('PATCH', '/api/users/:id', ({ user, params, body }) => {

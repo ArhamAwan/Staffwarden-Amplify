@@ -52,7 +52,13 @@ const ICN = {
 };
 const ic = (k) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${ICN[k]}"/></svg>`;
 let env = null;
-const top = (right) => `<header class="st-top cn-top"><a class="st-mark" href="#/"><span class="ic">${owl('still')}</span><b>Staffwarden</b></a><span class="cn-tag">Owner console</span><span class="sp"></span>${right || ''}</header>`;
+// the two pages: every company, and the companies asking to get in (with how many are waiting)
+let waiting = null;
+const tabs = () => {
+  const on = /^#\/requests/.test(location.hash) ? 'requests' : 'companies';
+  return `<nav class="cn-tabs" aria-label="Console"><a href="#/"${on === 'companies' ? ' aria-current="page"' : ''}>Companies</a><a href="#/requests"${on === 'requests' ? ' aria-current="page"' : ''}>Requests${waiting ? `<b class="cn-badge">${waiting}</b>` : ''}</a></nav>`;
+};
+const top = (right) => `<header class="st-top cn-top"><a class="st-mark" href="#/"><span class="ic">${owl('still')}</span><b>Staffwarden</b></a><span class="cn-tag">Owner console</span>${tabs()}<span class="sp"></span>${right || ''}</header>`;
 
 // ---------------- signing in ----------------
 function signIn(email = '') {
@@ -142,7 +148,7 @@ async function overview() {
   if (!lastOverview) skeleton(false);
   let d;
   try { d = await call('GET', '/api/console/overview'); } catch { return; }
-  const first = !lastOverview; lastOverview = d; env = { mail: d.mail, payments: d.payments };
+  const first = !lastOverview; lastOverview = d; env = { mail: d.mail, payments: d.payments }; waiting = d.requests_waiting || 0;
   document.title = 'Owner console · Staffwarden';
   const diff = d.paid_30d_cents - d.paid_prev_30d_cents;
   const groups = { all: d.companies, paying: d.companies.filter((c) => ['active', 'past_due'].includes(c.status) && !c.comped), trial: d.companies.filter((c) => c.status === 'trial'), attention: d.companies.filter((c) => c.status === 'past_due' || c.due_for_deletion) };
@@ -206,7 +212,7 @@ const EVENT = {
   created: ['Signed up', 'star', ''], 'checkout.started': ['Opened checkout', 'card', ''], 'card.added': ['Added a card', 'card', 'g'], active: ['Active', 'ok', 'g'], paused: ['Paused', 'pause', 'r'],
   past_due: ['Card declined', 'warn', 'r'], closed: ['Closed', 'out', 'r'], closing: ['Asked to close', 'out', 'a'], reopened: ['Kept the account', 'ok', 'g'], 'plan.chosen': ['Chose a plan', 'star', ''],
   'plan.scheduled': ['Moving plan at renewal', 'clock', 'a'], 'plan.changed': ['Changed plan', 'star', ''], seats: ['People paid for', 'ppl', ''], extended: ['Given more days', 'gift', 'a'],
-  flags: ['Billing changed', 'bank', ''], removed: ['Removed', 'trash', 'r'], renamed: ['Renamed', 'co', ''], 'owner.changed': ['New owner', 'ppl', ''],
+  approved: ['Approved', 'ok', 'g'], flags: ['Billing changed', 'bank', ''], removed: ['Removed', 'trash', 'r'], renamed: ['Renamed', 'co', ''], 'owner.changed': ['New owner', 'ppl', ''],
 };
 function lifecycle(c) {
   // the account's life on one line: signed up, the trial or what's paid, and when data would go
@@ -279,10 +285,87 @@ async function company(slug, again = false) {
   }));
 }
 
+// ---------------- companies asking to get in ----------------
+let rqShow = 'waiting', rqPicked = null, rqDecline = false, rqLink = null;
+const RQ_STATUS = {
+  waiting: ['amber', 'Waiting'], approved: ['green', 'Approved'], done: ['green', 'Set up'], declined: ['red', 'Declined'], withdrawn: ['idle', 'Withdrawn'],
+};
+async function requests() {
+  let d;
+  try { d = await call('GET', '/api/console/requests'); } catch { return; }
+  env = env || { mail: d.mail };
+  waiting = d.requests.filter((r) => r.status === 'waiting').length;
+  document.title = `${waiting ? `(${waiting}) ` : ''}Requests · Owner console`;
+  const groups = { waiting: d.requests.filter((r) => r.status === 'waiting'), approved: d.requests.filter((r) => ['approved', 'done'].includes(r.status)), closed: d.requests.filter((r) => ['declined', 'withdrawn'].includes(r.status)) };
+  const list = groups[rqShow];
+  if (!list.find((r) => r.id === rqPicked)) { rqPicked = list[0] ? list[0].id : null; rqDecline = false; }
+  const r = list.find((x) => x.id === rqPicked);
+  const pill = (x) => { const [c, t] = RQ_STATUS[x.status] || ['idle', x.status]; return `<span class="pill ${c}"><i></i>${t}</span>`; };
+  const flags = r ? [r.personal_email ? `${esc(r.domain)} is a personal address, not a company’s` : '', r.thin_note ? 'They said little about what it’s for' : ''].filter(Boolean) : [];
+  const detail = !r ? `<div class="empty"><b>${rqShow === 'waiting' ? 'Nobody is waiting' : 'Nothing here yet'}</b>${rqShow === 'waiting' ? 'New requests show up here once the person confirms their email.' : ''}</div>`
+    : `<div class="rq-dh"><div><h2>${esc(r.company)}</h2><p>Asked ${esc(ago(r.verified_at || r.created_at))} from ${esc(r.country_name || 'an unknown country')}</p></div>${pill(r)}</div>
+      <dl class="rq-dl"><div><dt>Contact</dt><dd>${esc(r.name)}</dd></div><div><dt>Work email</dt><dd>${esc(r.email)} <span class="ok-t">confirmed</span></dd></div><div><dt>Team size</dt><dd>${esc(r.size_text || 'Not given')}</dd></div><div><dt>Email domain</dt><dd>${esc(r.domain)}</dd></div></dl>
+      <div class="rq-note"><span>What they want it for</span><p>${r.note ? esc(r.note) : '<i class="faint">Nothing written</i>'}</p></div>
+      ${flags.length && r.status === 'waiting' ? `<p class="rq-flag">${ic('warn')}<span>${flags.join('. ')}. Check before approving.</span></p>` : ''}
+      ${r.status === 'waiting' && !rqDecline ? `<form class="rq-act" id="appr">
+          <div class="rq-2"><label>Free trial<select name="trial_days">${[7, 14, 30].map((n) => `<option value="${n}"${n === (d.trial_days || 14) ? ' selected' : ''}>${n} days</option>`).join('')}</select></label>
+          <label>Plan during the trial<select name="plan">${d.plans.map((p) => `<option value="${esc(p.id)}"${p.id === 'business' ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label></div>
+          <label><span>A note in their email <span class="faint">Optional</span></span><textarea name="message" rows="2" maxlength="500" placeholder="Welcome aboard. Reply if you want help moving your timesheets over."></textarea></label>
+          <div class="rq-btns"><button class="cn-btn pri big" type="submit">${ic('ok')}Approve and send the setup link</button><button class="cn-btn danger big" type="button" id="dec">Decline</button></div>
+        </form>`
+      : r.status === 'waiting' ? `<form class="rq-act" id="decf">
+          <label><span>Why, in their email <span class="faint">Optional, they see this</span></span><textarea name="message" rows="3" maxlength="500" placeholder="We only open to registered companies for now."></textarea></label>
+          <div class="rq-btns"><button class="cn-btn danger big" type="submit">Decline and tell them</button><button class="cn-btn big" type="button" id="back">Keep it waiting</button></div>
+        </form>`
+      : `<div class="rq-act"><p class="rq-done">${r.status === 'approved' ? `Approved ${esc(ago(r.decided_at))}${r.decided_by ? ` by ${esc(r.decided_by)}` : ''}: ${esc(String(r.trial_days || 14))}-day trial on ${esc(PLAN[r.plan] || 'Business')}. The setup link works until ${esc(day(r.setup_expires_at))}; ${esc(r.name.split(' ')[0])} hasn’t used it yet.`
+          : r.status === 'done' ? `Set up as <a href="//${esc(r.slug)}.${esc(location.host.replace(/^admin\./, ''))}" target="_blank" rel="noopener">${esc(r.slug)}</a>. It’s under Companies now.`
+          : r.status === 'declined' ? `Declined ${esc(ago(r.decided_at))}${r.decided_by ? ` by ${esc(r.decided_by)}` : ''}.${r.message ? ` They were told: “${esc(r.message)}”` : ''} They can ask again after 30 days.`
+          : 'They withdrew the request themselves.'}</p>
+        ${rqLink && rqLink.id === r.id ? `<div class="rq-link"><span>Email isn’t set up, so send this link yourself. It works once.</span><code>${esc(rqLink.link)}</code><button class="cn-btn" type="button" id="cp">Copy the link</button></div>` : ''}
+        <div class="rq-btns">${r.status === 'approved' ? `<button class="cn-btn" type="button" id="resend">${ic('mail')}Send a new setup link</button><button class="cn-btn danger" type="button" id="undo">Stop the setup link</button>` : r.status === 'declined' ? '<button class="cn-btn" type="button" id="undo">Move back to waiting</button>' : ''}</div></div>`}`;
+  root.innerHTML = `${top(envChips() + signOut)}<main class="cn-wrap">
+    <div class="cn-head"><div><h1>Requests</h1><p>Companies waiting to get in. Nothing is created until you approve.</p></div><span class="sp"></span>
+      <div class="seg" role="group" aria-label="Show"><span class="ind" aria-hidden="true"></span>${[['waiting', 'Waiting'], ['approved', 'Approved'], ['closed', 'Declined']].map(([k, t]) => `<button type="button" data-rq="${k}" aria-pressed="${rqShow === k}">${t}${groups[k].length ? `<i>${groups[k].length}</i>` : ''}</button>`).join('')}</div></div>
+    <div class="rq">
+      <section class="panel rq-list" aria-label="Requests">${list.length ? `<ul>${list.map((x) => `<li><button type="button" data-id="${x.id}" aria-pressed="${x.id === rqPicked}"><span class="lg" style="background:${colorOf(x.company)}">${esc((x.company.trim()[0] || '?').toUpperCase())}</span><span class="t"><b>${esc(x.company)}</b><span>${esc(x.name)}${x.size_text ? `, ${esc(x.size_text)}` : ''}</span></span><span class="w"><span>${esc(ago(x.verified_at || x.created_at))}</span>${pill(x)}</span></button></li>`).join('')}</ul>` : '<div class="empty"><b>None</b></div>'}</section>
+      <section class="panel rq-d" aria-label="Request details" aria-live="polite">${detail}</section>
+    </div></main>`;
+  wireOut();
+  const slide = () => { const on = root.querySelector('.seg [aria-pressed="true"]'), ind = root.querySelector('.seg .ind'); if (on && ind) { ind.style.left = `${on.offsetLeft}px`; ind.style.width = `${on.offsetWidth}px`; } };
+  slide();
+  root.querySelectorAll('[data-rq]').forEach((b) => b.addEventListener('click', () => { rqShow = b.dataset.rq; rqPicked = null; rqDecline = false; requests(); }));
+  root.querySelectorAll('.rq-list [data-id]').forEach((b) => b.addEventListener('click', () => { rqPicked = Number(b.dataset.id); rqDecline = false; requests(); }));
+  const act = async (btn, url, body, done) => {
+    btn.disabled = true;
+    try { const out = await call('POST', url, body); rqLink = out.link ? { id: out.id, link: out.link } : null; if (done) toast(done(out)); requests(); }
+    catch (e) { btn.disabled = false; toast(e.message, true); }
+  };
+  const appr = $('#appr');
+  if (appr) {
+    appr.addEventListener('submit', (e) => { e.preventDefault(); const f = new FormData(appr); act(appr.querySelector('[type=submit]'), `/api/console/requests/${r.id}/approve`, { trial_days: Number(f.get('trial_days')), plan: f.get('plan'), message: f.get('message') }, (o) => (o.mailed ? `Approved. The setup link went to ${r.email}` : 'Approved. Send the setup link yourself')); });
+    $('#dec').addEventListener('click', () => { rqDecline = true; requests(); });
+  }
+  const decf = $('#decf');
+  if (decf) {
+    decf.addEventListener('submit', (e) => { e.preventDefault(); act(decf.querySelector('[type=submit]'), `/api/console/requests/${r.id}/decline`, { message: new FormData(decf).get('message') }, () => `Declined. ${r.name.split(' ')[0]} was told`); });
+    $('#back').addEventListener('click', () => { rqDecline = false; requests(); });
+  }
+  const undo = $('#undo');
+  if (undo) undo.addEventListener('click', async () => {
+    const ok = await confirmDlg(r.status === 'approved' ? { title: 'Stop the setup link?', text: `The link in ${esc(r.name.split(' ')[0])}’s email stops working and ${esc(r.company)} goes back to waiting.`, action: 'Stop the link' } : { title: 'Move back to waiting?', text: `You can then approve ${esc(r.company)}. They were already told no, so email them yourself.`, action: 'Move back' });
+    if (ok) act(undo, `/api/console/requests/${r.id}/reopen`, {}, () => 'Moved back to waiting');
+  });
+  const resend = $('#resend');
+  if (resend) resend.addEventListener('click', () => act(resend, `/api/console/requests/${r.id}/resend`, {}, (o) => (o.mailed ? `A new setup link went to ${r.email}` : 'A new link is ready to send yourself')));
+  const cp = $('#cp');
+  if (cp) cp.addEventListener('click', async () => { try { await navigator.clipboard.writeText(rqLink.link); toast('Link copied'); } catch { toast('Select the link and copy it', true); } });
+}
+
 function route() {
   if (!token) return signIn();
   const m = /^#\/c\/([a-z0-9-]+)/.exec(location.hash);
   window.scrollTo(0, 0);
+  if (/^#\/requests/.test(location.hash)) return requests();
   return m ? company(m[1]) : overview();
 }
 window.addEventListener('hashchange', route);

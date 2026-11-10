@@ -45,6 +45,12 @@ module.exports = (ctx) => {
       throw new HttpError(401, 'Invalid email or password');
     }
     need(u.active, 403, 'This account has been deactivated. Ask your manager.');
+    // a login made by a manager: its one-time password lasts 7 days, and only a browser (or an app that
+    // can) lets the person choose their own before anything else
+    if (u.must_change_pw) {
+      need(!u.otp_expires_at || Date.parse(u.otp_expires_at) > ctx.now(), 401, 'This one-time password ran out. Ask your manager for a new one.');
+      if (body.can_set_password !== true) throw new HttpError(403, `Choose your own password first: sign in at ${ctx.publicUrl || 'your company’s address'} in a browser, then come back here.`, { must_change: true });
+    }
     fails.delete(`pair|${ip}|${email}`);
     const token = newToken();
     db.prepare("INSERT INTO sessions (token, user_id, last_used_at) VALUES (?, ?, datetime('now'))").run(tokenHash(token), u.id);
@@ -141,7 +147,7 @@ module.exports = (ctx) => {
       db.prepare('DELETE FROM client_sessions WHERE client_user_id = ? AND token != ?').run(user.id, tokenHash(bearer(req)));
       return { ok: true };
     }
-    db.prepare('UPDATE users SET pw_salt = ?, pw_hash = ? WHERE id = ?').run(salt, hash, user.id);
+    db.prepare('UPDATE users SET pw_salt = ?, pw_hash = ?, must_change_pw = 0, otp_expires_at = NULL, joined_at = COALESCE(joined_at, ?) WHERE id = ?').run(salt, hash, ctx.nowIso(), user.id);
     // sign out every other device
     db.prepare('DELETE FROM sessions WHERE user_id = ? AND token != ?').run(user.id, tokenHash(bearer(req)));
     audit(user, 'password.changed', user.id);

@@ -122,15 +122,20 @@ function loginView(serverUrl, message, fixedServer = false) {
   if (signin.company || signin.single) return passwordStep(serverUrl, message, fixedServer);
   if (signin.list) return pickStep(serverUrl, fixedServer);
   const err = el('div', { class: 'err', role: 'alert' }, message || '');
-  const email = el('input', { id: 'em', class: 'si2-in', type: 'email', autocomplete: 'username', value: signin.email, placeholder: 'you@company.com' });
+  let typeAddress = signin.typeAddress || (!fixedServer && !isCompanyUrl(serverUrl) && serverUrl && !/localhost:3000/.test(serverUrl));
+  // with the company's address known, a username works too (logins a manager made for people without email)
+  const email = el('input', { id: 'em', class: 'si2-in', type: typeAddress || fixedServer ? 'text' : 'email', autocapitalize: 'off', spellcheck: 'false', autocomplete: 'username', value: signin.email, placeholder: 'you@company.com' });
   const go = el('button', { class: 'block si2-go' }, 'Continue');
-  let typeAddress = !fixedServer && !isCompanyUrl(serverUrl) && serverUrl && !/localhost:3000/.test(serverUrl);
   const server = el('input', { id: 'srv', class: 'si2-in', value: serverUrl || '', placeholder: 'yourcompany.staffwarden.com' });
   const body = el('form', { class: 'si2-body', onsubmit: async (e) => {
     e.preventDefault(); err.textContent = '';
     const v = email.value.trim();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { err.textContent = 'That doesn’t look like an email address.'; email.focus(); return; }
+    const username = v && !v.includes('@');
+    if (username && !typeAddress && !fixedServer) { signin.email = v; signin.typeAddress = true; return loginView(serverUrl, 'Signing in with a username? Type your company’s address too.', fixedServer); }
+    if (!username && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { err.textContent = 'That doesn’t look like an email address.'; email.focus(); return; }
+    if (!v) { err.textContent = 'Type your email or username.'; email.focus(); return; }
     signin.email = v;
+    if (username && fixedServer) { signin.single = true; return loginView(serverUrl, '', fixedServer); }
     if (typeAddress) { signin.single = true; signin.server = server.value.trim(); return loginView(serverUrl, '', fixedServer); }
     go.disabled = true; go.textContent = 'Finding your company…';
     const r = await API.findCompany(v);
@@ -142,10 +147,10 @@ function loginView(serverUrl, message, fixedServer = false) {
     signin.list = r.companies; return loginView(serverUrl, '', fixedServer);
   } },
   ...(typeAddress ? [el('label', { for: 'srv' }, 'Company address'), server] : []),
-  el('label', { for: 'em' }, 'Work email'), email, err, go,
+  el('label', { for: 'em' }, typeAddress || fixedServer ? 'Email or username' : 'Work email'), email, err, go,
   el('div', { class: 'si2-hint' }, line('M5 12.5l4.5 4.5L19 7.5'), el('span', {}, typeAddress ? 'Signing in to the address above.' : 'We find your company from your email.')),
   el('ul', { class: 'si2-trust', 'aria-label': 'What the app records' }, TRUST.map(([d, t]) => el('li', {}, el('span', { class: 'ti' }, line(d)), el('span', {}, t)))),
-  el('div', { class: 'si2-foot' }, fixedServer ? null : el('p', {}, typeAddress ? 'Find it by email instead? ' : 'Have a company address instead? ', el('button', { type: 'button', class: 'link', onclick: () => { typeAddress = !typeAddress; signin.single = false; loginView(serverUrl, '', fixedServer); } }, typeAddress ? 'Use my email' : 'Type it in'))),
+  el('div', { class: 'si2-foot' }, fixedServer ? null : el('p', {}, typeAddress ? 'Find it by email instead? ' : 'Have a company address instead? ', el('button', { type: 'button', class: 'link', onclick: () => { signin.typeAddress = !typeAddress; signin.single = false; loginView(serverUrl, '', fixedServer); } }, typeAddress ? 'Use my email' : 'Type it in'))),
   credit());
   root.append(el('div', { class: 'si2' }, hero(false), body));
   email.focus();
@@ -159,7 +164,7 @@ function companyCard(c, onChange) {
 }
 function passwordStep(serverUrl, message, fixedServer) {
   const c = signin.company, err = el('div', { class: 'err', role: 'alert' }, message || '');
-  const email = el('input', { id: 'em', class: 'si2-in', type: 'email', autocomplete: 'username', value: signin.email });
+  const email = el('input', { id: 'em', class: 'si2-in', type: 'text', autocapitalize: 'off', spellcheck: 'false', autocomplete: 'username', value: signin.email });
   const pw = el('input', { id: 'pw', class: 'si2-in', type: 'password', autocomplete: 'current-password', placeholder: 'Your password' });
   const target = c ? c.url : signin.server || serverUrl;
   const change = () => { signin = { email: email.value.trim(), company: null, list: null }; loginView(fixedServer ? '' : serverUrl, '', fixedServer); };
@@ -172,7 +177,7 @@ function passwordStep(serverUrl, message, fixedServer) {
     if (r.error) { err.textContent = r.error; pw.focus(); } else { signin = { email: '', company: null, list: null }; boot(); }
   } },
   c ? companyCard(c, change) : null,
-  el('label', { for: 'em' }, 'Email'), email, el('label', { for: 'pw' }, 'Password'), pw, err, go,
+  el('label', { for: 'em' }, 'Email or username'), email, el('label', { for: 'pw' }, 'Password'), pw, err, go,
   el('button', { type: 'button', class: 'link si2-forgot', onclick: () => API.openForgot(target) }, 'Forgot password?'),
   c ? null : el('button', { type: 'button', class: 'link si2-forgot', onclick: change }, 'Use another email'),
   el('div', { class: 'si2-foot' }, c ? el('p', {}, `The app remembers ${c.name || 'your company'} on this computer.`) : null, credit()));

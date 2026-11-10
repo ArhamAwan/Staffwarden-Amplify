@@ -150,7 +150,8 @@ function watchLogin() {
   pw.addEventListener('blur', () => o.classList.remove('shut'));
 }
 
-async function showLogin(msg, email) {
+// `choose`: signed in with a one-time password, which has to be replaced before anything else
+async function showLogin(msg, email, { choose = null } = {}) {
   teardown();
   const co = await companyInfo();
   const pre = email || (/^#signin\?email=([^&]+)/.exec(location.hash) || [])[1];
@@ -173,7 +174,7 @@ async function showLogin(msg, email) {
     card.innerHTML = `<h1 id="si-h">Welcome back</h1><p class="si-sub">${co.address ? `Sign in to ${esc(co.name || 'your company')}.` : 'Sign in with the email and password you were given.'}</p>
       ${coRow}
       <form id="login" novalidate>
-        <label class="si-f"><span>Email</span><input id="em" name="email" type="email" autocomplete="username" required placeholder="you@company.com" value="${esc(em)}"></label>
+        <label class="si-f"><span>Email or username</span><input id="em" name="email" type="text" inputmode="email" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="username" required placeholder="you@company.com" value="${esc(em)}"></label>
         <label class="si-f"><span>Password</span><input id="pw" name="password" type="password" autocomplete="current-password" required placeholder="Your password"></label>
         <p class="err" role="alert" id="login-err">${esc(m || '')}</p>
         <button class="si-go" type="submit">Sign in</button></form>
@@ -188,8 +189,9 @@ async function showLogin(msg, email) {
       const btn = f.querySelector('button'), err = document.getElementById('login-err');
       err.textContent = ''; btn.disabled = true;
       try {
-        const r = await post('/api/auth/login', { email: f.email.value.trim(), password: f.password.value });
+        const r = await post('/api/auth/login', { email: f.email.value.trim(), password: f.password.value, can_set_password: true });
         setToken(r.token);
+        if (r.user && r.user.must_change_pw) { chooseCard(f.password.value, r.user); return; }
         let after = null; try { after = sessionStorage.getItem('sw-after'); sessionStorage.removeItem('sw-after'); } catch { /* private window */ }
         if (after) history.replaceState(null, '', after); else if (/^#signin/.test(location.hash)) history.replaceState(null, '', '#/');
         await boot();
@@ -197,7 +199,43 @@ async function showLogin(msg, email) {
     });
     document.getElementById('forgot').addEventListener('click', () => forgotCard(f.email.value.trim()));
   }
+  // a login a manager made: the person chooses their own password now, before anything else
+  function chooseCard(otp, who) {
+    const first = ((who && who.name) || '').split(' ')[0];
+    card.innerHTML = `<h1 id="si-h">${first ? `Welcome, ${esc(first)}` : 'Welcome'}</h1><p class="si-sub">You signed in with a one-time password. Choose your own now: you’ll use it here and in the desktop app.</p>
+      ${coRow}
+      <form id="cp" novalidate>
+        ${otp ? '' : '<label class="si-f"><span>One-time password</span><input name="otp" type="password" autocomplete="current-password" required placeholder="From your slip"></label>'}
+        <label class="si-f"><span>New password</span><input name="pw1" type="password" autocomplete="new-password" required minlength="10" placeholder="At least 10 characters"></label>
+        <label class="si-f"><span>Type it again</span><input name="pw2" type="password" autocomplete="new-password" required minlength="10"></label>
+        <p class="err" role="alert" id="cp-err"></p>
+        <button class="si-go" type="submit">Save and continue</button></form>
+      <div class="si-links"><button type="button" class="si-forgot" id="cp-out">Sign out</button></div>`;
+    const f = document.getElementById('cp'), err = document.getElementById('cp-err');
+    (f.otp || f.pw1).focus();
+    document.getElementById('cp-out').addEventListener('click', () => actions.logout());
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const cur = otp || f.otp.value, a = f.pw1.value, b = f.pw2.value;
+      if (!cur) { err.textContent = 'Type the one-time password from your slip.'; f.otp.focus(); return; }
+      if (a.length < 10) { err.textContent = 'Use at least 10 characters.'; f.pw1.focus(); return; }
+      if (a !== b) { err.textContent = 'The two passwords don’t match.'; f.pw2.focus(); return; }
+      const btn = f.querySelector('button'); btn.disabled = true; err.textContent = '';
+      try {
+        await post('/api/me/password', { current_password: cur, new_password: a });
+        if (/^#signin/.test(location.hash)) history.replaceState(null, '', '#/');
+        await boot();
+      } catch (ex) { err.textContent = errMsg(ex); btn.disabled = false; }
+    });
+  }
   function forgotCard(em) {
+    // a username (no email): only a manager can help
+    if (em && !em.includes('@')) {
+      card.innerHTML = `<h1 id="si-h">Forgot your password?</h1><p class="si-sub">Signing in with a username? Ask your manager for a new one-time password. They make it from People, in a minute.</p>
+        <div class="si-links"><button type="button" class="si-forgot" id="back">Back to sign in</button></div>`;
+      document.getElementById('back').addEventListener('click', () => signInCard('', em));
+      return;
+    }
     card.innerHTML = co.forgot ? `<h1 id="si-h">New password</h1><p class="si-sub">Type your email. If it’s one of ${esc(co.name || 'the company')}’s, we’ll send a link to set a new password.</p>
       <form id="fg" novalidate><label class="si-f"><span>Email</span><input name="email" type="email" autocomplete="username" required placeholder="you@company.com" value="${esc(em)}"></label>
         <p class="err" role="alert" id="fg-err"></p><button class="si-go" type="submit">Email me a link</button></form>
@@ -221,7 +259,7 @@ async function showLogin(msg, email) {
       } catch (ex) { err.textContent = errMsg(ex); btn.disabled = false; }
     });
   }
-  signInCard();
+  if (choose) chooseCard(choose.otp || null, choose.user); else signInCard();
 }
 actions.logout = async () => { try { await post('/api/auth/logout'); } catch { /* already gone */ } setToken(null); S.me = null; showLogin(); };
 // A new version of the website went live while this page was open: say so, and refresh on request.
@@ -607,6 +645,7 @@ async function boot() {
   } catch { if (pv) setViewAs(pv[1]); }
   try {
     S.me = await get('/api/me');
+    if (S.me.must_change_pw) return showLogin('', '', { choose: { user: S.me } });
     S.settings = await get('/api/settings');
     setHomeCurrency(S.settings.pay_currency);
     godTimer();   // god mode: where the timer is now, so its next start or pause plays a moment

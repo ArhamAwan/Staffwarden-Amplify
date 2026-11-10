@@ -252,7 +252,7 @@ function createApp(opts = {}) {
   const publicUser = (u) => {
     const sp = shotPolicy(u);
     return {
-      id: u.id, email: u.email, name: u.name, role: u.role, hr: !!u.hr, ...consentState(u), title: u.title || null,
+      id: u.id, email: u.email, name: u.name, role: u.role, hr: !!u.hr, ...consentState(u), title: u.title || null, must_change_pw: !!u.must_change_pw, username: !String(u.email).includes('@'),
       tracks_time: !!u.tracks_time, tz_offset_min: ctx.calc.userTz(u), tz_name: ctx.calc.zoneOf(u),
       // the hours for the person's current work day, so the desktop app follows a different Saturday on its own
       ...(({ special, ...h }) => h)(ctx.calc.hoursOn(u, ctx.calc.todayOf(u))), work_days: u.work_days || cfg.workDays,
@@ -284,6 +284,8 @@ function createApp(opts = {}) {
       .run(email, name, 'owner', salt, hash, nowIso()).lastInsertRowid);
   }
 
+  // what a person signed in with a one-time password can do before choosing their own
+  const PW_FIRST = new Set(['GET /api/me', 'POST /api/me/password', 'POST /api/auth/logout', 'GET /api/settings']);
   function authUser(req) {
     const h = req.headers.authorization || '';
     const token = h.startsWith('Bearer ') ? h.slice(7) : null;
@@ -490,7 +492,7 @@ function createApp(opts = {}) {
     saveSetting, defaults, T, MAX_BODY, clockNow, listDownloads: () => listDownloads(), latestApp: (p, a) => latestApp(p, a),
     // set when this company runs on the shared Staffwarden service (one app per company): its account and
     // email. Without it (one company on its own server) everything works as before and nothing is billed.
-    tenant: opts.tenant || null, mail: opts.mail || null,
+    tenant: opts.tenant || null, mail: opts.mail ? (kind, to, ...rest) => (String(to || '').includes('@') ? opts.mail(kind, to, ...rest) : Promise.resolve({ sent: false, skipped: 'no email' })) : null,
   };
   ctx.calc = createCalc(ctx);
   ctx.notify = createNotify(ctx);
@@ -624,6 +626,7 @@ function createApp(opts = {}) {
       // an open route (the company logo) works signed out, and still knows who is asking when they are signed in
       const user = isLogin ? null : r.open ? (() => { try { return authUser(req); } catch { return null; } })() : authUser(req);
       if (user && user.kind === 'client') need(r.client, 403, 'Not available in the client portal');
+      if (user && user.must_change_pw && !r.open && !PW_FIRST.has(`${req.method} ${url.pathname}`)) throw new HttpError(403, 'Choose your own password first', { must_change: true });
       if (user && user.preview) need(req.method === 'GET', 403, 'This is a preview. Nothing you do here is sent.');
       // the company's account: tracking paused (trial over, not paid, closed) and what its plan includes
       if (opts.tenant && opts.tenant.gate) { const why = opts.tenant.gate(url.pathname, req.method, user); if (why && why.soft !== undefined) return send(200, why.soft); if (why) throw new HttpError(why.status || 403, why.message, why.extra); }

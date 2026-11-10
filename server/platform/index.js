@@ -258,16 +258,16 @@ function createPlatform(opts) {
     return { code, mailed: r.sent };
   }
 
-  function createCompany({ slug, name, country, size, owner }) {
+  function createCompany({ slug, name, country, size, owner, trialDays = P.TRIAL_DAYS, plan = 'business', tz = null }) {
     const c = byCode(country) || byCode('OTHER');
     const t = now();
-    store.prepare(`INSERT INTO companies (slug, name, country, size, owner_email, owner_name, status, plan, interval, trial_ends_at, created_at) VALUES (?,?,?,?,?,?,'trial','business','year',?,?)`)
-      .run(slug, name, c.code, size || null, owner.email, owner.name, iso(t + P.TRIAL_DAYS * DAY), iso(t));
+    store.prepare(`INSERT INTO companies (slug, name, country, size, owner_email, owner_name, status, plan, interval, trial_ends_at, created_at) VALUES (?,?,?,?,?,?,'trial',?,'year',?,?)`)
+      .run(slug, name, c.code, size || null, owner.email, owner.name, P.PLANS[plan] ? plan : 'business', iso(t + trialDays * DAY), iso(t));
     event(slug, 'created', `${owner.name} <${owner.email}>, ${c.name}`);
     const app = loadTenant(row(slug));
     const ctx = app.ctx;
     ctx.saveSetting('orgName', name);
-    if (T.validZone(c.tz)) ctx.saveSetting('tzName', c.tz);
+    if (tz && T.validZone(tz)) ctx.saveSetting('tzName', tz); else if (T.validZone(c.tz)) ctx.saveSetting('tzName', c.tz);
     ctx.saveSetting('payCurrency', require('../lib/money').validCurrency(c.currency) ? c.currency : 'USD');
     if (c.code !== 'PK') ctx.saveSetting('payroll', { ...(ctx.cfg.payroll || {}), tax: { ...(ctx.defaults.payroll.tax), on: false }, eobi: { ...(ctx.defaults.payroll.eobi), on: false } });
     const ownerId = Number(app.db.prepare('INSERT INTO users (email, name, role, pw_salt, pw_hash, tracks_time, created_at, joined_at) VALUES (?,?,?,?,?,0,?,?)')
@@ -622,15 +622,18 @@ function createPlatform(opts) {
   const api = [];
   const on = (method, pattern, handler, o = {}) => { const keys = []; const re = new RegExp(`^${pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; })}$`); api.push({ method, re, keys, handler, raw: !!o.raw }); };
 
-  on('GET', '/api/platform/config', () => ({ base_domain: base, apex: apexUrl, trial_days: P.TRIAL_DAYS, countries: COUNTRIES.map((c) => ({ code: c.code, name: c.name, tz: c.tz, money: c.money, currency: c.currency, holidays: !!c.holidays })), plans: P.ORDER.map((k) => ({ id: k, name: P.PLANS[k].name, blurb: P.PLANS[k].blurb, year_cents: P.seatCents(k, 'year'), month_cents: P.seatCents(k, 'month') })), mail: mailer.configured, payments: stripe.ready }));
+  on('GET', '/api/platform/config', () => ({ base_domain: base, apex: apexUrl, trial_days: P.TRIAL_DAYS, countries: COUNTRIES.map((c) => ({ code: c.code, name: c.name, tz: c.tz, money: c.money, currency: c.currency, holidays: !!c.holidays })), plans: P.ORDER.map((k) => ({ id: k, name: P.PLANS[k].name, blurb: P.PLANS[k].blurb, year_cents: P.seatCents(k, 'year'), month_cents: P.seatCents(k, 'month') })), mail: mailer.configured, payments: stripe.ready, signup: signupMode }));
   on('GET', '/api/platform/legacy', () => ({ url: defaultSlug ? urlOf(defaultSlug) : null }));
 
   // Without a mail server the code is shown on screen, for trying Staffwarden out on a laptop. On a live
   // server (NODE_ENV=production) sign-up waits until mail works: the code proves the email is yours.
   const showCodes = opts.showCodes ?? process.env.NODE_ENV !== 'production';
+  // 'approval': companies ask for access and an admin approves them (the default); 'open': anyone signs up
+  const signupMode = (opts.signupMode || process.env.SIGNUP_MODE || 'approval') === 'open' ? 'open' : 'approval';
   const needMail = () => need(mailer.configured || showCodes, 503, 'Sign-up opens once this server can send email');
   const codeOut = (sent) => (mailer.configured || !showCodes ? {} : { dev_code: sent.code });
   on('POST', '/api/platform/signup/start', async ({ req, body }) => {
+    need(signupMode === 'open', 403, 'Staffwarden opens to companies by request. Ask for access instead.');
     limit(`su:${ipOf(req)}`, 8, 3600000);
     needMail();
     const name = str(body.name, 'name', 100).trim();
@@ -677,6 +680,7 @@ function createPlatform(opts) {
     return { slug: s, free: !!s && !validSlug(s), why: s ? validSlug(s) : 'Type a name' };
   });
   on('POST', '/api/platform/signup/company', ({ body }) => {
+    need(signupMode === 'open', 403, 'Staffwarden opens to companies by request. Ask for access instead.');
     const s = signupOf(body.token);
     need(s && s.verified_at, 400, 'Check your email first');
     need(!s.slug, 409, 'Your company is already set up');
@@ -691,6 +695,117 @@ function createPlatform(opts) {
     store.prepare('UPDATE signups SET slug = ? WHERE id = ?').run(slug, s.id);
     mailer.send('welcome', s.email, { name: s.name, company: name, host: hostOf(slug), url: urlOf(slug), trialEnds: row(slug).trial_ends_at }, slug).catch(() => {});
     return { slug, url: urlOf(slug), address: hostOf(slug), handoff: makeHandoff(slug, ownerId), trial_ends_at: row(slug).trial_ends_at };
+  });
+
+  // ---------------- asking for access (the approval sign-up) ----------------
+  // A company asks, confirms its email with a code, and waits. Nothing is created until a console admin
+  // approves it; the approval emails a one-time setup link, and setup creates the company.
+  const SIZES = { '1-10': '1–10 people', '11-50': '11–50 people', '51-200': '51–200 people', '200+': 'More than 200' };
+  const requestOf = (token) => store.prepare('SELECT * FROM access_requests WHERE token = ?').get(sha(token || ''));
+  const requestOut = (r) => ({ status: r.status, name: r.name, email: r.email, company: r.company, size: r.size, size_text: SIZES[r.size] || null, country: r.country, created_at: r.created_at, verified_at: r.verified_at });
+  async function sendRequestCode(r) {
+    const code = code6();
+    store.prepare('UPDATE access_requests SET code_hash = ?, code_sent_at = ?, code_expires_at = ?, tries = 0 WHERE id = ?').run(sha(`${code}|r${r.id}`), iso(), iso(now() + 15 * 60000), r.id);
+    const m = await mailer.send('code', r.email, { name: r.name, code: `${code.slice(0, 3)} ${code.slice(3)}` });
+    return { code, mailed: m.sent };
+  }
+  const consoleUrl = `${scheme}://admin.${base}${portPart}/#/requests`;
+  on('POST', '/api/platform/request/start', async ({ req, body }) => {
+    need(signupMode === 'approval', 404, 'Start a free trial instead');
+    limit(`rq:${ipOf(req)}`, 8, 3600000);
+    needMail();
+    const name = str(body.name, 'name', 100).trim();
+    need(name.length >= 2, 400, 'Type your name');
+    const email = str(body.email, 'email', 200).trim().toLowerCase();
+    need(/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email), 400, 'That doesn’t look like an email address');
+    limit(`rqe:${email}`, 5, 3600000);
+    const company = str(body.company, 'company', 80).trim();
+    need(company.length >= 2, 400, 'Type the company’s name');
+    need(byCode(body.country), 400, 'Choose a country');
+    const size = SIZES[body.size] ? body.size : null;
+    const note = String(body.note || '').trim().slice(0, 600) || null;
+    // one open request per email; a declined one can ask again after 30 days
+    const open = store.prepare("SELECT 1 FROM access_requests WHERE email = ? AND status IN ('waiting','approved')").get(email);
+    need(!open, 409, 'This email already has a request in. We’ll email you when it’s approved.');
+    const no = store.prepare("SELECT decided_at FROM access_requests WHERE email = ? AND status = 'declined' ORDER BY id DESC LIMIT 1").get(email);
+    need(!no || Date.parse(no.decided_at) < now() - 30 * DAY, 409, 'We couldn’t approve this email recently. You can ask again 30 days after that.');
+    const token = newToken();
+    const id = Number(store.prepare('INSERT INTO access_requests (token, email, name, company, size, country, note, created_at) VALUES (?,?,?,?,?,?,?,?)')
+      .run(sha(token), email, name, company, size, body.country, note, iso()).lastInsertRowid);
+    const sent = await sendRequestCode({ id, email, name });
+    return { token, email, ...codeOut(sent) };
+  });
+  on('POST', '/api/platform/request/resend', async ({ req, body }) => {
+    limit(`rqr:${ipOf(req)}`, 10, 3600000);
+    const r = requestOf(body.token);
+    need(r && r.status === 'unconfirmed', 404, 'Start again: that request ran out');
+    need(!r.code_sent_at || now() - Date.parse(r.code_sent_at) > 45000, 429, 'Wait a moment before asking for another code');
+    needMail();
+    const sent = await sendRequestCode(r);
+    return { ok: true, ...codeOut(sent) };
+  });
+  on('POST', '/api/platform/request/verify', ({ body }) => {
+    const r = requestOf(body.token);
+    need(r && ['unconfirmed', 'waiting', 'approved', 'done'].includes(r.status), 404, 'Start again: that request ran out');
+    if (r.status !== 'unconfirmed') return requestOut(r);
+    need(r.wrong_total < 20, 404, 'Start again: that request had too many wrong codes');
+    need(r.tries < 6, 429, 'Too many wrong codes. Ask for a new one.');
+    const code = String(body.code || '').replace(/\D/g, '');
+    need(code.length === 6, 400, 'The code has 6 digits');
+    need(r.code_expires_at && Date.parse(r.code_expires_at) > now(), 400, 'That code ran out. Ask for a new one.');
+    if (sha(`${code}|r${r.id}`) !== r.code_hash) { store.prepare('UPDATE access_requests SET tries = tries + 1, wrong_total = wrong_total + 1 WHERE id = ?').run(r.id); throw new HttpError(400, 'That code isn’t right. Check the email and try again.'); }
+    // a second request from the same email that got confirmed in the meantime wins; this one steps aside
+    need(!store.prepare("SELECT 1 FROM access_requests WHERE email = ? AND status IN ('waiting','approved') AND id != ?").get(r.email, r.id), 409, 'This email already has a request in. We’ll email you when it’s approved.');
+    store.prepare("UPDATE access_requests SET status = 'waiting', verified_at = ?, code_hash = NULL WHERE id = ?").run(iso(), r.id);
+    const c = byCode(r.country);
+    for (const a of adminEmails) mailer.send('access_request', a, { company: r.company, name: r.name, email: r.email, size: SIZES[r.size], country: c ? c.name : r.country, note: r.note, url: consoleUrl }).catch(() => {});
+    return requestOut({ ...r, status: 'waiting', verified_at: iso() });
+  });
+  on('POST', '/api/platform/request/status', ({ body }) => {
+    const r = requestOf(body.token);
+    need(r, 404, 'We couldn’t find that request');
+    return requestOut(r);
+  });
+  on('POST', '/api/platform/request/withdraw', ({ body }) => {
+    const r = requestOf(body.token);
+    need(r && ['unconfirmed', 'waiting'].includes(r.status), 400, 'This request can’t be withdrawn now');
+    store.prepare("UPDATE access_requests SET status = 'withdrawn', decided_at = ? WHERE id = ?").run(iso(), r.id);
+    return { ok: true };
+  });
+
+  // the setup link from the approval email: it works once, for 7 days
+  const setupOf = (t) => {
+    const r = store.prepare("SELECT * FROM access_requests WHERE setup_hash = ? AND status = 'approved'").get(sha(t || ''));
+    need(r, 404, 'This setup link was already used, or it was cancelled. Ask us for a new one.');
+    need(Date.parse(r.setup_expires_at) > now(), 410, 'This setup link ran out. Reply to the approval email and we’ll send a new one.');
+    return r;
+  };
+  on('POST', '/api/platform/setup/check', ({ req, body }) => {
+    limit(`sc:${ipOf(req)}`, 60, 15 * 60000);
+    const r = setupOf(body.t);
+    const c = byCode(r.country) || byCode('OTHER');
+    return { company: r.company, name: r.name, email: r.email, country: c.code, country_name: c.name, money: c.money, holidays: !!c.holidays, tz: c.tz, trial_days: r.trial_days || P.TRIAL_DAYS, slug: suggestSlug(r.company) };
+  });
+  on('POST', '/api/platform/setup', ({ req, body }) => {
+    limit(`su2:${ipOf(req)}`, 20, 15 * 60000);
+    const r = setupOf(body.t);
+    const slug = str(body.slug, 'slug', 40).trim().toLowerCase();
+    const why = validSlug(slug);
+    need(!why, 400, why);
+    const password = str(body.password, 'password', 200);
+    const bad = passwordProblem(password, { email: r.email, name: r.name });
+    need(!bad, 400, bad);
+    const tz = body.tz && T.validZone(String(body.tz)) ? String(body.tz) : null;
+    // claim the link first, so two clicks can't make two companies
+    const claimed = store.prepare("UPDATE access_requests SET status = 'done', setup_hash = NULL, slug = ? WHERE id = ? AND status = 'approved'").run(slug, r.id);
+    need(claimed.changes === 1, 404, 'This setup link was already used.');
+    const { salt, hash } = hashPassword(password);
+    let made;
+    try { made = createCompany({ slug, name: r.company, country: r.country, size: r.size, owner: { email: r.email, name: r.name, salt, hash }, trialDays: r.trial_days || P.TRIAL_DAYS, plan: r.plan || 'business', tz }); }
+    catch (e) { store.prepare("UPDATE access_requests SET status = 'approved', setup_hash = ?, slug = NULL WHERE id = ?").run(r.setup_hash, r.id); throw e; }
+    event(slug, 'approved', `Asked ${r.created_at.slice(0, 10)}, approved by ${r.decided_by || 'an admin'}`);
+    mailer.send('welcome', r.email, { name: r.name, company: r.company, host: hostOf(slug), url: urlOf(slug), trialEnds: row(slug).trial_ends_at }, slug).catch(() => {});
+    return { slug, url: urlOf(slug), address: hostOf(slug), handoff: makeHandoff(slug, made.ownerId), trial_ends_at: row(slug).trial_ends_at };
   });
 
   on('POST', '/api/platform/find', ({ req, body }) => {
@@ -742,6 +857,66 @@ function createPlatform(opts) {
     if (tok) store.prepare('DELETE FROM console_sessions WHERE token = ?').run(sha(tok));
     return { ok: true };
   });
+  // ---------------- access requests, in the console ----------------
+  const requestRow = (r) => {
+    const c = byCode(r.country);
+    const domain = r.email.split('@')[1] || '';
+    const personal = /^(gmail|googlemail|yahoo|ymail|hotmail|outlook|live|msn|icloud|me|aol|proton|protonmail|gmx|mail|yandex|zoho)\./i.test(domain);
+    return { id: r.id, status: r.status, name: r.name, email: r.email, company: r.company, size: r.size, size_text: SIZES[r.size] || null, country: r.country, country_name: c ? c.name : r.country,
+      note: r.note, created_at: r.created_at, verified_at: r.verified_at, decided_at: r.decided_at, decided_by: r.decided_by, trial_days: r.trial_days, plan: r.plan, message: r.message,
+      setup_expires_at: r.status === 'approved' ? r.setup_expires_at : null, slug: r.slug, domain, personal_email: personal, thin_note: !r.note || r.note.trim().length < 12 };
+  };
+  const reqById = (id) => { const r = store.prepare('SELECT * FROM access_requests WHERE id = ?').get(Number(id)); need(r && r.status !== 'unconfirmed', 404, 'No such request'); return r; };
+  on('GET', '/api/console/requests', ({ req }) => {
+    consoleUser(req);
+    const rows = store.prepare("SELECT * FROM access_requests WHERE status != 'unconfirmed' ORDER BY (status = 'waiting') DESC, COALESCE(verified_at, created_at) DESC LIMIT 300").all();
+    return { requests: rows.map(requestRow), plans: P.ORDER.map((k) => ({ id: k, name: P.PLANS[k].name })), trial_days: P.TRIAL_DAYS, mail: mailer.configured };
+  });
+  on('POST', '/api/console/requests/:id/approve', async ({ req, params, body }) => {
+    const who = consoleUser(req);
+    const r = reqById(params.id);
+    need(r.status === 'waiting', 400, 'Only a waiting request can be approved');
+    const days = Math.round(Number(body.trial_days || P.TRIAL_DAYS));
+    need(days >= 1 && days <= 60, 400, 'Give a trial of 1 to 60 days');
+    const plan = P.PLANS[body.plan] ? body.plan : 'business';
+    const message = String(body.message || '').trim().slice(0, 500) || null;
+    const t = newToken();
+    store.prepare("UPDATE access_requests SET status = 'approved', decided_at = ?, decided_by = ?, trial_days = ?, plan = ?, message = ?, setup_hash = ?, setup_expires_at = ? WHERE id = ?")
+      .run(iso(), who, days, plan, message, sha(t), iso(now() + 7 * DAY), r.id);
+    const link = `${apexUrl}/setup#t=${t}`;
+    const m = await mailer.send('access_approved', r.email, { name: r.name, company: r.company, trialDays: days, message, link });
+    // without a mail server the link is shown here, once, to pass on by hand
+    return { ...requestRow(reqById(r.id)), mailed: !!m.sent, ...(m.sent ? {} : { link }) };
+  });
+  on('POST', '/api/console/requests/:id/decline', async ({ req, params, body }) => {
+    const who = consoleUser(req);
+    const r = reqById(params.id);
+    need(r.status === 'waiting', 400, 'Only a waiting request can be declined');
+    const message = String(body.message || '').trim().slice(0, 500) || null;
+    store.prepare("UPDATE access_requests SET status = 'declined', decided_at = ?, decided_by = ?, message = ? WHERE id = ?").run(iso(), who, message, r.id);
+    if (body.tell !== false) mailer.send('access_declined', r.email, { name: r.name, company: r.company, message }).catch(() => {});
+    return requestRow(reqById(r.id));
+  });
+  // undo: an approval's setup link stops working; a decline goes back to waiting
+  on('POST', '/api/console/requests/:id/reopen', ({ req, params }) => {
+    consoleUser(req);
+    const r = reqById(params.id);
+    need(['approved', 'declined'].includes(r.status), 400, 'This request can’t be moved back');
+    store.prepare("UPDATE access_requests SET status = 'waiting', decided_at = NULL, decided_by = NULL, setup_hash = NULL, setup_expires_at = NULL WHERE id = ?").run(r.id);
+    return requestRow(reqById(r.id));
+  });
+  // a new setup link for an approval whose link ran out
+  on('POST', '/api/console/requests/:id/resend', async ({ req, params }) => {
+    consoleUser(req);
+    const r = reqById(params.id);
+    need(r.status === 'approved', 400, 'Only an approved request has a setup link');
+    const t = newToken();
+    store.prepare('UPDATE access_requests SET setup_hash = ?, setup_expires_at = ? WHERE id = ?').run(sha(t), iso(now() + 7 * DAY), r.id);
+    const link = `${apexUrl}/setup#t=${t}`;
+    const m = await mailer.send('access_approved', r.email, { name: r.name, company: r.company, trialDays: r.trial_days || P.TRIAL_DAYS, message: r.message, link });
+    return { ...requestRow(reqById(r.id)), mailed: !!m.sent, ...(m.sent ? {} : { link }) };
+  });
+
   on('GET', '/api/console/overview', ({ req }) => {
     consoleUser(req);
     const rows = store.prepare("SELECT * FROM companies WHERE status != 'deleted' ORDER BY created_at DESC").all();
@@ -755,7 +930,8 @@ function createPlatform(opts) {
       mrr_cents: paying.reduce((a, c) => a + c.monthly_cents, 0), paid_30d_cents: last, paid_prev_30d_cents: before,
       paying: paying.length, trials: list.filter((c) => c.status === 'trial').length, trials_ending_week: list.filter((c) => c.status === 'trial' && c.trial_ends_at && Date.parse(c.trial_ends_at) - now() < 7 * DAY).length,
       people: paying.reduce((a, c) => a + (c.seats || 0), 0), attention: list.filter((c) => c.status === 'past_due' || c.due_for_deletion).length,
-      companies: list, mail: mailer.configured, payments: stripe.ready,
+      companies: list, mail: mailer.configured, payments: stripe.ready, signup: signupMode,
+      requests_waiting: store.prepare("SELECT COUNT(*) AS n FROM access_requests WHERE status = 'waiting'").get().n,
       months: (() => {
         const out = [], d = new Date(now());
         for (let i = 5; i >= 0; i--) {
@@ -874,7 +1050,7 @@ function createPlatform(opts) {
     }
   }
 
-  const APEX_PAGES = { '/': 'welcome.html', '/welcome': 'welcome.html', '/signup': 'start.html', '/signin': 'start.html', '/forgot': 'start.html' };
+  const APEX_PAGES = { '/': 'welcome.html', '/welcome': 'welcome.html', '/signup': 'start.html', '/signin': 'start.html', '/forgot': 'start.html', '/setup': 'start.html' };
   const CONSOLE_PAGES = { '/': 'console.html' };
   const deflt = () => (defaultSlug ? tenantApp(defaultSlug) : null);
 

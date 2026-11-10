@@ -2,6 +2,7 @@ import { html, raw, esc, icon, copyText, tzLabel, hhmmText, hoursText, relTime, 
 import { get, post, patch, del, qs } from '../api.js';
 import { S, actions, tag, person, empty, openModal, confirmBox, toast, errMsg, liveTag } from '../ui.js';
 import { isMgr, zoneOptions, readZone } from '../parts.js';
+import { loginsEditor, loginsResult } from '../logins.js';
 
 const DAYS = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [0, 'Sun']];
 let cache = { users: [], teams: [] };
@@ -28,7 +29,7 @@ export default {
     const link = (v, label, n) => html`<a class="pfilter" href="#/people${qs({ team: teamF || null, show: v === 'all' ? null : v })}" ${show === v ? raw('aria-current="true"') : ''} data-k="f${v}">${label}<b class="num">${n}</b></a>`;
     return html`
       <div class="page-h"><div><h1>People</h1><p class="sub">${plural(active.length, 'person', 'people')}${counts.working ? ` · ${counts.working} working now` : ''}</p></div>
-        <div class="tools">${owner ? html`<button class="btn" data-act="new-team">New team</button>` : ''}<button class="btn" data-act="edit-user" data-id="">${raw('+')} Add person</button><button class="btn primary" data-act="invite-many">${icon('mail')} Invite people</button></div></div>
+        <div class="tools">${owner ? html`<button class="btn" data-act="new-team">New team</button>` : ''}<button class="btn" data-act="edit-user" data-id="">${raw('+')} Add person</button><button class="btn" data-act="create-logins">Create logins</button><button class="btn primary" data-act="invite-many">${icon('mail')} Invite people</button></div></div>
 
       <section class="panel pdefaults"><div class="body">
         <div class="pd-h"><b>Company schedule</b><span class="muted small">Everyone follows this unless their row says otherwise</span>${owner ? html`<a class="small" href="#/settings">Change</a>` : ''}</div>
@@ -207,6 +208,10 @@ function differences(u, teams, st) {
 function statusOf(u) {
   if (!u.active) return html`${tag('off', 'Deactivated')}`;
   if (u.invited) return html`${tag('late', 'Invited')}<span class="ps-seen small muted">Sent ${relTime(u.invited_at)}, not joined yet</span>`;
+  if (u.login_waiting) {
+    const out = u.login_expires_at && Date.parse(u.login_expires_at) < nowMs();
+    return html`${tag('late', out ? 'Password ran out' : 'Login not used yet')}<span class="ps-seen small muted">${out ? 'Make a new one' : `Works until ${new Date(u.login_expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}</span>`;
+  }
   if (!u.tracks_time) return html`<span class="faint small">Does not track time</span>`;
   const label = { working: ['working', 'Working'], break: ['break', 'On a break'], idle: ['idle', 'Idle'], no_signal: ['no_signal', 'No signal'] }[u.state];
   const seen = u.last_seen_at ? (Date.now() - Date.parse(u.last_seen_at) < 90000 ? 'Active just now' : `Last active ${relTime(u.last_seen_at)}`) : 'No work tracked yet';
@@ -222,7 +227,7 @@ function personRow(u, teams, downloads, st) {
     <div class="pr-info">${diffs.length ? html`<ul class="pchips">${diffs.map((d) => html`<li>${d}</li>`)}</ul>` : (u.tracks_time ? html`<span class="faint small">Company schedule</span>` : '')}
       ${probs.some((p) => p.kind === 'policy') ? html`<ul class="pflags"><li class="warn">Has not accepted the policy</li></ul>` : ''}</div>
     <div class="pr-app small">${u.app_version ? html`<span class="num">${u.app_version}${kind ? ' · ' + OS_NAME[kind] : ''}</span>${latestFor(u, downloads) ? html`<span class="pupd">Update to ${latestFor(u, downloads)}</span>` : html`<span class="faint">Up to date</span>`}` : u.tracks_time ? html`<span class="faint">Not installed</span>` : ''}</div>
-    <div class="pr-act">${u.invited && u.active ? html`<button type="button" class="btn sm" data-act="invite-again" data-id="${u.id}" data-name="${u.name}">Invite again</button>` : ''}${u.tracks_time && u.active && !u.invited ? html`<a class="btn sm" href="#/timeline?user=${u.id}">View day</a>` : ''}${(u.role === 'owner' && (S.me.dev_owner || S.me.role !== 'owner')) || (u.is_dev && S.me.role !== 'owner' && u.id !== S.me.id) ? '' : html`<button class="btn sm" data-act="edit-user" data-id="${u.id}">Edit</button>`}${S.me.role === 'owner' && u.active && u.role !== 'owner' ? html`<button class="btn sm${u.fun_mode ? ' gm-on-btn' : ''}" data-act="fun-edit" data-id="${u.id}" data-name="${u.name}" aria-label="Fun modes for ${u.name}" title="Fun modes">${u.fun_mode ? 'God mode' : 'Fun'}</button>` : ''}</div>
+    <div class="pr-act">${u.invited && u.active ? html`<button type="button" class="btn sm" data-act="invite-again" data-id="${u.id}" data-name="${u.name}">Invite again</button>` : ''}${(u.username || u.login_waiting) && u.active && u.role !== 'owner' && u.id !== S.me.id && (S.me.role === 'owner' || u.role === 'employee') && ((!u.hr && !u.is_dev) || (S.me.role === 'owner' && !S.me.dev_owner)) ? html`<button type="button" class="btn sm" data-act="otp-new" data-id="${u.id}" data-name="${u.name}">New password</button>` : ''}${u.tracks_time && u.active && !u.invited ? html`<a class="btn sm" href="#/timeline?user=${u.id}">View day</a>` : ''}${(u.role === 'owner' && (S.me.dev_owner || S.me.role !== 'owner')) || (u.is_dev && S.me.role !== 'owner' && u.id !== S.me.id) ? '' : html`<button class="btn sm" data-act="edit-user" data-id="${u.id}">Edit</button>`}${S.me.role === 'owner' && u.active && u.role !== 'owner' ? html`<button class="btn sm${u.fun_mode ? ' gm-on-btn' : ''}" data-act="fun-edit" data-id="${u.id}" data-name="${u.name}" aria-label="Fun modes for ${u.name}" title="Fun modes">${u.fun_mode ? 'God mode' : 'Fun'}</button>` : ''}</div>
   </li>`;
 }
 
@@ -399,6 +404,29 @@ actions['invite-again'] = async (el) => {
     if (r.link) showInviteLink(el.dataset.name, r.link); else toast(`A new invite is on its way to ${el.dataset.name.split(' ')[0]}`);
   } catch (e) { toast(errMsg(e), true); }
   el.disabled = false;
+};
+
+// logins for people without a work email: a username and a one-time password each, shown once
+const LKIT = { btn: 'btn', pri: 'primary', sm: 'sm' };
+actions['create-logins'] = () => {
+  const m = openModal({ title: 'Create logins', wide: true, footer: false, sub: 'For people without a work email. Each gets a username and a one-time password, and chooses their own password at first sign-in.', body: html`<div id="lgm"></div>` });
+  const el = m.form.querySelector('#lgm');
+  loginsEditor(el, { kit: LKIT, teams: cache.teams, managers: S.me.role === 'owner', rows: 3, cancel: true, onCreated: (r) => {
+    m.form.querySelector('h2').textContent = 'Hand these out';
+    const sub = m.form.querySelector('header p'); if (sub) sub.remove();
+    loginsResult(el, r, { kit: LKIT, company: (S.settings && S.settings.org_name) || 'your company', onDone: () => m.close(), doneLabel: 'Done' });
+    S.refresh();
+  } });
+};
+actions['otp-new'] = async (el) => {
+  const first = el.dataset.name.split(' ')[0];
+  if (!(await confirmBox({ title: `New one-time password for ${first}?`, message: `${first}’s current password stops working and they’re signed out everywhere. They choose their own again at the next sign-in.`, confirm: 'Make a new password' }))) return;
+  try {
+    const r = await post(`/api/users/${el.dataset.id}/one-time-password`);
+    const m = openModal({ title: `${first}’s new login`, wide: true, footer: false, body: html`<div id="lgm"></div>` });
+    loginsResult(m.form.querySelector('#lgm'), { people: [{ name: r.name, username: r.username, password: r.password }], expires_at: r.expires_at, address: r.address }, { kit: LKIT, company: (S.settings && S.settings.org_name) || 'your company', onDone: () => m.close(), doneLabel: 'Done' });
+    S.refresh();
+  } catch (e) { toast(errMsg(e), true); }
 };
 
 // invite many at once: paste their emails, each gets an email to join (or a link to pass on)

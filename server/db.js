@@ -3,7 +3,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 // Schema v2. Fresh installs and v1 databases go through the same path: the v1 tables are created
 // if missing, then migrate() adds everything v2 needs without touching existing rows.
-const SCHEMA_VERSION = 37;
+const SCHEMA_VERSION = 38;
 
 function hasColumn(db, table, col) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
@@ -83,6 +83,7 @@ function openDb(file = ':memory:') {
 function migrate(db) {
   const version = db.prepare('PRAGMA user_version').get().user_version;
   if (version >= SCHEMA_VERSION) return;
+  if (version === 37) return migrateV38(db);
   if (version === 36) return migrateV37(db);
   if (version === 35) return migrateV36(db);
   if (version === 34) return migrateV35(db);
@@ -1308,6 +1309,22 @@ function migrateV37(db) {
     const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
     if (!cols.includes('invited_at')) db.exec('ALTER TABLE users ADD COLUMN invited_at TEXT');
     if (!cols.includes('joined_at')) db.exec('ALTER TABLE users ADD COLUMN joined_at TEXT');
+    db.exec('PRAGMA user_version = 37');
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  migrateV38(db);
+}
+
+// v38: logins the owner creates for people without a work email: a username instead of an email, and a
+// one-time password the person must replace when they first sign in (it stops working after 7 days)
+function migrateV38(db) {
+  db.exec('BEGIN');
+  try {
+    addColumn(db, 'users', 'must_change_pw', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn(db, 'users', 'otp_expires_at', 'TEXT');
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {

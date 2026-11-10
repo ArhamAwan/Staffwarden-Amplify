@@ -4,7 +4,7 @@
 // hours, pay) is in its own database, never here.
 const { DatabaseSync } = require('node:sqlite');
 
-const VERSION = 2;
+const VERSION = 3;
 function openStore(file) {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
@@ -67,6 +67,19 @@ function openStore(file) {
   if (v < 2) {
     const cols = db.prepare('PRAGMA table_info(signups)').all().map((c) => c.name);
     if (!cols.includes('wrong_total')) db.exec('ALTER TABLE signups ADD COLUMN wrong_total INTEGER NOT NULL DEFAULT 0');
+  }
+  // 3: companies ask for access; you approve them in the console before anything is created
+  if (v < 3) {
+    db.exec(`CREATE TABLE IF NOT EXISTS access_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE, email TEXT NOT NULL, name TEXT NOT NULL,
+      company TEXT NOT NULL, size TEXT, country TEXT, note TEXT,
+      code_hash TEXT, code_sent_at TEXT, code_expires_at TEXT, tries INTEGER NOT NULL DEFAULT 0, wrong_total INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'unconfirmed' CHECK (status IN ('unconfirmed','waiting','approved','declined','withdrawn','done')),
+      verified_at TEXT, decided_at TEXT, decided_by TEXT, trial_days INTEGER, plan TEXT, message TEXT,
+      setup_hash TEXT, setup_expires_at TEXT, slug TEXT, created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_requests_email ON access_requests(email, created_at);
+    CREATE INDEX IF NOT EXISTS idx_requests_status ON access_requests(status, created_at);`);
   }
   if (v < VERSION) db.exec(`PRAGMA user_version = ${VERSION}`);
   return db;

@@ -141,3 +141,9 @@
   for (const b of document.querySelectorAll('.pl-tog [data-iv]')) b.addEventListener('click', () => { yearly = b.dataset.iv === 'year'; document.querySelectorAll('.pl-tog [data-iv]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); draw(); });
   draw();
 })();
+
+// When companies are approved first, every "Start free trial" button asks for access instead.
+fetch('/api/platform/config', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((c) => {
+  if (!c || c.signup !== 'approval') return;
+  for (const a of document.querySelectorAll('a[href="/signup"]')) if (/free trial/i.test(a.textContent)) a.textContent = 'Request access';
+}).catch(() => { /* the page works as it is */ });
