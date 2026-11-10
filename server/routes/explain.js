@@ -156,7 +156,7 @@ module.exports = (ctx) => {
   route('GET', '/api/team/now', ({ user }) => {
     const mode = ['everyone', 'team', 'off'].includes(cfg.teamVisibility) ? cfg.teamVisibility : 'everyone';
     if (!isManager(user) && mode === 'off') return { visible: 'off', members: [] };
-    let people = db.prepare('SELECT * FROM users WHERE active = 1 AND tracks_time = 1 ORDER BY name').all();
+    let people = db.prepare('SELECT * FROM users WHERE active = 1 AND tracks_time = 1 ORDER BY name').all().filter((u) => !ctx.notJoined(u));
     if (isManager(user)) people = visibleUsers(user).filter((u) => u.tracks_time);
     else if (mode === 'team') people = people.filter((u) => user.team_id && u.team_id === user.team_id);
     const live = calc.liveStates(people);

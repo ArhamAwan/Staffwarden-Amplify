@@ -159,8 +159,15 @@ function createApp(opts = {}) {
       else rows = db.prepare(`SELECT * FROM users WHERE id = ? OR team_id IN (${teams.map(() => '?').join(',') || 'NULL'}) ORDER BY name`).all(viewer.id, ...teams);
     }
     if (!includeInactive) rows = rows.filter((r) => r.active);
-    if (tracking) rows = rows.filter((r) => r.tracks_time);
+    if (tracking) rows = rows.filter((r) => r.tracks_time && !notJoined(r));
     return rows;
+  }
+  // Invited and not accepted yet, or a created login never used: nobody expects them at work yet, so the
+  // day's views (dashboard, attendance, timesheets, reports) leave them out. Someone with tracked time
+  // always counts, whatever the flags say.
+  function notJoined(u) {
+    if (!((u.invited_at && !u.joined_at) || u.must_change_pw)) return false;
+    return !db.prepare('SELECT 1 FROM time_entries WHERE user_id = ? LIMIT 1').get(u.id);
   }
 
   const HR_EVENTS = new Set(['payroll', 'hr', 'expenses', 'timeoff', 'users']);
@@ -488,7 +495,7 @@ function createApp(opts = {}) {
     isRealOwner,
     backupDir: opts.backupDir || null, offsiteLog: opts.offsiteLog || null,
     POLICY_VERSION, db, cfg, route, clientIp, tokenHash, verifyNobody, passwordProblem, now: clockNow, nowIso, emit, emitTo, emitUsers, emitPortal, emitClientUser, onlineNow, publicUrl: opts.publicUrl || null, pushFetch: opts.pushFetch || null, gifFetch: opts.gifFetch || null, releaseKey: opts.releaseKey, smtpOptions: opts.smtpOptions || null, publicClient, managersOf, sweepNotify, audit, publicUser, shotPolicy, shotDir, hashPassword, verifyPassword, newToken, PAUSE_REASONS,
-    isManager, isHR, needHR, hrDir, needConsent, needConsentNow, needManager, cmpVersion, POLICY_CHANGES, needOwner, canSee, visibleUsers, targetUser, managedTeamIds, touch, removeShots, purgeOld, sweepStale,
+    isManager, isHR, needHR, hrDir, needConsent, needConsentNow, needManager, cmpVersion, POLICY_CHANGES, needOwner, canSee, visibleUsers, notJoined, targetUser, managedTeamIds, touch, removeShots, purgeOld, sweepStale,
     saveSetting, defaults, T, MAX_BODY, clockNow, listDownloads: () => listDownloads(), latestApp: (p, a) => latestApp(p, a),
     // set when this company runs on the shared Staffwarden service (one app per company): its account and
     // email. Without it (one company on its own server) everything works as before and nothing is billed.

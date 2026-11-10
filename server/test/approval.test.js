@@ -151,6 +151,9 @@ test('logins for people without email: a username, a one-time password, and thei
   assert.deepEqual(made.people.map((p) => p.username), ['jack.morris', 'jack.morris2', 'jose.nunez']);
   assert.match(made.people[0].password, /^[A-Z2-9]{3}-[A-Z2-9]{4}-[A-Z2-9]{2}$/);
   const jack = made.people[0];
+  // nobody has used their login yet: the day's views don't count them as missing
+  const dashIds = async () => (await ok(at('brightline'), 'GET', '/api/dashboard/team', { token: o })).members.map((m) => m.user_id);
+  assert.equal((await dashIds()).includes(jack.id), false, 'a login never used is not "not started"');
   // the desktop app (or anything that can't set a password) is told to use a browser first
   const blocked = await req(at('brightline'), 'POST', '/api/auth/login', { body: { email: 'jack.morris', password: jack.password } });
   assert.equal(blocked.status, 403); assert.equal(blocked.data.must_change, true);
@@ -162,6 +165,7 @@ test('logins for people without email: a username, a one-time password, and thei
   assert.equal((await ok(at('brightline'), 'GET', '/api/me', { token: li.token })).must_change_pw, true);
   await ok(at('brightline'), 'POST', '/api/me/password', { token: li.token, body: { current_password: jack.password, new_password: 'jacks-own-pass-42' } });
   assert.equal((await ok(at('brightline'), 'GET', '/api/me', { token: li.token })).must_change_pw, false);
+  assert.ok((await dashIds()).includes(jack.id), 'once Jack chose a password, the dashboard expects him');
   assert.equal((await req(at('brightline'), 'POST', '/api/auth/login', { body: { email: 'jack.morris', password: 'jacks-own-pass-42' } })).status, 200, 'now the desktop app can sign in too');
   const ppl = await ok(at('brightline'), 'GET', '/api/users?all=1', { token: o });
   const j = ppl.find((u) => u.id === jack.id);

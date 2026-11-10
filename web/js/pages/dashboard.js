@@ -269,6 +269,15 @@ export const mePage = {
       { label: 'Paid time off', value: String(k.leave_left), unit: k.leave_left === 1 ? 'day left' : 'days left', foot: `${k.leave_taken} of ${k.leave_allowance} used this month · unpaid any time` },
     ];
     const god = fun && isToday;
+    // someone who doesn't track time (often the owner) isn't expected to work hours: no dial, no target
+    if (!S.me.tracks_time && !god && !d.today.worked_secs && !(d.trend || []).some((t) => t.worked_secs)) {
+      return html`
+      <div class="page-h"><div><h1>Your day</h1><p class="sub">${dayLong(d.day)} · ${tzShort(d.user.tz_name, tz)}</p></div></div>
+      <section class="panel"><div class="body"><p><b style="font-size:17px">You don’t track time</b></p><p class="muted">Nobody expects hours from you, and nothing about you shows as late or absent. If you want to track your own time, open the Staffwarden desktop app and press <b>Start</b>; it turns on from then.</p>${S.me.role !== 'employee' ? html`<p class="mt"><a class="btn sm" href="#/">See your team’s day</a></p>` : ''}</div></section>
+      ${hr ? hrPanel(hr) : ''}
+      ${isToday ? teamNow(team) : ''}
+      <section class="panel flush"><header><h2>My tasks</h2><a href="#/tasks">All tasks</a></header><div class="body">${myTasks(tasks)}</div></section>`;
+    }
     return html`
       ${god ? godBand(fun, d) : ''}${god ? godPanels(fun, d) : ''}
       ${god ? '' : html`      <div class="page-h"><div><h1>${isToday ? 'Your day' : 'Your day, ' + dayShort(d.day)}</h1><p class="sub">${dayLong(d.day)} · ${tzShort(d.user.tz_name, tz)}</p></div>

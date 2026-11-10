@@ -81,7 +81,7 @@ module.exports = (ctx) => {
     const period = ['week', 'month', 'year'].includes(query.get('period')) ? query.get('period') : 'week';
     const today = calc.companyToday();
     const p = periodOf(period, today);
-    const users = db.prepare('SELECT * FROM users WHERE active = 1 AND tracks_time = 1 ORDER BY name').all();
+    const users = db.prepare('SELECT * FROM users WHERE active = 1 AND tracks_time = 1 ORDER BY name').all().filter((u) => !ctx.notJoined(u));
     const key = `${period}|${today}|${s.rank_by}|${users.length}`;
     let hit = cache.get(key);
     if (!hit || ctx.now() - hit.at > 60000) {

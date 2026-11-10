@@ -45,7 +45,7 @@ export const checkinPage = {
     const recent = html`<section class="panel ci-recent"><header><h2>Your last check-ins</h2></header><div class="body">${(d.recent || []).length
       ? html`<ul class="ci-rl">${d.recent.map((r) => html`<li data-k="r${r.day}"><b>${dayShort(r.day)}</b><span>${(r.did || '').split('\n')[0] || 'No notes'}</span>${r.mood ? html`<span class="chip">${MOODL[r.mood] || r.mood}</span>` : ''}</li>`)}</ul>`
       : html`<p class="muted">Your earlier check-ins show here, so you can see what you said you’d do next.</p>`}</div></section>`;
-    return html`<div class="page-h"><div><h1>${ex ? 'Your check-in' : 'Wrap up your shift'}</h1><p class="sub">${ex ? `Posted. You can still change it ${d.shift && d.shift.end < d.shift.start ? 'tonight' : 'today'}; the chat keeps the first one.` : 'Two minutes, once a shift. It replaces the WhatsApp status message.'}</p></div></div>
+    return html`<div class="page-h"><div><h1>${ex ? 'Your check-in' : 'Wrap up your shift'}</h1><p class="sub">${ex ? `Posted. You can still change it ${d.shift && d.shift.end < d.shift.start ? 'tonight' : 'today'}; the chat keeps the first one.` : 'Two minutes, once a shift: what you did and what’s next, so nobody has to ask.'}</p></div></div>
       <div class="cols ci-cols"><div>${form}</div><div>${hours}${preview}${recent}</div></div>`;
   },
   after() { wirePreview(); },

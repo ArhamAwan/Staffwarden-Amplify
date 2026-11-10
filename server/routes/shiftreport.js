@@ -33,7 +33,7 @@ module.exports = (ctx) => {
     const ends = people.filter((u) => isWorkDay(u, day)).map((u) => shiftEndAt(u, day));
     return ends.length ? Math.max(...ends) + READY_AFTER_MIN * 60000 : null;
   }
-  const tracked = () => db.prepare('SELECT * FROM users WHERE active = 1 AND tracks_time = 1').all();
+  const tracked = () => db.prepare('SELECT * FROM users WHERE active = 1 AND tracks_time = 1').all().filter((u) => !ctx.notJoined(u));
 
   // ---------- building it ----------
   function personReport(u, day, cal) {
