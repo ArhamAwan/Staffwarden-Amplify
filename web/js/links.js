@@ -192,7 +192,7 @@ async function handoff(code) {
   } catch (e) { clearHash(); deps.showLogin(errOf(e)); }
 }
 const DOMAIN_OK = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i;
-const nameFrom = (email) => email.split('@')[0].split(/[._-]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(' ').slice(0, 100) || email;
+const nameFrom = (email) => email.split('@')[0].split('+')[0].split(/[._-]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(' ').slice(0, 100) || email;
 const money = (cents) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2 })}`;
 async function ready() {
   const [me, co] = await Promise.all([get('/api/me'), companyInfo()]);
@@ -265,8 +265,8 @@ async function ready() {
       box.insertBefore(c, inp);
     }
     const good = list.filter((x) => x.ok && !x.sent).length, bad = list.find((x) => !x.ok);
-    hint.innerHTML = bad ? `<span style="color:#FFB4A6">${esc(bad.email)} doesn’t look complete. Check the part after the @.</span>` : 'Paste a list from a spreadsheet or type them, one after another.';
-    send.disabled = !good;
+    hint.innerHTML = bad ? `<span style="color:#FFB4A6">${esc(bad.email)} ${bad.email.includes('@') ? 'doesn’t look complete, so it won’t be sent. Check the part after the @.' : 'isn’t an email address, so it won’t be sent.'}</span>` : 'Paste a list from a spreadsheet or type them, one after another.';
+    send.disabled = !good && !DOMAIN_OK.test(inp.value.trim().toLowerCase());
     send.textContent = good ? `Send ${good} invite${good === 1 ? '' : 's'}` : 'Send invites';
     const people = list.filter((x) => x.ok).length;
     if (people && plan) { sum.hidden = false; sum.innerHTML = `<span class="lk-muted">${people} ${people === 1 ? 'person' : 'people'} plus you, after the trial</span><b>${money(Math.round(people * each))} a month <span class="lk-muted" style="font-weight:500">on ${esc(plan.name)}</span></b>`; }
@@ -277,6 +277,8 @@ async function ready() {
     for (const p of parts) if (!list.find((x) => x.email === p) && p !== me.email) list.push({ email: p, ok: DOMAIN_OK.test(p) });
     draw();
   }
+  // an address typed but not yet turned into a chip still counts: Send works without pressing Enter first
+  inp.addEventListener('input', () => { if (!list.some((x) => x.ok && !x.sent)) send.disabled = !DOMAIN_OK.test(inp.value.trim().toLowerCase()); });
   box.addEventListener('click', () => inp.focus());
   inp.addEventListener('keydown', (e) => {
     if (['Enter', ',', ' ', ';', 'Tab'].includes(e.key) && inp.value.trim()) { e.preventDefault(); add(inp.value); inp.value = ''; }

@@ -430,7 +430,7 @@ actions['otp-new'] = async (el) => {
 };
 
 // invite many at once: paste their emails, each gets an email to join (or a link to pass on)
-const nameFrom = (email) => email.split('@')[0].split(/[._-]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(' ').slice(0, 100) || email;
+const nameFrom = (email) => email.split('@')[0].split('+')[0].split(/[._-]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(' ').slice(0, 100) || email;
 actions['invite-many'] = () => {
   const m = openModal({
     title: 'Invite people', submit: 'Send invites', wide: true, sub: 'Each person gets an email to join. They set their own password and see what is tracked before they start.',

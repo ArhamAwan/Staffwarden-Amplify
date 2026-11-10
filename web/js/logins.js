@@ -23,13 +23,16 @@ async function copy(text) {
 // The rows to fill in. `teams` [{id,name}] adds a team column; `managers` lets the owner make managers.
 export function loginsEditor(el, { kit, teams = [], managers = false, rows = 3, onCreated, submitLabel, cancel = false }) {
   const people = Array.from({ length: rows }, () => ({ name: '', team_id: teams.length === 1 ? teams[0].id : '', role: 'employee' }));
+  // what the server will hand out: a repeated name gets a number, the same way it does there
+  const preview = (i) => { const base = usernameOf(people[i].name); const n = people.slice(0, i).filter((q) => q.name.trim() && usernameOf(q.name) === base).length; return n ? `${base}${n + 1}` : base; };
+  const redrawUsernames = () => people.forEach((p, k) => { const u = el.querySelector(`[data-u="${k}"]`); if (u) u.innerHTML = p.name.trim() ? esc(preview(k)) : '<span class="lg-faint">from the name</span>'; });
   const draw = () => {
     const filled = people.filter((p) => p.name.trim().length >= 2).length;
     el.innerHTML = `<div class="lg">
       <div class="lg-tw"><table class="lg-t"><thead><tr><th scope="col">Name</th><th scope="col">Username</th>${teams.length ? '<th scope="col">Team</th>' : ''}${managers ? '<th scope="col">Role</th>' : ''}<th scope="col"><span class="lg-sr">Remove</span></th></tr></thead>
       <tbody>${people.map((p, i) => `<tr>
         <td><input class="lg-in" data-i="${i}" data-k="name" value="${esc(p.name)}" maxlength="100" aria-label="Name ${i + 1}" autocomplete="off" placeholder="${i === 0 ? 'Full name' : ''}"></td>
-        <td class="lg-u" data-u="${i}">${p.name.trim() ? esc(usernameOf(p.name)) : '<span class="lg-faint">from the name</span>'}</td>
+        <td class="lg-u" data-u="${i}">${p.name.trim() ? esc(preview(i)) : '<span class="lg-faint">from the name</span>'}</td>
         ${teams.length ? `<td><select class="lg-in" data-i="${i}" data-k="team_id" aria-label="Team ${i + 1}"><option value="">${teams.length ? 'Choose' : 'No team'}</option>${teams.map((t) => `<option value="${t.id}"${String(t.id) === String(p.team_id) ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}</select></td>` : ''}
         ${managers ? `<td><select class="lg-in" data-i="${i}" data-k="role" aria-label="Role ${i + 1}"><option value="employee"${p.role === 'employee' ? ' selected' : ''}>Employee</option><option value="manager"${p.role === 'manager' ? ' selected' : ''}>Manager</option></select></td>` : ''}
         <td class="lg-x"><button type="button" class="lg-rm" data-rm="${i}" aria-label="Remove row ${i + 1}"${people.length === 1 ? ' disabled' : ''}>${X}</button></td></tr>`).join('')}</tbody></table></div>
@@ -49,7 +52,7 @@ export function loginsEditor(el, { kit, teams = [], managers = false, rows = 3, 
     const t = e.target.closest('[data-i]'); if (!t) return;
     const i = Number(t.dataset.i);
     people[i][t.dataset.k] = t.value;
-    if (t.dataset.k === 'name') { const u = el.querySelector(`[data-u="${i}"]`); u.innerHTML = t.value.trim() ? esc(usernameOf(t.value)) : '<span class="lg-faint">from the name</span>'; refreshGo(); }
+    if (t.dataset.k === 'name') { redrawUsernames(); refreshGo(); }
   });
   el.addEventListener('change', (e) => { const t = e.target.closest('select[data-i]'); if (t) people[Number(t.dataset.i)][t.dataset.k] = t.value; });
   el.addEventListener('paste', (e) => {
