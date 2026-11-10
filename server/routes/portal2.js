@@ -137,6 +137,7 @@ module.exports = (ctx) => {
   // =================================================================================================
   // phone and browser notifications (staff and clients)
   // =================================================================================================
+  const PUSH_DEVICES = 20;
   const ownerOf = (user) => (user.kind === 'client' ? ['client', user.id] : ['staff', user.id]);
   route('GET', '/api/push/key', () => ({ key: P().vapid().publicKey }), C);
   route('POST', '/api/push/subscribe', ({ user, body }) => {
@@ -145,9 +146,16 @@ module.exports = (ctx) => {
     const k = body.keys || {};
     need(typeof k.p256dh === 'string' && /^[\w-]{80,100}$/.test(k.p256dh) && typeof k.auth === 'string' && /^[\w-]{16,32}$/.test(k.auth), 400, 'Missing push keys');
     const [kind, id] = ownerOf(user);
+    // A browser that signs in as someone else re-subscribes with the same secret auth key, so the
+    // device moves with it. Knowing only someone's push address is not enough to take their device.
+    const had = db.prepare('SELECT * FROM push_subs WHERE endpoint = ?').get(ep);
+    need(!had || had.auth === k.auth || (had.owner_kind === kind && had.owner_id === id), 409, 'That device is already set up');
     db.prepare(`INSERT INTO push_subs (owner_kind, owner_id, endpoint, p256dh, auth, device, created_at) VALUES (?,?,?,?,?,?,?)
       ON CONFLICT(endpoint) DO UPDATE SET owner_kind = excluded.owner_kind, owner_id = excluded.owner_id, p256dh = excluded.p256dh, auth = excluded.auth, device = excluded.device, fails = 0`)
       .run(kind, id, ep, k.p256dh, k.auth, optStr(body.device, 'device', 120), nowIso());
+    // a person has a handful of devices: keep the newest 20, so no one can make every notification fan out without end
+    db.prepare(`DELETE FROM push_subs WHERE owner_kind = ? AND owner_id = ? AND id NOT IN
+      (SELECT id FROM push_subs WHERE owner_kind = ? AND owner_id = ? ORDER BY id DESC LIMIT ${PUSH_DEVICES})`).run(kind, id, kind, id);
     return { ok: true };
   }, C);
   route('POST', '/api/push/unsubscribe', ({ user, body }) => {

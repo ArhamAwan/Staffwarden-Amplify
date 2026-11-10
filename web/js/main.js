@@ -370,6 +370,8 @@ async function run({ navigated = false, manual = false } = {}) {
   const { name, q } = parseHash();
   const table = routes();
   const page = table[name] || table[''];
+  // a page this person can't open shows their dashboard, and the address says so, not the page they asked for
+  if (name && !table[name]) { try { history.replaceState(null, '', '#/'); } catch { /* fine */ } }
   const key = `${name}?${q}`;
   // the same page with a different chat, filter, tab or selection is not a new page: nothing replays,
   // the scroll stays where it is, and only the part that changed is redrawn

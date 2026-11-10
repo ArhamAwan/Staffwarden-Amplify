@@ -123,7 +123,8 @@ function confirmDlg({ title, text, word, action }) {
 }
 const envChips = () => (env ? `<span class="cn-env${env.mail ? '' : ' off'}" title="${env.mail ? 'Sign-up codes, invites and receipts are emailed' : 'Set SMTP_HOST in /etc/workhelm.env to send email'}"><i></i>${env.mail ? 'Email on' : 'Email not set up'}</span><span class="cn-env${env.payments ? '' : ' off'}" title="${env.payments ? 'Card payments through Stripe' : 'Set the Stripe keys in /etc/workhelm.env'}"><i></i>${env.payments ? 'Cards on' : 'Cards not set up'}</span>` : '');
 const signOut = '<button class="cn-btn" type="button" id="out" aria-label="Sign out">' + '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/></svg>Sign out</button>';
-function wireOut() { const b = $('#out'); if (b) b.addEventListener('click', () => { setToken(null); signIn(); }); }
+// signing out ends the session on the server too, not just in this tab
+function wireOut() { const b = $('#out'); if (b) b.addEventListener('click', () => { const t = token; setToken(null); if (t) fetch('/api/console/logout', { method: 'POST', headers: { Authorization: `Bearer ${t}` }, keepalive: true }).catch(() => {}); signIn(); }); }
 function skeleton(detail) {
   root.innerHTML = `${top(signOut)}<main class="cn-wrap" aria-busy="true">${detail ? '<div class="sk" style="height:126px;border-radius:24px"></div>' : '<div class="sk" style="height:56px;width:320px"></div>'}
     <div class="kp">${'<div class="sk" style="height:132px;border-radius:20px"></div>'.repeat(4)}</div><div class="sk" style="height:${detail ? 140 : 420}px;border-radius:22px"></div></main>`;

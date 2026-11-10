@@ -143,3 +143,39 @@ test('the company export leaves out mail passwords and other secrets', async () 
   assert.ok(found.length, 'the export has files');
   assert.ok(!found.some((t) => t.includes('super-secret-pass')), 'the mail password is not in the export');
 });
+
+test('a push device can’t be taken by someone who only knows its address; each person keeps at most 20', async () => {
+  const { api, ok, tokens } = env;
+  const keys = () => { const e = crypto.createECDH('prime256v1'); e.generateKeys(); return { p256dh: e.getPublicKey().toString('base64url'), auth: crypto.randomBytes(16).toString('base64url') }; };
+  const ep = 'https://fcm.googleapis.com/fcm/send/ana-phone';
+  const anaKeys = keys();
+  await ok('POST', '/api/push/subscribe', { token: tokens.ana, body: { endpoint: ep, keys: anaKeys, device: 'Phone' } });
+  assert.equal((await api('POST', '/api/push/subscribe', { token: tokens.mgr, body: { endpoint: ep, keys: keys() } })).status, 409);
+  const ownerOf = () => env.app.db.prepare('SELECT owner_id FROM push_subs WHERE endpoint = ?').get(ep).owner_id;
+  assert.equal(ownerOf(), ana.id);
+  // the same browser signing in as someone else sends the same keys, and the device moves
+  await ok('POST', '/api/push/subscribe', { token: tokens.mgr, body: { endpoint: ep, keys: anaKeys } });
+  assert.equal(ownerOf(), mgr.id);
+  for (let i = 0; i < 25; i++) await ok('POST', '/api/push/subscribe', { token: tokens.mgr, body: { endpoint: `https://fcm.googleapis.com/fcm/send/m${i}`, keys: keys() } });
+  const n = env.app.db.prepare("SELECT COUNT(*) n FROM push_subs WHERE owner_kind = 'staff' AND owner_id = ?").get(mgr.id).n;
+  assert.equal(n, 20);
+  assert.ok(env.app.db.prepare('SELECT 1 FROM push_subs WHERE endpoint = ?').get('https://fcm.googleapis.com/fcm/send/m24'), 'the newest are kept');
+});
+
+test('website files: a folder next to the website folder is never served', async () => {
+  const fs = require('node:fs'), path = require('node:path'), os = require('node:os'), http = require('node:http');
+  const { createApp } = require('../app');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sib-'));
+  fs.mkdirSync(path.join(dir, 'web')); fs.writeFileSync(path.join(dir, 'web', 'index.html'), '<p>app</p>');
+  fs.mkdirSync(path.join(dir, 'web-old')); fs.writeFileSync(path.join(dir, 'web-old', 'secret.txt'), 'SIBLING-SECRET');
+  const a = createApp({ dataDir: path.join(dir, 'data'), webDir: path.join(dir, 'web') });
+  await new Promise((r) => a.server.listen(0, r));
+  try {
+    const get = (p) => new Promise((resolve, reject) => { http.get({ host: '127.0.0.1', port: a.server.address().port, path: p }, (res) => { let b = ''; res.on('data', (c) => { b += c; }); res.on('end', () => resolve({ status: res.statusCode, body: b })); }).on('error', reject); });
+    for (const p of ['/..%2fweb-old/secret.txt', '/%2e%2e%2fweb-old%2fsecret.txt']) {
+      const r = await get(p);
+      assert.ok(!r.body.includes('SIBLING-SECRET'), p);
+    }
+    assert.equal((await get('/')).status, 200);
+  } finally { await new Promise((r) => a.server.close(r)); fs.rmSync(dir, { recursive: true, force: true }); }
+});

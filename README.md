@@ -202,7 +202,7 @@ OWNER_EMAIL=you@company.com OWNER_PASSWORD='a-long-password' npm start
 # → http://localhost:3000, sign in as the owner
 
 # the desktop app
-cd desktop && npm install && npm start
+cd desktop && npm ci && npm start   # npm ci installs the exact versions in package-lock.json
 ```
 
 <details>

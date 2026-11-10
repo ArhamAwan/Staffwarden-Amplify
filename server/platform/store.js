@@ -4,7 +4,7 @@
 // hours, pay) is in its own database, never here.
 const { DatabaseSync } = require('node:sqlite');
 
-const VERSION = 1;
+const VERSION = 2;
 function openStore(file) {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
@@ -61,9 +61,14 @@ function openStore(file) {
       CREATE TABLE IF NOT EXISTS mail_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, slug TEXT, kind TEXT NOT NULL, to_addr TEXT NOT NULL, subject TEXT, ok INTEGER NOT NULL, error TEXT
       );
-      PRAGMA user_version = ${VERSION};
     `);
   }
+  // 2: wrong sign-up codes counted over the sign-up's whole life, not just per code sent
+  if (v < 2) {
+    const cols = db.prepare('PRAGMA table_info(signups)').all().map((c) => c.name);
+    if (!cols.includes('wrong_total')) db.exec('ALTER TABLE signups ADD COLUMN wrong_total INTEGER NOT NULL DEFAULT 0');
+  }
+  if (v < VERSION) db.exec(`PRAGMA user_version = ${VERSION}`);
   return db;
 }
 module.exports = { openStore };

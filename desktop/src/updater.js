@@ -164,7 +164,9 @@ function macBundleOf(execPath) {
 
 const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 // The script that swaps the app once this one has quit. If anything goes wrong the old app is put back.
-function macSwapScript({ pid, oldApp, newApp, log }) {
+// The quarantine mark is only lifted from an update whose signature was checked against the release key:
+// anything else keeps it, so macOS asks before opening it.
+function macSwapScript({ pid, oldApp, newApp, log, verified = false }) {
   const backup = oldApp.replace(/\.app$/i, '') + '.previous.app';
   return `#!/bin/sh
 exec >>${q(log)} 2>&1
@@ -173,8 +175,8 @@ i=0; while kill -0 ${Number(pid)} 2>/dev/null && [ $i -lt 120 ]; do sleep 0.5; i
 rm -rf ${q(backup)}
 if { [ ! -e ${q(oldApp)} ] || mv ${q(oldApp)} ${q(backup)}; } && mv ${q(newApp)} ${q(oldApp)}; then
   rm -rf ${q(backup)}
-  xattr -dr com.apple.quarantine ${q(oldApp)} 2>/dev/null
-  echo "installed"
+${verified ? `  xattr -dr com.apple.quarantine ${q(oldApp)} 2>/dev/null
+` : ''}  echo "installed"
 else
   [ -d ${q(oldApp)} ] || mv ${q(backup)} ${q(oldApp)}
   echo "failed, kept the old app"
@@ -200,7 +202,7 @@ function macTarget(running, { home = require('node:os').homedir() } = {}) {
   return null;
 }
 
-async function prepareInstall({ platform = process.platform, file, execPath = process.execPath, workDir, home, log = null }) {
+async function prepareInstall({ platform = process.platform, file, execPath = process.execPath, workDir, home, log = null, verified = false }) {
   if (platform === 'win32') {
     return {
       launch: () => {
@@ -235,7 +237,7 @@ async function prepareInstall({ platform = process.platform, file, execPath = pr
       newApp: staged, oldApp,
       launch: (pid) => {
         const script = path.join(workDir, 'swap.sh');
-        fs.writeFileSync(script, macSwapScript({ pid, oldApp, newApp: staged, log: path.join(workDir, 'update.log') }), { mode: 0o755 });
+        fs.writeFileSync(script, macSwapScript({ pid, oldApp, newApp: staged, log: path.join(workDir, 'update.log'), verified }), { mode: 0o755 });
         const child = spawn('/bin/sh', [script], { detached: true, stdio: 'ignore' });
         child.unref();
       },

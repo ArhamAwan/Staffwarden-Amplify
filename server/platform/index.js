@@ -660,11 +660,13 @@ function createPlatform(opts) {
     const s = signupOf(body.token);
     need(s && !s.slug, 404, 'Start again: that sign-up ran out');
     if (s.verified_at) return { ok: true };
+    // a new code resets the per-code count, so the sign-up as a whole also stops after 20 wrong codes
+    need((s.wrong_total || 0) < 20, 404, 'Start again: that sign-up had too many wrong codes');
     need(s.tries < 6, 429, 'Too many wrong codes. Ask for a new one.');
     const code = String(body.code || '').replace(/\D/g, '');
     need(code.length === 6, 400, 'The code has 6 digits');
     need(s.code_expires_at && Date.parse(s.code_expires_at) > now(), 400, 'That code ran out. Ask for a new one.');
-    if (sha(`${code}|${s.id}`) !== s.code_hash) { store.prepare('UPDATE signups SET tries = tries + 1 WHERE id = ?').run(s.id); throw new HttpError(400, 'That code isn’t right. Check the email and try again.'); }
+    if (sha(`${code}|${s.id}`) !== s.code_hash) { store.prepare('UPDATE signups SET tries = tries + 1, wrong_total = wrong_total + 1 WHERE id = ?').run(s.id); throw new HttpError(400, 'That code isn’t right. Check the email and try again.'); }
     store.prepare('UPDATE signups SET verified_at = ? WHERE id = ?').run(iso(), s.id);
     return { ok: true };
   });
@@ -717,13 +719,15 @@ function createPlatform(opts) {
     if (adminEmails.has(email)) {
       const code = code6();
       store.prepare('INSERT INTO console_codes (email, code_hash, expires_at, tries) VALUES (?,?,?,0) ON CONFLICT(email) DO UPDATE SET code_hash = excluded.code_hash, expires_at = excluded.expires_at, tries = 0').run(email, sha(`${code}|${email}`), iso(now() + 10 * 60000));
-      await mailer.send('console_code', email, { code: `${code.slice(0, 3)} ${code.slice(3)}` });
+      // not awaited: the answer comes back just as fast for an address that isn't an admin
+      Promise.resolve().then(() => mailer.send('console_code', email, { code: `${code.slice(0, 3)} ${code.slice(3)}` })).catch(() => {});
     }
     return { ok: true };
   });
   on('POST', '/api/console/login', ({ req, body }) => {
     limit(`cl:${ipOf(req)}`, 10, 15 * 60000);
     const email = String(body.email || '').trim().toLowerCase();
+    limit(`cle:${email}`, 15, 3600000);   // per address too, so guesses from many places still add up
     const c = store.prepare('SELECT * FROM console_codes WHERE email = ?').get(email);
     need(c && Date.parse(c.expires_at) > now() && c.tries < 5 && adminEmails.has(email), 400, 'That code isn’t right or ran out');
     if (sha(`${String(body.code || '').replace(/\D/g, '')}|${email}`) !== c.code_hash) { store.prepare('UPDATE console_codes SET tries = tries + 1 WHERE email = ?').run(email); throw new HttpError(400, 'That code isn’t right or ran out'); }
@@ -731,6 +735,12 @@ function createPlatform(opts) {
     const token = newToken();
     store.prepare('INSERT INTO console_sessions (token, email, created_at) VALUES (?,?,?)').run(sha(token), email, iso());
     return { token, email };
+  });
+  on('POST', '/api/console/logout', ({ req }) => {
+    const h = req.headers.authorization || '';
+    const tok = h.startsWith('Bearer ') ? h.slice(7) : '';
+    if (tok) store.prepare('DELETE FROM console_sessions WHERE token = ?').run(sha(tok));
+    return { ok: true };
   });
   on('GET', '/api/console/overview', ({ req }) => {
     consoleUser(req);

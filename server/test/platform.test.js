@@ -388,3 +388,28 @@ test('in production, sign-up waits for a mail server and never shows the code', 
     assert.doesNotMatch(r.text, /dev_code/);
   } finally { await new Promise((r) => Q.server.close(r)); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('a sign-up stops for good after 20 wrong codes, however many new codes are sent', async () => {
+  const s = await ok(apex, 'POST', '/api/platform/signup/start', { body: { name: 'Guess Er', email: 'guess@x.test', password: 'a-long-pass-123' } });
+  const wrong = s.dev_code === '000000' ? '111111' : '000000';
+  let last;
+  for (let round = 0; round < 4; round++) {
+    for (let i = 0; i < 6; i++) last = await req(apex, 'POST', '/api/platform/signup/verify', { body: { token: s.token, code: wrong } });
+    clock.t += 46000;
+    await ok(apex, 'POST', '/api/platform/signup/resend', { body: { token: s.token } });
+  }
+  last = await req(apex, 'POST', '/api/platform/signup/verify', { body: { token: s.token, code: wrong } });
+  assert.equal(last.status, 404, 'after 20 wrong codes the sign-up is over');
+  const right = (await ok(apex, 'POST', '/api/platform/signup/resend', { body: { token: s.token } }).catch(() => ({}))).dev_code;
+  if (right) assert.equal((await req(apex, 'POST', '/api/platform/signup/verify', { body: { token: s.token, code: right } })).status, 404, 'even the right code no longer works');
+});
+
+test('signing out of the console ends the session on the server', async () => {
+  await ok(at('admin'), 'POST', '/api/console/code', { body: { email: 'boss@staffwarden.test' } });
+  await new Promise((r) => setTimeout(r, 20));
+  const code = lastMail('console_code', 'boss@staffwarden.test').data.code.replace(/\D/g, '');
+  const { token } = await ok(at('admin'), 'POST', '/api/console/login', { body: { email: 'boss@staffwarden.test', code } });
+  await ok(at('admin'), 'GET', '/api/console/overview', { token });
+  await ok(at('admin'), 'POST', '/api/console/logout', { token });
+  assert.equal((await req(at('admin'), 'GET', '/api/console/overview', { token })).status, 401);
+});

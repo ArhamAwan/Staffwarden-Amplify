@@ -541,7 +541,7 @@ function createApp(opts = {}) {
     let rel;
     try { rel = decodeURIComponent(pathname === '/' ? 'index.html' : pathname === '/welcome' ? 'welcome.html' : pathname.replace(/^\/+/, '')); } catch { res.writeHead(400, { 'Content-Type': 'text/plain', ...SEC_HEADERS }); res.end('Bad address'); return; }
     let file = path.normalize(path.join(cfg.webDir, rel));
-    const inside = file.startsWith(path.normalize(cfg.webDir));
+    const inside = file.startsWith(path.normalize(cfg.webDir) + path.sep);   // the separator: a sibling folder like web-old is not inside
     if (!inside || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
       if (path.extname(rel) === '' && inside) { file = path.join(cfg.webDir, 'index.html'); } // app routes fall back to the shell
       else { res.writeHead(404, { 'Content-Type': 'text/plain', ...SEC_HEADERS }); res.end('Not found'); return; }

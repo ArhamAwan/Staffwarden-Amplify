@@ -81,6 +81,12 @@ test('a server that sends no checksum is never offered as an update', async () =
   assert.equal((await u.check()).status, 'current');
 });
 
+test('macOS: the quarantine mark is only lifted from an update whose signature was checked', () => {
+  const a = { pid: 1, oldApp: '/Applications/Staffwarden.app', newApp: '/Applications/.u.app', log: '/tmp/u.log' };
+  assert.doesNotMatch(macSwapScript(a), /quarantine/);
+  assert.match(macSwapScript({ ...a, verified: true }), /xattr -dr com\.apple\.quarantine/);
+});
+
 test('macOS: the app bundle is found, and the swap script waits, swaps, keeps the old app on failure, and reopens', async () => {
   assert.equal(macBundleOf('/Applications/Workhelm.app/Contents/MacOS/Workhelm'), '/Applications/Workhelm.app');
   assert.equal(macBundleOf('/usr/local/bin/electron'), null);

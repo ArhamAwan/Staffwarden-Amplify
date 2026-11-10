@@ -310,7 +310,7 @@ async function installUpdate() {
   let file;
   try { file = await updater.download(); } catch (e) { return { error: updater.state.error || e.message }; }
   let plan;
-  try { plan = await prepareInstall({ file, workDir: updDir(), log: (m) => updater.log(m) }); } catch (e) {
+  try { plan = await prepareInstall({ file, workDir: updDir(), log: (m) => updater.log(m), verified: !!updater.key }); } catch (e) {
     updater.log(`install failed: ${e.message}`);
     const manual = e.code === 'not-writable';
     updater.set({ status: 'error', manual, error: manual
@@ -852,6 +852,17 @@ handle('open-permission-settings', () => {
 
 // ---------- lifecycle ----------
 const startedHidden = process.argv.includes('--hidden') || (process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin);
+// Every window shows only the app's own files. Links go to the browser through shell.openExternal, so
+// nothing may navigate a window anywhere else or open a new one (the preload bridge must never follow).
+const APP_FILES = require('url').pathToFileURL(__dirname).href;
+app.on('web-contents-created', (_e, wc) => {
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+  const stay = (ev, url) => { if (!String(url).startsWith(`${APP_FILES}/`)) ev.preventDefault(); };
+  wc.on('will-navigate', stay);
+  wc.on('will-redirect', stay);
+  wc.on('will-attach-webview', (ev) => ev.preventDefault());
+});
+
 app.whenReady().then(() => {
   if (!gotLock) return;
   if (process.platform === 'darwin') {
