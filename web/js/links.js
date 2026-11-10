@@ -206,7 +206,7 @@ async function ready() {
   render({
     right: esc(co.address || location.host),
     story: `<section class="lk-st-story"><h1>${esc(name)}’s space is ready.</h1>
-      <p class="lk-lede">${ends ? `Your trial runs to <b>${esc(ends)}</b>. ` : ''}Four things and your team is tracking:</p>
+      <p class="lk-lede">${ends ? `Your trial runs to <b>${esc(ends)}</b>. ` : ''}Four steps and your team is ready to track:</p>
       <ol class="lk-todo lk-hide-sm">
         <li><div><span class="lk-n lk-ok">${CHECK}</span><span><b>Make the company’s space</b><span class="lk-s">Done</span></span></div></li>
         <li><div><span class="lk-n">2</span><span><b>Bring your team in</b><span class="lk-s">Invite them by email, or create their logins</span></span></div></li>

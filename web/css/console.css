@@ -232,4 +232,6 @@ table.t tr.go:hover td.ch svg { transform: translateX(3px); color: var(--lilac);
 .rq-link { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border-radius: 14px; border: 1px solid rgba(247,196,107,.3); background: rgba(247,196,107,.06); font-size: 13.5px; color: var(--warn); }
 .rq-link code { color: var(--ink); font-size: 13px; overflow-wrap: anywhere; user-select: all; }
 .rq-link .cn-btn { align-self: flex-start; }
+/* the header keeps one line at laptop width: Sign out shows its icon only */
+@media (max-width: 1180px) { .cn-out-t { display: none; } #out { padding: 0 11px; } }
 @media (max-width: 720px) { .cn-tabs { order: 5; width: 100%; margin-left: 0; } .rq-d { padding: 20px; } }

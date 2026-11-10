@@ -257,6 +257,12 @@ select.lg-in { min-width: 110px; }
 .lg-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .lg-sp { flex: 1; }
 .lg-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.lg-pwb { cursor: copy; user-select: all; -webkit-user-select: all; }
+.lg-pwb::selection { background: rgba(155,123,255,.5); color: #fff; }
+.lg-note { margin: 0; min-height: 1.4em; font-size: 13.5px; color: #8FE3B8; }
+.lg-note:empty { min-height: 0; }
+.lg-pwb:hover { border-color: rgba(195,179,255,.55); }
+.lg-pwb:focus-visible { outline: 2px solid #C9BBFF; outline-offset: 2px; }
 .lg-pw { font: 600 15px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .04em; padding: 6px 9px; border-radius: 8px; background: rgba(10,6,28,.45); border: 1px solid var(--line); color: var(--ink); }
 .lg-warn { margin: 0; display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; line-height: 1.5; color: #F7C46B; padding: 12px 14px; border-radius: 12px; background: rgba(247,196,107,.08); border: 1px solid rgba(247,196,107,.3); }
 .lg-warn svg { width: 18px; height: 18px; flex: none; margin-top: 1px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }

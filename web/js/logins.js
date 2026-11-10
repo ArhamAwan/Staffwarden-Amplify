@@ -6,6 +6,7 @@ import { post } from './api.js';
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ESC[c]);
 const X = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+const KEY = /Mac|iP/.test(navigator.platform) ? 'Cmd' : 'Ctrl';
 const WARN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9L2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>';
 
 // the same rule the server uses, to show the username while the name is typed
@@ -89,13 +90,32 @@ export function loginsResult(el, r, { kit, company = 'your company', onDone, don
   el.innerHTML = `<div class="lg">
     <p class="lg-warn">${WARN}<span>These passwords are shown only now. Print or download them before you leave. Lost one? Make a new one from People.</span></p>
     <div class="lg-tw"><table class="lg-t lg-res"><thead><tr><th scope="col">Name</th><th scope="col">Username</th><th scope="col">One-time password</th><th scope="col"><span class="lg-sr">Copy</span></th></tr></thead>
-      <tbody>${r.people.map((p, i) => `<tr><td><b>${esc(p.name)}</b></td><td>${esc(p.username)}</td><td><code class="lg-pw">${esc(p.password)}</code></td><td class="lg-x"><button type="button" class="${kit.btn} ${kit.sm || ''}" data-cp="${i}" aria-label="Copy ${esc(p.name)}’s login">Copy</button></td></tr>`).join('')}</tbody></table></div>
-    <p class="lg-hint">They sign in at <b>${esc(address)}</b> with the username and password, then choose their own. Each one-time password works until ${esc(until)}.</p>
+      <tbody>${r.people.map((p, i) => `<tr><td><b>${esc(p.name)}</b></td><td>${esc(p.username)}</td><td><button type="button" class="lg-pw lg-pwb" data-cpw="${i}" title="Copy just the password" aria-label="Copy ${esc(p.name)}’s one-time password">${esc(p.password)}</button></td><td class="lg-x"><button type="button" class="${kit.btn} ${kit.sm || ''}" data-cp="${i}" aria-label="Copy ${esc(p.name)}’s login details" title="Name, address, username and password">Copy all</button></td></tr>`).join('')}</tbody></table></div>
+    <p class="lg-note" role="status" aria-live="polite"></p>
+    <p class="lg-hint">Click a password to copy just that. They sign in at <b>${esc(address)}</b> with the username and password, then choose their own. Each one-time password works until ${esc(until)}.</p>
     <div class="lg-row"><button type="button" class="${kit.btn} ${kit.pri}" data-print>Print a slip for each person</button><button type="button" class="${kit.btn}" data-csv>Download as a spreadsheet</button><span class="lg-sp"></span>${onDone ? `<button type="button" class="${kit.btn}" data-done>${esc(doneLabel)}</button>` : ''}</div>
   </div>`;
+  const note = el.querySelector('.lg-note');
+  let noteT;
+  const say = (t) => { note.textContent = t; clearTimeout(noteT); noteT = setTimeout(() => { note.textContent = ''; }, 4000); };
   el.addEventListener('click', async (e) => {
+    // Clipboards can say yes and still drop the text (some embedded browsers do), so the copied text is
+    // also left selected on the page: Cmd+C or Ctrl+C then works either way.
+    const pw = e.target.closest('[data-cpw]');
+    if (pw) {
+      const i = Number(pw.dataset.cpw), p = r.people[i];
+      const ok = await copy(p.password);
+      const sel = getSelection(); sel.removeAllRanges(); const rg = document.createRange(); rg.selectNodeContents(pw); sel.addRange(rg);
+      say(ok ? `Copied ${p.name.split(' ')[0]}’s password.` : `Couldn’t reach the clipboard. The password is selected: press ${KEY}+C.`);
+      return;
+    }
     const cp = e.target.closest('[data-cp]');
-    if (cp) { const p = r.people[Number(cp.dataset.cp)]; cp.textContent = (await copy(`${p.name}\nSign in at ${address}\nUsername: ${p.username}\nOne-time password: ${p.password}`)) ? 'Copied' : 'Copy failed'; return; }
+    if (cp) {
+      const p = r.people[Number(cp.dataset.cp)];
+      const ok = await copy(`${p.name}\nSign in at ${address}\nUsername: ${p.username}\nOne-time password: ${p.password}`);
+      say(ok ? `Copied ${p.name.split(' ')[0]}’s login details.` : 'Couldn’t reach the clipboard. Click the password to select it instead.');
+      return;
+    }
     if (e.target.closest('[data-print]')) {
       document.querySelectorAll('.lg-print').forEach((x) => x.remove());
       const sheet = document.createElement('div');

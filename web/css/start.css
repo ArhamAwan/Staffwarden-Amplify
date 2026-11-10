@@ -40,7 +40,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .st-story { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 26px; }
 .st-story h1 { margin: 0; font: 400 clamp(48px, 5vw, 72px)/1 var(--serif); letter-spacing: -.01em; text-wrap: balance; }
 .st-story .lede { margin: 0; font-size: 18px; line-height: 1.55; color: var(--ink2); max-width: 540px; }
-.st-story .lede b { color: #fff; }
+.st-story .lede b { color: #fff; overflow-wrap: anywhere; }
 .st-foot { margin: 0; text-align: center; font-size: 13px; color: var(--faint); }
 
 /* the card */

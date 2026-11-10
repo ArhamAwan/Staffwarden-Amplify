@@ -98,7 +98,7 @@ function signupCode() {
     <div><h2>Enter the code</h2><p class="sub">It works for 15 minutes. Pasting the whole code fills every box.</p></div>
     ${s.dev ? `<p class="devcode">No mail server is set up on this server, so here is the code: <b>${esc(s.dev)}</b></p>` : ''}
     <form id="f" novalidate style="display:contents">
-      <fieldset class="code" id="code"><legend class="sr">6-digit code</legend>${[1, 2, 3, 4, 5, 6].map((i) => `<input aria-label="Digit ${i}" inputmode="numeric" autocomplete="${i === 1 ? 'one-time-code' : 'off'}" maxlength="1" pattern="[0-9]"${i === 1 ? ' autofocus' : ''}>`).join('')}</fieldset>
+      <fieldset class="code" id="code"><legend class="sr">6-digit code</legend>${[1, 2, 3, 4, 5, 6].map((i) => `<input aria-label="Digit ${i}" inputmode="numeric" autocomplete="${i === 1 ? 'one-time-code' : 'off'}" maxlength="${i === 1 ? 6 : 1}" pattern="[0-9]*"${i === 1 ? ' autofocus' : ''}>`).join('')}</fieldset>
       <p class="err" role="alert"></p>
       <button class="btn pri wide big" type="submit">Continue</button>
     </form>
