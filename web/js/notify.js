@@ -52,11 +52,22 @@ export async function onNotify() {
   } catch { /* try again on the next event */ } finally { busy = false; }
 }
 
+// Every open tab hears the same live event. Claiming what to show happens one tab at a time (a browser
+// lock where there is one), so two tabs never both pop the same thing up.
+async function claim(fresh) {
+  const take = () => {
+    const shown = Number(store.get(shownKey()) || 0);
+    const list = fresh.filter((n) => n.id > shown).sort((a, b) => a.id - b.id);
+    if (list.length) store.set(shownKey(), String(list[list.length - 1].id));
+    return list;
+  };
+  try { if (navigator.locks) return await navigator.locks.request(`wh-pop-${S.me && S.me.id}`, take); } catch { /* fall through */ }
+  return take();
+}
+
 async function pop(fresh) {
-  const shown = Number(store.get(shownKey()) || 0);
-  const list = fresh.filter((n) => n.id > shown).sort((a, b) => a.id - b.id);
+  const list = await claim(fresh);
   if (!list.length) return;
-  store.set(shownKey(), String(list[list.length - 1].id));   // other open tabs skip these
   const away = document.hidden || !document.hasFocus();
   // a browser signed up for push gets these from the service worker (with the person's choices applied), so
   // the page doesn't show them a second time

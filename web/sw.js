@@ -6,9 +6,14 @@ self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener('push', (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch { d = { title: e.data ? e.data.text() : 'Staffwarden' }; }
-  e.waitUntil(self.registration.showNotification(d.title || 'Staffwarden', {
-    body: d.body || '', tag: d.tag || undefined, renotify: !!d.tag, icon: '/icons/icon-192.png', badge: '/icons/badge-96.png', data: { link: d.link || '#/' },
-  }));
+  e.waitUntil((async () => {
+    // someone looking at Staffwarden right now already sees it on the page: no second pop-up
+    const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    if (open.some((c) => c.focused && c.visibilityState === 'visible' && new URL(c.url).origin === self.location.origin)) return;
+    await self.registration.showNotification(d.title || 'Staffwarden', {
+      body: d.body || '', tag: d.tag || undefined, renotify: !!d.tag, icon: '/icons/icon-192.png', badge: '/icons/badge-96.png', data: { link: d.link || '#/' },
+    });
+  })());
 });
 
 self.addEventListener('notificationclick', (e) => {

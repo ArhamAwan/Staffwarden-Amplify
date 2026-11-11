@@ -122,8 +122,11 @@ function createNotify(ctx) {
       n++;
       emitTo(id, 'notify');
       if (quiet || !ctx.pnotify) continue;
-      const want = (s) => (isPhone(s.device) ? ch.phone : ch.browser);
-      if (ch.phone || ch.browser) ctx.pnotify.pushTo('staff', id, { title: String(title).slice(0, 120), body: body ? String(body).slice(0, 200) : '', link: link || '#/', tag: tag || `s${kind}` }, want);
+      // A computer running the desktop app already shows this there: a browser sign-up (likely on the same
+      // computer) would pop it up a second time. Phones still get it.
+      const appShows = ch.desktop && ctx.desktopLive && ctx.desktopLive(id);
+      const want = (s) => (isPhone(s.device) ? ch.phone : ch.browser && !appShows);
+      if (ch.phone || (ch.browser && !appShows)) ctx.pnotify.pushTo('staff', id, { title: String(title).slice(0, 120), body: body ? String(body).slice(0, 200) : '', link: link || '#/', tag: tag || `s${kind}` }, want);
     }
     return n;
   }

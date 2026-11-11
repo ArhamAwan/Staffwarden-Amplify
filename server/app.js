@@ -216,6 +216,11 @@ function createApp(opts = {}) {
   }
   // a live stream lasts only as long as its sign-in: signing out, being turned off, a new password or an
   // archived client ends it (checked before every client event, and for everyone on each ping)
+  // the person's desktop app is open and connected right now (it shows their notifications itself)
+  function desktopLive(userId) {
+    for (const c of sseClients) if (c.app && c.userId === userId && c.kind !== 'client') return true;
+    return false;
+  }
   function streamAlive(c) {
     const ok = c.kind === 'client'
       ? !!db.prepare('SELECT 1 FROM client_sessions s JOIN client_users cu ON cu.id = s.client_user_id JOIN clients cl ON cl.id = cu.client_id WHERE s.token = ? AND cu.active = 1 AND cl.archived = 0').get(c.th)
@@ -495,7 +500,7 @@ function createApp(opts = {}) {
     isRealOwner,
     backupDir: opts.backupDir || null, offsiteLog: opts.offsiteLog || null,
     POLICY_VERSION, db, cfg, route, clientIp, tokenHash, verifyNobody, passwordProblem, now: clockNow, nowIso, emit, emitTo, emitUsers, emitPortal, emitClientUser, onlineNow, publicUrl: opts.publicUrl || null, pushFetch: opts.pushFetch || null, gifFetch: opts.gifFetch || null, releaseKey: opts.releaseKey, smtpOptions: opts.smtpOptions || null, publicClient, managersOf, sweepNotify, audit, publicUser, shotPolicy, shotDir, hashPassword, verifyPassword, newToken, PAUSE_REASONS,
-    isManager, isHR, needHR, hrDir, needConsent, needConsentNow, needManager, cmpVersion, POLICY_CHANGES, needOwner, canSee, visibleUsers, notJoined, targetUser, managedTeamIds, touch, removeShots, purgeOld, sweepStale,
+    isManager, isHR, needHR, hrDir, needConsent, needConsentNow, needManager, cmpVersion, POLICY_CHANGES, needOwner, canSee, visibleUsers, notJoined, desktopLive, targetUser, managedTeamIds, touch, removeShots, purgeOld, sweepStale,
     saveSetting, defaults, T, MAX_BODY, clockNow, listDownloads: () => listDownloads(), latestApp: (p, a) => latestApp(p, a),
     // set when this company runs on the shared Staffwarden service (one app per company): its account and
     // email. Without it (one company on its own server) everything works as before and nothing is billed.
@@ -645,7 +650,7 @@ function createApp(opts = {}) {
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Content-Encoding': 'identity', 'Cache-Control': 'no-store, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no', ...SEC_HEADERS });
         res.write(`retry: 3000\n\n:${' '.repeat(2048)}\n\ndata: {"type":"ping"}\n\n`);
         const th = tokenHash((req.headers.authorization || '').slice(7));
-        const client = user.preview ? { res, th, userId: user.viewer_id, role: user.viewer_role, preview: true } : user.kind === 'client' ? { res, th, kind: 'client', clientUserId: user.id, clientId: user.client_id } : { res, th, userId: user.id, role: user.role, hr: !!user.hr };
+        const client = user.preview ? { res, th, userId: user.viewer_id, role: user.viewer_role, preview: true } : user.kind === 'client' ? { res, th, kind: 'client', clientUserId: user.id, clientId: user.client_id } : { res, th, userId: user.id, role: user.role, hr: !!user.hr, app: !!req.headers['x-workhelm-app'] };
         sseClients.add(client);
         req.on('close', () => sseClients.delete(client));
         return;

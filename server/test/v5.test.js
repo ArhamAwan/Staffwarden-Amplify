@@ -173,6 +173,13 @@ test('notifications: each person picks devices per kind; quiet outside the shift
   await ok('POST', '/api/me/notify-test', { token: tokens.sara });
   await new Promise((r) => setTimeout(r, 50));
   assert.equal(pushed.length, 2);
+  // with the desktop app open, the browser on that computer doesn't pop it up a second time; the phone still does
+  env.app.ctx.desktopLive = (id) => id === sara.id;
+  pushed.length = 0;
+  env.app.ctx.notify.notify(sara.id, { kind: 'timeoff_decision', title: 'Your Friday off was approved' });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(pushed.map((x) => x.url), ['https://fcm.googleapis.com/fcm/send/p1']);
+  delete env.app.ctx.desktopLive;
 });
 
 test('check-ins: hours come from the timer, blockers reach the owner, the team page lists who is missing', async () => {
